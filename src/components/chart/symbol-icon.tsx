@@ -1,4 +1,4 @@
-import type { SymbolIcon as SymbolIconSpec } from '../../interfaces/IDataAdapter';
+import type { SymbolIconSpec } from '../../interfaces/IDataAdapter';
 import { cn } from '../../lib/utils';
 
 interface SymbolIconProps {

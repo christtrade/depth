@@ -222,6 +222,7 @@ export type {
 
 /** The built-in matcher, so server-side adapters can rank like the picker does. */
 export { searchSymbolsLocally, normalizeSymbolSearchResponse } from '../lib/symbol-search';
+export { toTransferableSymbolInfo } from '../lib/symbol-info'
 
 export { SessionMapper, createSessionMapper } from './SessionMapper';
 export type { SessionSegment } from './SessionMapper';
@@ -275,9 +276,11 @@ export type {
     FetchRequest,
     PreProcessedPayload,
     SupplementalBarSet,
-    SymbolIcon,
+    SymbolIconSpec,
     TimeRange,
 } from '../interfaces/IDataAdapter';
+// SymbolIconSpec describes SymbolInfo.icon; SymbolIcon renders one.
+export { SymbolIcon } from '../components/chart/symbol-icon';
 
 // plugins
 export type {

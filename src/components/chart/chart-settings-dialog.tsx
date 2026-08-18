@@ -1286,7 +1286,7 @@ export function ChartSettingsDialog({
                 </div>
                 <div className="px-5 py-1 border-t border-white/6 shrink-0 pt-0">
                     <a href="https://christtrade.com" className="text-[10px] text-white/20 select-none font-mono">
-                        ChristTrade Depth 0.12.21
+                        ChristTrade Depth 0.12.23
                     </a>
                 </div>
             </div>

@@ -109,7 +109,9 @@ export interface ContractSpec {
 }
 
 // SymbolInfo
-export type SymbolIcon =
+// named ...Spec because the SymbolIcon component that renders one is exported
+// too, and a type and a value cannot share a name across re-exports.
+export type SymbolIconSpec =
     /** Shorthand for { src }. */
     | string
     /** Image URL, data: URI, or imported SVG path. */
@@ -135,8 +137,8 @@ export interface SymbolInfo {
     dataLevel: DataLevel;
 
     /** Icon for this symbol. */
-    icon?: SymbolIcon;
-    legendIcon?: SymbolIcon;
+    icon?: SymbolIconSpec;
+    legendIcon?: SymbolIconSpec;
 
     /**
      * Price formatting. When omitted, tickSize is used as a fallback for
