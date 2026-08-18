@@ -1,0 +1,32 @@
+name: Question
+description: How do I do X with Depth?
+labels: [question]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check [docs.christtrade.com/depth](https://docs.christtrade.com/depth)
+        first - the plugin API in particular is documented there rather than in
+        this repo.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: What are you trying to do?
+      description: >
+        The goal, not just the API call you got stuck on. Depth often has a
+        different way round a problem than the one you started down.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Depth version
+      placeholder: 0.12.23
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you have tried
+      render: tsx

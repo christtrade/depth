@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# a clean checkout with no parent node_modules is the whole point. every
+# dependency bug during the open-source split was invisible until the package
+# was installed somewhere that did not have an app quietly providing for it.
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      # ci, not install: fails if package-lock.json and package.json disagree
+      - run: npm ci
+
+      # dist:types typechecks the whole package on the way to emitting .d.ts,
+      # and dist:smoke asserts every name core/index.ts promises survived the
+      # bundle
+      - run: npm run dist
+
+      - run: npm test
+
+      # the published artifact is dist/, so verify that is what packs
+      - name: Verify the tarball
+        run: |
+          cd dist
+          npm pack --dry-run

@@ -1,0 +1,71 @@
+name: Bug report
+description: Something in Depth does not behave the way it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. The two fields that decide whether a bug
+        gets fixed quickly are the reproduction and the data level - please
+        don't skip them.
+
+  - type: input
+    id: version
+    attributes:
+      label: Depth version
+      placeholder: 0.12.23
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: >
+        Steps, or ideally a link to a minimal repo or StackBlitz.
+        `SimulatedMarketAdapter` runs with no data source wired up, so most bugs
+        can be reproduced without exposing your feed.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: data-level
+    attributes:
+      label: Data level
+      description: What your adapter serves. Many bugs only appear at one level.
+      options:
+        - OHLCV bars
+        - Ticks
+        - L2 (book snapshots)
+        - MBO / L3
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: adapter
+    attributes:
+      label: Data adapter
+      description: SimulatedMarketAdapter, your own IDataAdapter, or a plugin data source?
+      placeholder: SimulatedMarketAdapter
+
+  - type: input
+    id: env
+    attributes:
+      label: Browser and framework
+      placeholder: Chrome 141, Vite + React 19
+
+  - type: textarea
+    id: console
+    attributes:
+      label: Console output
+      description: Any errors or warnings. Depth prefixes its own with `[ChristTrade]`.
+      render: text
