@@ -23,7 +23,7 @@
         "dist:js": "node build/build.mjs",
         "dist:types": "tsc -p tsconfig.json --declaration --emitDeclarationOnly --noEmit false --incremental false --outDir dist/types",
         "dist:css": "tailwindcss -c build/tailwind.dist.config.cjs -i build/tailwind.entry.css -o dist/depth.css --minify && PREFLIGHT=0 tailwindcss -c build/tailwind.dist.config.cjs -i build/tailwind.entry.css -o dist/depth.nopreflight.css --minify && node build/inline-fonts.mjs",
-        "dist:pack": "cd dist && npm pack",
+        "dist:pack": "cd dist && npm pack --pack-destination ..",
         "test": "tsx --test \"src/**/*.test.ts\""
     },
     "peerDependencies": {
