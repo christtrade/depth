@@ -158,6 +158,41 @@ export type {
     TicketProblem,
 } from '../components/trading/order-math';
 
+// Trading domain. IExecutionAdapter's signatures already traffic in these, so
+// they are part of the surface whether or not they are named here.
+export type {
+    OrderSide,
+    OrderType,
+    OrderStatus,
+    Order,
+    Fill,
+    PositionSide,
+    PositionStatus,
+    Position,
+    PositionClose,
+    PositionsSnapshot,
+    CloseReason,
+    TimeInForce,
+    BracketLevel,
+    BracketSpec,
+    BracketAmendment,
+    CommissionConfig,
+    SlippageConfig,
+    CreatePositionParams,
+    ClosePositionParams,
+    CreateOrderParams,
+    PriceTick,
+    TradingEvent,
+    TradingEventKind,
+} from '../lib/types/trading-types';
+export {
+    getTickValue,
+    calcUnrealizedPnl,
+    calcUnrealizedPnlPct,
+    formatPnl,
+    formatPnlPct,
+} from '../lib/types/trading-types';
+
 // Session utilities
 export {
     isMarketOpen,
@@ -225,3 +260,78 @@ export {
     resetTradingViewImport,
 } from '../lib/tradingview-import';
 export type { TradingViewImportResult } from '../lib/tradingview-import';
+
+// Extension-point vocabulary. everything below already appears in the signatures
+// of an exported interface, event payload or class - leaving it unexported meant
+// an adapter or plugin author could not name what the API demands of them.
+
+// data adapters
+export { DataAdapterError, makeTimeRange, nsToIso } from '../interfaces/IDataAdapter';
+export { isoToNs } from '../lib/sampler';
+export type {
+    BarPreviewResponse,
+    BarResponse,
+    DataAdapterErrorCode,
+    FetchRequest,
+    PreProcessedPayload,
+    SupplementalBarSet,
+    SymbolIcon,
+    TimeRange,
+} from '../interfaces/IDataAdapter';
+
+// plugins
+export type {
+    BottomBarHandle,
+    BottomBarItem,
+    ContextMenuItem,
+    FloatingPanelOpts,
+    NotifyLevel,
+    NotifyOptions,
+    PaneOptions,
+    PluginExecutionSurface,
+    PluginLifecycle,
+    PluginServices,
+    PluginStorage,
+    ServiceApi,
+    ServiceObserver,
+    SettingSchema,
+    SettingSchemaType,
+    ThemeDef,
+    ToolbarItem,
+} from '../interfaces/plugins/IChartPlugin';
+export type {
+    ChartTypeActiveContext,
+    ChartTypeKeyEvent,
+    ChartTypePointerEvent,
+} from '../interfaces/plugins/IChartTypePlugin';
+export type { AnchorConfig, Point } from '../interfaces/plugins/IDrawingPlugin';
+export type { IndicatorCrosshair } from '../interfaces/plugins/IIndicatorPlugin';
+export type { PluginDrawingHitContext, PluginDrawingRenderContext } from './DrawingRegistry';
+export type { PluginStateSnapshot } from './PlaybackStateRegistry';
+export type { PluginSchedule } from './PluginSchedule';
+export { DataSourceRegistry } from './DataSourceRegistry';
+export { GlobalChartBus } from './GlobalChartBus';
+
+// execution and accounts
+export { DEFAULT_FILL_SEARCH } from '../lib/matchingEngine';
+export type { FillAmbiguity, FillSearchOptions, L3MatchingEngine } from '../lib/matchingEngine';
+export type { OrderGuard } from './ExecutionEngine';
+export type {
+    AccountStats,
+    EquityPoint,
+    LedgerAdjustment,
+    LedgerFill,
+    LedgerOrder,
+    LedgerPosition,
+} from './AccountManager';
+
+// event payloads, for anyone typing a ChartEvents handler
+export type { ActiveDrawingTool, Anchor, Drawing } from '../lib/types/drawing-types';
+export type { SerialTrade, TradeLine } from '../lib/types';
+export type { ChartPane, Indicator, Rect } from '../lib/types/indicator-types';
+export type { CrosshairSync, TimeRangeSync } from '../lib/types/layout-sync';
+export type { TradeLineHitMap } from '../lib/renderers/drawTradeLines';
+export type { PlaybackMode } from '../hooks/usePlaybackEngine';
+export type { DrawHook } from './RenderEngine';
+export type { InterceptableEvent, Interceptor } from './TypedEventBus';
+export { ChartState } from './ChartState';

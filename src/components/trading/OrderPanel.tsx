@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { nanoid } from 'nanoid';
 
+import { STAR_ICON_DATA_URI } from '../../assets/star-icon';
 import type { TypedEventBus } from '../../core/TypedEventBus';
 import type { ContractSpec } from '../../interfaces/IDataAdapter';
 import type { PlaceOrderRequest } from '../../lib/matchingEngine';
@@ -918,7 +919,7 @@ export function OrderPanel({
                     dragRef.current = null;
                 }}
             >
-                <img src='/icon-star.ico' alt='' className='w-5' />
+                <img src={STAR_ICON_DATA_URI} alt='' className='w-5' />
                 <span className="text-[13px] font-medium tracking-tight text-slate-100 ">
                     {symbol || 'Order'}
                 </span>
