@@ -1,0 +1,107 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Theme variables the depth components reference via hsl(var(--token)).
+   Mirrors src/app/globals.css so the dist CSS is self-contained. */
+@layer base {
+    :root {
+        --background: 0 0% 100%;
+        --foreground: 220 14% 10%;
+        --card: 0 0% 100%;
+        --card-foreground: 220 14% 10%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 220 14% 10%;
+        --primary: 221 44% 41%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 220 13% 91%;
+        --secondary-foreground: 221 44% 41%;
+        --muted: 220 14% 96%;
+        --muted-foreground: 220 14% 46%;
+        --accent: 220 100% 50%;
+        --accent-foreground: 0 0% 100%;
+        --destructive: 0 84% 60%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 220 13% 91%;
+        --input: 220 13% 91%;
+        --ring: 221 44% 41%;
+        --radius: 0.5rem;
+    }
+
+    .dark {
+        --background: 220 14% 10%;
+        --foreground: 0 0% 100%;
+        --card: 220 14% 12%;
+        --card-foreground: 0 0% 100%;
+        --popover: 220 14% 12%;
+        --popover-foreground: 0 0% 100%;
+        --primary: 221 44% 51%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 220 14% 20%;
+        --secondary-foreground: 221 44% 51%;
+        --muted: 220 14% 16%;
+        --muted-foreground: 220 14% 70%;
+        --accent: 220 100% 60%;
+        --accent-foreground: 0 0% 100%;
+        --destructive: 0 84% 60%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 220 14% 20%;
+        --input: 220 14% 20%;
+        --ring: 221 44% 51%;
+    }
+
+    [data-radix-separator-orientation='vertical'] {
+        touch-action: none;
+        user-select: none;
+    }
+
+    /* Inside the app these come from globals.css — `body { @apply bg-background
+       text-foreground }`, `* { @apply border-border }` and the global scrollbar
+       rules — which depth's components quietly inherit. A consuming app has no
+       such rules, so the library carries them itself, scoped to `.depth-root`
+       so the host page is left alone. Every depth surface wears that class,
+       including the Radix content that portals out to document.body. */
+    .depth-root {
+        font-family:
+            Inter, ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+        color: hsl(var(--foreground));
+    }
+
+    /* Utilities out-specify this: same weight, but a later layer. */
+    .depth-root,
+    .depth-root *,
+    .depth-root ::before,
+    .depth-root ::after {
+        border-color: hsl(var(--border));
+    }
+
+    .depth-root,
+    .depth-root * {
+        scrollbar-width: thin; /* Firefox */
+        scrollbar-color: hsl(var(--border)) transparent; /* Firefox */
+    }
+
+    .depth-root::-webkit-scrollbar,
+    .depth-root ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+
+    .depth-root::-webkit-scrollbar-track,
+    .depth-root ::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    .depth-root::-webkit-scrollbar-thumb,
+    .depth-root ::-webkit-scrollbar-thumb {
+        background-color: hsl(var(--border));
+        border-radius: 9999px;
+        border: 2px solid transparent; /* background-clip keeps the thumb slim */
+        background-clip: content-box;
+    }
+
+    .depth-root::-webkit-scrollbar-thumb:hover,
+    .depth-root ::-webkit-scrollbar-thumb:hover {
+        background-color: hsl(var(--foreground));
+    }
+}

@@ -1,0 +1,33 @@
+{
+    "compilerOptions": {
+        "lib": ["dom", "dom.iterable", "esnext"],
+        "target": "esnext",
+        "module": "esnext",
+        "moduleResolution": "bundler",
+        "jsx": "preserve",
+        "allowJs": true,
+        "esModuleInterop": true,
+        "isolatedModules": true,
+        "resolveJsonModule": true,
+        "skipLibCheck": true,
+        "skipDefaultLibCheck": true,
+        "noEmit": true,
+        "incremental": true,
+        "baseUrl": ".",
+        // standalone package: no `@/` alias. Depth uses relative imports only so it
+        // never resolves against a consuming app's `@/`.
+        "paths": {},
+        "strict": false,
+        "noImplicitAny": false,
+        "strictNullChecks": false,
+        "strictFunctionTypes": false,
+        "noImplicitThis": false,
+        "alwaysStrict": false,
+        "noUncheckedIndexedAccess": false,
+        "noUnusedLocals": false,
+        "noUnusedParameters": false,
+        "removeComments": false
+    },
+    "include": ["src/**/*.ts", "src/**/*.tsx"],
+    "exclude": ["node_modules", "src/components/ui/*.tsx", "src/**/*.test.ts"]
+}

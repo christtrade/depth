@@ -1,0 +1,348 @@
+# Extension Plugin System
+
+Extensions are the most powerful plugin type. Unlike indicators, drawings, and chart types - which
+all have a specific rendering role - an extension is an octopus: it can reach into every corner of
+the chart library simultaneously. It runs on the main thread, gets full access to the event bus,
+render engine, and coordinator, and can expose its own API to other plugins via the service registry.
+
+---
+
+## Anatomy of an extension script
+
+```ts
+const myExt = plugin({
+    name: "My Extension",
+    type: Plugin.extension,
+    permissions: ['render:overlay', 'ui:panel', 'ui:toolbar', 'storage', 'network', 'intercept'],
+})
+
+myExt.onInstall = function(ctx, rerender) {
+    // setup - wire up subscriptions, register panels, overlays, services, etc.
+    // rerender(state) - updates the panel UI and returns the initial React element
+
+    return function() {
+        // teardown - called on hot reload and uninstall
+        // return value of every ctx.* registration should be called here
+    }
+}
+
+myExt.panel = function(state, ctx) {
+    // returns a React element tree using h() = React.createElement
+    // called by React whenever rerender(state) is invoked
+    // ctx is the full plugin context - use it to call services, emit events, etc.
+    return h('div', null, state.count)
+}
+```
+
+---
+
+## ctx - the plugin context
+
+Everything the extension can do lives on `ctx`.
+
+---
+
+### Event bus - `ctx.eventBus`
+
+Full read access to the typed event bus. Subscribe to any chart event.
+
+```ts
+const off = ctx.eventBus.on('trade', (t) => {
+    console.log(t.price, t.size, t.side)
+})
+// call off() in teardown
+```
+
+Emit events (requires `eventbus:emit` permission - most built-in events work without it):
+
+```ts
+ctx.eventBus.emit('chart:reset-view', undefined)
+ctx.eventBus.emit('chart:set-timeframe', { tf: '5m' })
+```
+
+---
+
+### Intercepting events - `ctx.intercept`
+
+Requires `intercept` permission.
+
+Intercept and optionally mutate or block events before they reach handlers. Uses a middleware chain
+- multiple interceptors on the same event run in registration order. Call `next(data)` to pass
+through, mutate `data` before calling `next` to transform, or don't call `next` to block entirely.
+
+```ts
+const off = ctx.intercept('trading:buy-market', (data, next) => {
+    if (data.amount > 50) return          // block
+    next({ ...data, amount: Math.round(data.amount / 5) * 5 })  // mutate
+})
+```
+
+Interceptable events: `trading:buy-market`, `trading:sell-market`, `chart:set-timeframe`,
+`chart:set-symbol`, `chart:set-tool`, `drawing:add`, `drawing:remove`, `order:placed`,
+`playback:seek`, `playback:play`, `playback:pause`.
+
+---
+
+### Canvas overlays - `ctx.addOverlay`
+
+Requires `render:overlay` permission.
+
+Draw directly on the chart canvas. The hook runs inside the RAF loop - only when the relevant
+layer is dirty. Hook receives the canvas context, current view bounds, and the chart's transformer
+for coordinate conversion.
+
+```ts
+const remove = ctx.addOverlay('after-base', (canvas, view, transformer) => {
+    const y = transformer.priceToY(19500, canvas.canvas.height)
+    canvas.beginPath()
+    canvas.moveTo(0, y)
+    canvas.lineTo(canvas.canvas.width, y)
+    canvas.stroke()
+})
+// call remove() in teardown
+```
+
+Phases: `before-base` (under candles), `after-base` (over candles, under UI), `after-ui` (on top
+of everything including crosshair).
+
+To repaint after a state change, call:
+```ts
+ctx.renderEngine.markDirty('base')  // or 'ui', 'drawings'
+```
+
+The hook's third argument `transformer` always belongs to the chart currently being drawn -
+safe in multi-chart layouts.
+
+---
+
+### Panels - `ctx.registerPanel`
+
+Requires `ui:panel` permission.
+
+Registers a React element as a dockable/floating panel to the right of the chart. The panel host
+renders a header with a pin button (toggle between fixed sidebar and floating draggable window).
+
+```ts
+// Initial render - pass rerender(initialState) as the element
+const teardown = ctx.registerPanel('my-panel', rerender(state), 'Panel Title')
+// call teardown() in teardown
+```
+
+Update the panel by calling `rerender(newState)` - React re-renders only the panel component.
+`rerender` also returns the initial React element for the first `registerPanel` call.
+
+`panel(state, ctx)` is the render function - receives current state and full ctx.
+Use `h()` (= `React.createElement`) to build the element tree. No JSX, but full React.
+
+---
+
+### Toolbar buttons - `ctx.registerToolbarItem`
+
+Requires `ui:toolbar` permission.
+
+Adds a button to the main chart toolbar. Re-calling with the same `id` updates the button in place.
+
+```ts
+const remove = ctx.registerToolbarItem({
+    id: 'my-button',
+    title: 'Do something',
+    icon: h('span', { style: { fontSize: 14 } }, '⚡'),
+    active: false,       // highlighted/toggled state
+    disabled: false,
+    onClick() {
+        // stable named function - avoid closures that capture stale state
+    }
+})
+// call remove() in teardown
+```
+
+For toggled buttons, re-register with the same `id` to update `active`/`icon`:
+```ts
+ctx.registerToolbarItem({ id: 'my-button', ..., active: newState })
+```
+
+---
+
+### Storage - `ctx.storage`
+
+Requires `storage` permission. Namespaced to the plugin - no collisions between plugins.
+
+```ts
+ctx.storage.get('key', defaultValue)   // returns stored value or default
+ctx.storage.set('key', value)          // persists across sessions (localStorage)
+ctx.storage.delete('key')
+ctx.storage.clear()                    // clears all keys for this plugin only
+```
+
+---
+
+### Network - `ctx.fetch`
+
+Requires the `network` permission AND the target origin in the plugin's `origins`.
+Anything else rejects. Full Request/Response API otherwise.
+
+```ts
+const p = plugin({
+    name: "Example",
+    type: PluginType.extension,
+    permissions: ['network'],
+    origins: ['https://api.example.com'],
+})
+
+const data = await ctx.fetch('https://api.example.com/data').then(r => r.json())
+```
+
+Path and query don't matter, only the origin - and a different scheme or port is
+a different origin. `network` with no `origins` reaches nothing: the permission
+says a plugin may make requests, the list says where to, and a plugin holding
+someone's API key is only trustworthy if it can't post that key elsewhere.
+
+---
+
+### Audio - `ctx.playSound`
+
+Requires `audio` permission.
+
+```ts
+ctx.playSound('https://example.com/alert.mp3')
+```
+
+---
+
+### Lifecycle hooks - `ctx.lifecycle`
+
+No permission required. Sugar over eventBus subscriptions - all return teardown functions.
+
+```ts
+const off1 = ctx.lifecycle.onSymbolChange((symbol) => { ... })
+const off2 = ctx.lifecycle.onTimeframeChange((tf) => { ... })
+const off3 = ctx.lifecycle.onThemeChange((theme) => { ... })  // 'light' | 'dark'
+const off4 = ctx.lifecycle.onFocus(() => { ... })   // chart gains focus
+const off5 = ctx.lifecycle.onBlur(() => { ... })    // chart loses focus
+// call all in teardown
+```
+
+---
+
+### Service registry - `ctx.services`
+
+No permission required. Enables inter-plugin communication without coupling.
+
+**Publishing a service** (plugin A):
+```ts
+const unregister = ctx.services.register('my-service', {
+    getValue: () => state.value,
+    setValue: (v) => { state = { ...state, value: v }; rerender(state) },
+})
+// call unregister() in teardown - automatically notifies consumers via onRemoved
+```
+
+**Consuming a service** (plugin B):
+```ts
+// get() - synchronous, returns null if not registered yet
+const api = ctx.services.get('my-service')
+
+// on() - fires immediately if available, then again if it re-registers (e.g. hot reload)
+const offService = ctx.services.on('my-service', {
+    onAvailable: (api) => {
+        myApi = api
+        ctx.renderEngine.markDirty('base')
+    },
+    onRemoved: () => {
+        myApi = null
+        ctx.renderEngine.markDirty('base')
+    }
+})
+// call offService() in teardown
+```
+
+Load order doesn't matter - `on()` fires immediately if the service is already up, or waits if not.
+Hot reload of the provider plugin is handled automatically: `onRemoved` fires, then `onAvailable`
+fires again with the fresh API.
+
+---
+
+## Permissions reference
+
+| Permission | What it unlocks |
+|---|---|
+| `render:overlay` | `ctx.addOverlay`, `ctx.renderEngine` |
+| `ui:panel` | `ctx.registerPanel` |
+| `ui:toolbar` | `ctx.registerToolbarItem` |
+| `storage` | `ctx.storage` |
+| `network` | `ctx.fetch`, to the declared `origins` only |
+| `data:write` | `ctx.registerDataSource` |
+| `audio` | `ctx.playSound` |
+| `intercept` | `ctx.intercept` |
+
+`ctx.eventBus`, `ctx.services`, `ctx.lifecycle` require no permission - all extensions get them.
+
+---
+
+## Teardown checklist
+
+Everything registered must be cleaned up. Return a function from `onInstall`:
+
+```ts
+myExt.onInstall = function(ctx, rerender) {
+    const off1 = ctx.eventBus.on(...)
+    const off2 = ctx.intercept(...)
+    const off3 = ctx.addOverlay(...)
+    const off4 = ctx.registerPanel(...)
+    const off5 = ctx.registerToolbarItem(...)
+    const off6 = ctx.services.register(...)
+    const off7 = ctx.services.on(...)
+    const off8 = ctx.lifecycle.onSymbolChange(...)
+
+    return () => {
+        off1(); off2(); off3(); off4()
+        off5(); off6(); off7(); off8()
+    }
+}
+```
+
+Missing a teardown = memory leak + stale listeners on hot reload.
+
+---
+
+## Data sources - `ctx.registerDataSource`
+
+Requires `data:write`. Claim symbols and serve them yourself - a derived
+instrument, or a whole venue behind the user's own API key. The chart treats
+them like the adapter's own: same picker, same drawings, same order entry.
+
+```ts
+ctx.registerDataSource({
+    // exact symbols, or `prefix: 'MASS:'` to claim a namespace
+    symbols: ['SPREAD:ES-NQ'],
+
+    // without this the chart falls back to a 24/7 two-decimal default, which
+    // formats prices wrong and sizes orders against a tick value that isnt real
+    resolveSymbol: (symbol) => ({
+        symbol,
+        type: 'future',
+        dataLevel: 'ohlcv',
+        priceFormat: { minTick: 0.25, precision: 2 },
+        contract: { tickSize: 0.25, tickValue: 5, currency: 'USD' },
+    }),
+
+    // a prefix source has to answer the picker itself
+    searchSymbols: ({ query }) => [...],
+
+    load: async ({ symbol, barNs, start, end }) => ({
+        bars: [{ ts, open, high, low, close, volume }],  // ts in nanoseconds
+        dataStart: Date.parse(start),
+        dataEnd: Date.parse(end),
+        hasMore: true,
+    }),
+
+    loadMore: async ({ before }) => ({ ... }),           // backward pan
+    onTick: ({ trade, barNs }) => ({ ... }) || null,     // live bar building
+})
+```
+
+Exact symbols beat prefixes, and the longest prefix wins, so `''` as a catch-all
+doesnt stop a later `MASS:` source claiming its own. While one of these symbols
+is active the real adapter steps aside entirely.
+
+The returned function unregisters - call it in your teardown.

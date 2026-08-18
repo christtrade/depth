@@ -1,0 +1,323 @@
+# Plugin Params - All Field Types
+
+Every key in `params` maps to one settings field. Indicators, drawing tools and
+chart types all declare them the same way; only where they show up differs:
+
+  indicator    Params tab of the indicator settings dialog
+  drawing      Style tab of the drawing settings dialog
+  chart-type   a tab of its own in the chart settings dialog, named after the plugin
+
+Compound types (`dualColor`, `dualOpacity`, `colorGradient`, `colorWithOpacity`,
+`toggledColor`, `toggledInput`, `inlineFields`) expand into multiple settings keys
+using the param name as a prefix:
+
+  dualColor       "colors"  →  colors_a, colors_b
+  dualOpacity     "opac"    →  opac_a, opac_b
+  colorGradient   "grad"    →  grad_start, grad_end
+  colorWithOpacity "fill"   →  fill_color, fill_opacity
+  toggledColor    "band"    →  band_on, band_color
+  toggledInput    "offset"  →  offset_on, offset_val
+  inlineFields    -         →  each sub-field carries its own flat key
+
+All derived keys are available as `params.key_suffix` inside init() and update().
+
+---
+
+## Full reference example (every type)
+
+```js
+const p = plugin({
+    name: "All Params Demo",
+    type: PluginType.indicator,
+    layout: Layout.overlay,
+    lookback: (p) => p.period,
+
+    params: {
+
+        // ── Numeric inputs ────────────────────────────────────────────────────
+
+        // Free numeric field - clamped to [min,max] on blur/Enter.
+        period: {
+            label: 'Period',
+            type: 'number',
+            default: 20,
+            min: 1, max: 500, step: 1,
+            unit: 'bars',
+        },
+
+        // Integer stepper with − / + buttons.
+        smoothing: {
+            label: 'Smoothing',
+            type: 'stepperInt',
+            default: 3,
+            min: 1, max: 20,
+        },
+
+        // Continuous drag slider.
+        threshold: {
+            label: 'Threshold',
+            type: 'slider',
+            default: 50,
+            min: 0, max: 100, step: 1,
+            suffix: '%',
+        },
+
+        // Slider with labelled snap points - value is always one of the step values.
+        speed: {
+            label: 'Speed',
+            type: 'rangeWithSteps',
+            default: 2,
+            min: 1, max: 5,
+            steps: [
+                { value: 1, label: 'Slow' },
+                { value: 2, label: 'Normal' },
+                { value: 3, label: 'Fast' },
+                { value: 5, label: 'Max' },
+            ],
+        },
+
+        // ── Opacity / size ────────────────────────────────────────────────────
+
+        // 0–1 slider shown as a percentage.
+        opacity: {
+            label: 'Opacity',
+            type: 'opacity',
+            default: 0.8,
+        },
+
+        // 8–48 px slider.
+        labelSize: {
+            label: 'Label size',
+            type: 'fontSize',
+            default: 12,
+        },
+
+        // ── Colors ────────────────────────────────────────────────────────────
+
+        // Swatch grid + full color picker.
+        lineColor: {
+            label: 'Line color',
+            type: 'color',
+            default: '#3b82f6',
+        },
+
+        // Two color pickers side by side.
+        // Produces: updown_a (up color), updown_b (down color)
+        updown: {
+            label: 'Up / Down colors',
+            type: 'dualColor',
+            labelA: 'Up',   defaultA: '#22c55e',
+            labelB: 'Down', defaultB: '#ef4444',
+        },
+
+        // Color picker + gradient preview bar.
+        // Produces: grad_start, grad_end
+        grad: {
+            label: 'Gradient',
+            type: 'colorGradient',
+            defaultStart: '#3b82f6',
+            defaultEnd:   '#8b5cf6',
+        },
+
+        // Color picker paired with an opacity slider.
+        // Produces: fill_color, fill_opacity
+        fill: {
+            label: 'Fill',
+            type: 'colorWithOpacity',
+            defaultColor:   '#3b82f6',
+            defaultOpacity: 0.2,
+        },
+
+        // Switch that expands to reveal a color picker when enabled.
+        // Produces: midline_on, midline_color
+        midline: {
+            label: 'Mid-line',
+            type: 'toggledColor',
+            defaultToggle: false,
+            defaultColor:  '#ffffff',
+        },
+
+        // ── Opacity pairs ─────────────────────────────────────────────────────
+
+        // Two independent opacity sliders side by side.
+        // Produces: opac_a (body opacity), opac_b (wick opacity)
+        opac: {
+            label: 'Opacity',
+            type: 'dualOpacity',
+            labelA: 'Body', defaultA: 0.8,
+            labelB: 'Wick', defaultB: 0.4,
+        },
+
+        // ── Booleans ─────────────────────────────────────────────────────────
+
+        // Large toggle row (Switch component).
+        showLabels: {
+            label: 'Show labels',
+            type: 'boolean',
+            default: true,
+        },
+
+        // Compact checkbox.
+        extendRight: {
+            label: 'Extend right',
+            type: 'checkbox',
+            default: false,
+            description: 'Draw line to the right edge of the chart',
+        },
+
+        // Switch + numeric input; the input dims when the switch is off.
+        // Produces: offset_on, offset_val
+        offset: {
+            label: 'Offset',
+            type: 'toggledInput',
+            toggleLabel: 'Apply offset',
+            inputLabel:  'Bars',
+            defaultToggle: false,
+            defaultInput:  0,
+            min: -100, max: 100, step: 1,
+        },
+
+        // ── Text / string ─────────────────────────────────────────────────────
+
+        // Single-line text input.
+        prefix: {
+            label: 'Label prefix',
+            type: 'text',
+            default: 'MA',
+            placeholder: 'e.g. EMA',
+            maxLength: 10,
+        },
+
+        // ── Enumerated choices ────────────────────────────────────────────────
+
+        // Dropdown.
+        source: {
+            label: 'Source',
+            type: 'select',
+            default: 'close',
+            options: ['open', 'high', 'low', 'close', 'hl2', 'hlc3', 'ohlc4'],
+            // or with custom labels:
+            // options: [{ value: 'close', label: 'Close' }, ...]
+        },
+
+        // Mutually-exclusive labelled button strip.
+        lineStyle: {
+            label: 'Line style',
+            type: 'buttonGroup',
+            default: 'solid',
+            options: [
+                { value: 'solid',  label: 'Solid' },
+                { value: 'dashed', label: 'Dashed' },
+                { value: 'dotted', label: 'Dotted' },
+            ],
+        },
+
+        // ── Compact inline row ────────────────────────────────────────────────
+
+        // Several small controls on one row.
+        // Each sub-field carries its own flat key (no prefix).
+        sizing: {
+            label: 'Size & style',
+            type: 'inlineFields',
+            fields: [
+                { type: 'stepperInt',  key: 'lineWidth', label: 'px', default: 2, min: 1, max: 10 },
+                { type: 'buttonGroup', key: 'capStyle',  label: 'Cap',
+                  default: 'round',
+                  options: [{ value: 'butt', label: 'Butt' }, { value: 'round', label: 'Round' }] },
+                { type: 'checkbox',    key: 'boldText',  label: 'Bold', default: false },
+            ],
+        },
+    },
+})
+
+p.init = ({ data, params }) => {
+    // Single-key params are accessed by their name:
+    //   params.period, params.lineColor, params.opacity, ...
+    //
+    // Compound params use the suffix convention:
+    //   params.updown_a, params.updown_b      (dualColor)
+    //   params.grad_start, params.grad_end    (colorGradient)
+    //   params.fill_color, params.fill_opacity (colorWithOpacity)
+    //   params.midline_on, params.midline_color (toggledColor)
+    //   params.offset_on, params.offset_val   (toggledInput)
+    //   params.opac_a, params.opac_b          (dualOpacity)
+    //
+    // inlineFields sub-keys are flat:
+    //   params.lineWidth, params.capStyle, params.boldText
+
+    return {
+        ma: toPoints(data.ohlcv, sma(data.ohlcv, params.period)),
+    }
+}
+```
+
+---
+
+## Notes
+
+- When the user changes a param the worker automatically re-runs `init()` - no
+  manual bookkeeping needed.
+
+- `lookback` accepts a function of params so the data window adjusts live:
+  ```js
+  lookback: (p) => p.period * 2,
+  ```
+
+- All param keys (including compound sub-keys) are passed to `update()` as
+  `params` too, so long-running indicators can reference them on each bar.
+
+- For style-only settings that don't affect computation, add them directly to
+  `settingsSchema` with `tab: 'style'` instead of using `params` - they won't
+  trigger a worker recompute, just a canvas redraw.
+
+---
+
+## Drawing tools
+
+A drawing's params live in that drawing's own `data`, not on the tool, so every
+box you place is styled separately. They arrive as `ctx.data.<key>` in onRender,
+onPreview, onHitTest and onMove - compound types keep the same suffixes, so
+`fill_color` and `fill_opacity` for a `colorWithOpacity` named `fill`.
+
+Defaults fill in underneath whatever the drawing stored, so adding a param
+doesn't break the drawings already on the chart.
+
+```js
+const box = plugin({
+    name: "Box",
+    type: PluginType.drawing,
+    anchorCount: 2,
+    params: {
+        line: { label: 'Border', type: 'color', default: '#38bdf8' },
+        width: { label: 'Line width', type: 'stepperInt', default: 2, min: 1, max: 8 },
+    },
+})
+
+box.onRender = ({ ctx, data }) => {
+    ctx.strokeStyle = data.line
+    ctx.lineWidth = data.width
+}
+```
+
+## Chart types
+
+One chart type is active at a time, so its params are a single set rather than
+per-instance. They arrive as `params` in init() and update() - a change re-runs
+init() the same way it does for an indicator - and on the draw context.
+
+```js
+const bars = plugin({
+    name: "Bars",
+    type: PluginType.chartType,
+    params: {
+        bodyWidth: { label: 'Body width', type: 'slider', default: 0.6, min: 0.1, max: 1, step: 0.05 },
+    },
+})
+
+bars.draw = (state, { ctx, rect, transformer, params }) => {
+    const bw = transformer.getBarPx(rect.w) * params.bodyWidth
+}
+```
+
+The values are saved with the chart under `ChartSettings.pluginSettings`, keyed
+by the plugin's id, and handed back when it reinstalls.

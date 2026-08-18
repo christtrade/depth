@@ -1,0 +1,159 @@
+# WebAssembly plugins
+
+An indicator can hand its number crunching to a compiled module:
+
+```js
+const p = plugin({
+    name: "SMA (wasm)",
+    type: PluginType.indicator,
+    layout: Layout.overlay,
+    params: {
+        period: { label: 'Period', type: 'number', default: 20, min: 1, max: 500 },
+    },
+})
+
+p.wasm = "/plugins/sma.wasm"
+
+p.draw = (values) => [drawLine(values, "#3b82f6", 2)]
+```
+
+`p.wasm` replaces init() and update(), nothing else. draw() still runs in JS on
+the plugin's worker, and drawDirect / drawUI still run on the main thread, so
+the module never has to know anything about rendering.
+
+The module is fetched and compiled once per URL. Plugins sharing a URL share
+the compile but each gets its own instance, with its own memory - so a module's
+globals are its state, and nothing has to be threaded back in through the ABI.
+Saving the script refetches it, so rebuilding a .wasm and hitting save picks the
+new one up.
+
+---
+
+## The ABI
+
+Exports the module must have:
+
+    memory
+    alloc(bytes: i32) -> i32            8-aligned, 0 if it cannot
+    dealloc(ptr: i32, bytes: i32)
+    init(bars, barRows, trades, tradeRows, barMs: f64) -> i32
+
+Exports it may have:
+
+    update(bars, barRows, trades, tradeRows, barMs: f64) -> i32
+    set_params(ptr: i32, bytes: i32)
+
+Imports the host provides, all optional to use:
+
+    env.log(ptr: i32, len: i32)         utf8, goes to the console
+    env.abort()                         throws on the host side
+
+### Input
+
+`bars` and `trades` are pointers to rows of f64, or 0 with a row count of 0 when
+the plugin's `require` means there are none.
+
+    bar row      6 doubles   ts(ms), open, high, low, close, volume
+    trade row    4 doubles   ts(ms), price, size, side     side: 0 buy, 1 sell
+
+Timestamps cross as milliseconds. A double holds those exactly for the next
+285,000 years, where nanoseconds start rounding as soon as they pass 2^53.
+
+`barMs` is the timeframe's bar duration in milliseconds, 0 in tick mode.
+
+The host allocates these buffers, writes them, calls you, then deallocs them in
+the reverse order it allocated - so a bump allocator gets its space back.
+
+### Output
+
+Return a pointer to:
+
+    i32   count
+    i32   padding, so the doubles land 8-aligned
+    f64 * count
+
+Return 0 for "nothing". The host copies the doubles out immediately, so the
+buffer is yours to reuse on the next call.
+
+init() returns the whole series. update() returns only the values it just
+produced - the host appends them to what it already has. Without an update
+export the whole window goes through init() again on every tick: correct, just
+slower.
+
+### Params
+
+If the plugin declares `params` and the module exports `set_params`, the current
+values arrive as UTF-8 JSON right before init(). Compound param types use the
+same suffixed keys they do everywhere else, so a `colorWithOpacity` named `fill`
+is `fill_color` and `fill_opacity` (see plugin-params.txt).
+
+---
+
+## Building one
+
+Any language that compiles to plain wasm32 works, as long as it does not need
+WASI or a JS glue file. With clang:
+
+    clang --target=wasm32 -nostdlib -O2 -Wl,--no-entry -o sma.wasm sma.c
+
+`-nostdlib` means no malloc, so the module brings its own allocator. The example
+uses a bump allocator that resets on init, which is a good fit: a chart
+recomputes from scratch often.
+
+examples/wasm/sma.c is a complete module - allocator, params, rolling state,
+incremental update - in about 120 lines.
+
+---
+
+## Shaping the output
+
+The module hands back a flat Float64Array. Whatever it puts there is what draw()
+receives as its state, so a module emitting one value per bar has to be zipped
+against the timestamps before drawLine() will take it - and draw() is not given
+the bars. Two ways out: emit the timestamp alongside every value (what
+examples/wasm/sma.c does), or define init(), where the bars are in scope and the
+module's output arrives as `wasm`:
+
+```js
+p.wasm = "/plugins/bands.wasm"
+
+// three values per bar: upper, mid, lower
+p.init = ({ data, wasm }) => {
+    const upper = [], mid = [], lower = []
+    for (let i = 0; i < data.ohlcv.length; i++) {
+        upper.push({ t: data.ohlcv[i].ts, price: wasm[i * 3] })
+        mid.push({ t: data.ohlcv[i].ts, price: wasm[i * 3 + 1] })
+        lower.push({ t: data.ohlcv[i].ts, price: wasm[i * 3 + 2] })
+    }
+    return { upper, mid, lower }
+}
+
+p.update = ({ state, wasm }) => ({ state, points: null })
+
+p.draw = (s) => [
+    drawLine(s.upper, "#ef4444", 1),
+    drawLine(s.mid, "#e0e0e0", 1),
+    drawLine(s.lower, "#22c55e", 1),
+]
+```
+
+init() gets the full output, update() gets only the new slice. Whatever they
+return becomes the state draw() sees, exactly as it would without wasm.
+
+Note the layout: several values per bar have to be **interleaved**, as above,
+never grouped into one block per series. update() hands back only the rows it
+just produced and the host concatenates them onto the ones it already has, so
+grouped blocks stop lining up on the first tick.
+
+---
+
+## Notes
+
+- A module runs in the plugin's worker: no DOM, no network, no way out except
+  its return value and env.log.
+- The URL is fetched with the page's own credentials and has to be reachable
+  from the browser. Same-origin, or a host that sends CORS headers.
+- A NaN means "no value here" and the chart leaves a gap for it, which is how a
+  warmup period is drawn.
+- Throwing on the wasm side (a trap, or env.abort) surfaces as a plugin error in
+  the editor, the same as a JS exception.
