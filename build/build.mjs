@@ -56,9 +56,38 @@ const shared = {
     logOverride: { 'ignored-directive': 'silent' },
 };
 
+// The compute half of the scripted-plugin runtime, for hosts with no DOM - the
+// strategy runner on the server is the reason it exists. Deliberately not part
+// of the main bundle's entry graph: it is built from its own entry with
+// platform 'neutral' and no 'use client' banner, so a Worker or a Node process
+// can import it without pulling in React, the renderers, or a canvas reference.
+// build/probe-script-runtime.mjs asserts that stays true.
+const scriptRuntime = {
+    entryPoints: [path.join(root, 'src/core/script-runtime.ts')],
+    bundle: true,
+    minify: true,
+    sourcemap: false,
+    legalComments: 'none',
+    target: TARGET,
+    platform: 'neutral',
+    mainFields: ['module', 'main'],
+    conditions: ['import', 'default'],
+};
+
 const results = await Promise.all([
     esbuild.build({ ...shared, format: 'esm', outfile: path.join(dist, 'depth.mjs') }),
     esbuild.build({ ...shared, format: 'cjs', outfile: path.join(dist, 'depth.cjs') }),
+    esbuild.build({
+        ...scriptRuntime,
+        format: 'esm',
+        outfile: path.join(dist, 'script-runtime.mjs'),
+    }),
+    esbuild.build({
+        ...scriptRuntime,
+        format: 'cjs',
+        platform: 'node',
+        outfile: path.join(dist, 'script-runtime.cjs'),
+    }),
 ]);
 
 for (const r of results) {
@@ -86,6 +115,13 @@ await writeFile(
             types: './index.d.ts',
             exports: {
                 '.': { types: './index.d.ts', import: './depth.mjs', require: './depth.cjs' },
+                // no React in here, so it carries no peer requirement and can be
+                // imported from a Worker or a Node process
+                './script-runtime': {
+                    types: './types/core/script-runtime.d.ts',
+                    import: './script-runtime.mjs',
+                    require: './script-runtime.cjs',
+                },
                 './depth.css': './depth.css',
                 './depth.nopreflight.css': './depth.nopreflight.css',
                 // Some tooling reads this directly; without it they get
@@ -119,4 +155,4 @@ await copyFile(path.join(root, 'README.md'), path.join(dist, 'README.md'));
 await copyFile(path.join(root, 'LICENSE.md'), path.join(dist, 'LICENSE.md'));
 await copyFile(path.join(root, 'NOTICE'), path.join(dist, 'NOTICE'));
 
-console.log('built dist/depth.mjs + dist/depth.cjs');
+console.log('built dist/depth.mjs + dist/depth.cjs + dist/script-runtime.{mjs,cjs}');

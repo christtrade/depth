@@ -1,15 +1,22 @@
-// indicator helpers, with two consumers. compiled plugins import them normally.
-// scripted plugins get each one as a named property on the sandbox scope, so a
-// user calls sma() or ema() inside init/update/draw as if it were a global - no
-// string injection, no eval of source.
+// indicator helpers, with three consumers now. compiled plugins import them
+// normally. scripted plugins get each one as a named property on the sandbox
+// scope, so a user calls sma() or ema() inside init/update/draw as if it were a
+// global - no string injection, no eval of source. and the strategy runner
+// bundles STDLIB server-side, which is why the imports below matter: this module
+// has to stay reachable from a non-DOM bundle.
+//
+// so keep every import here `import type` unless the value is genuinely needed
+// at runtime (luxon is), and never import from the '../core' barrel - pulling
+// the barrel in for a type drags the entire chart core into a server bundle.
+// the executeDrawCommands half of this file does touch canvas, but only from
+// inside function bodies that a server never calls, so it tree-shakes out.
 //
 // to add a helper: write it here with no imports and no module-level closures,
-// add it to STDLIB at the bottom, then add a line to buildSandboxScope in the
-// worker.
+// add it to STDLIB at the bottom, then add a line to buildScope in the worker.
 
 import { DateTime } from 'luxon';
-import { LiveTransformer } from '../core';
 
+import type { LiveTransformer } from '../interfaces/ICoordinateTransformer';
 import type { RenderContext } from './types/indicator-types';
 // Types
 export interface OhlcvBar {

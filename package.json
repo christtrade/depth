@@ -1,6 +1,6 @@
 {
     "name": "@christtrade/depth",
-    "version": "0.12.23",
+    "version": "0.12.24",
     "description": "Depth - the charting library built for ChristTrade.",
     "author": "ChristTrade",
     "license": "Apache-2.0",
@@ -14,11 +14,13 @@
     "types": "./src/core/index.ts",
     "exports": {
         ".": "./src/core/index.ts",
-        "./react": "./src/ChartOuter.tsx"
+        "./react": "./src/ChartOuter.tsx",
+        "./script-runtime": "./src/core/script-runtime.ts"
     },
     "scripts": {
-        "dist": "npm run dist:js && npm run dist:types && npm run dist:css && npm run dist:smoke",
+        "dist": "npm run dist:js && npm run dist:types && npm run dist:css && npm run dist:smoke && npm run probe:script-runtime",
         "dist:smoke": "node build/smoke.mjs",
+        "probe:script-runtime": "node build/probe-script-runtime.mjs",
         "dist:slim": "SLIM=1 npm run dist:js && npm run dist:types && npm run dist:css && npm run dist:smoke",
         "dist:js": "node build/build.mjs",
         "dist:types": "tsc -p tsconfig.json --declaration --emitDeclarationOnly --noEmit false --incremental false --outDir dist/types",

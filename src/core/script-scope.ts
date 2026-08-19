@@ -15,8 +15,7 @@
 // inside it, where the user's declarations live. plugin() is inert here - the
 // worker owns registration, and were only re-running for the declarations.
 
-import { STDLIB } from '../lib/indicator-stdlib';
-import { SCRIPT_DSL } from './script-dsl';
+import { buildScriptScope } from './script-runtime';
 
 /** Resolves a handler source string against a prepared script scope. */
 export type ScopedCompiler = <T extends Function>(src: string | null | undefined) => T | null;
@@ -39,15 +38,17 @@ export function makeScopedCompiler(
     let resolve: ((src: string) => unknown) | null = null;
 
     try {
-        const scope: Record<string, unknown> = {
-            ...SCRIPT_DSL,
+        const scope = buildScriptScope({
             // registration already happened in the worker, so swallow it here.
             // the object still has to accept the handler assignments the script
             // makes on it, which a plain object does fine.
             plugin: () => ({}),
-            ...STDLIB,
-            ...extra,
-        };
+            // main thread: fetch and friends are the page's own, and a handler
+            // holding a ctx legitimately reaches them. blanking them here would
+            // break onRender for no gain - the worker already owns the compute.
+            shadowNetwork: false,
+            extra,
+        });
         const keys = Object.keys(scope);
         // direct eval, so the resolver reads the scope of the function body the
         // script was evaluated into - thats where its own consts and functions

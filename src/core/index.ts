@@ -269,6 +269,12 @@ export type { TradingViewImportResult } from '../lib/tradingview-import';
 // data adapters
 export { DataAdapterError, makeTimeRange, nsToIso } from '../interfaces/IDataAdapter';
 export { isoToNs } from '../lib/sampler';
+// order book reconstruction, for adapters that serve MBO/L3
+export { createBook, applyEvent, getBestBid, getBestAsk } from '../lib/book';
+export type { BookState } from '../lib/types';
+// footprint bars, for adapters aggregating their own
+export { buildFootprint } from '../lib/types/footprint';
+export type { FootprintLevel, FootprintMode, PriceRange } from '../lib/types/footprint';
 export type {
     BarPreviewResponse,
     BarResponse,

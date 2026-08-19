@@ -20,31 +20,19 @@
 // destroy goes through one promise chain - otherwise an update could overtake
 // the run-init it depends on.
 
-import { STDLIB } from '../lib/indicator-stdlib';
-import { PluginType, DataLevel, Layout } from './script-dsl';
+import { buildScriptScope } from './script-runtime';
 import { evictWasmModule, instantiateWasmPlugin, type WasmPlugin } from './WasmPluginHost';
 
 // were in a worker so theres no DOM to escape to, but shadow the network APIs to
 // stop exfiltration. dont freeze it, the user needs mutable top-level vars.
+//
+// the scope itself is built in script-runtime.ts, shared with the main-thread
+// compiler and the server-side strategy runner - a script that parses in one and
+// throws in another is the worst bug this system can have, so there is one
+// builder and the hosts differ only by its options.
 
 function buildScope(pluginDecl: (d: unknown) => void): Record<string, unknown> {
-    const scope: Record<string, unknown> = {
-        PluginType,
-        DataLevel,
-        Layout,
-        Math,
-        console,
-        plugin: pluginDecl,
-        // worker-side code never fetches - network goes through ctx.fetch on the
-        // main thread, which is gated on the manifest's declared origins. leaving
-        // the global reachable here routes straight around that gate.
-        fetch: undefined,
-        XMLHttpRequest: undefined,
-        WebSocket: undefined,
-        importScripts: undefined,
-    };
-    for (const [k, v] of Object.entries(STDLIB)) scope[k] = v;
-    return scope;
+    return buildScriptScope({ plugin: pluginDecl, shadowNetwork: true });
 }
 
 interface PluginEntry {
