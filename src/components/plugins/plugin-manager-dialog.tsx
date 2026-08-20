@@ -12,6 +12,7 @@ import {
     LineChart,
     Plug,
     Search,
+    TrendingUp,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import {
@@ -49,6 +50,7 @@ interface Row {
 
 const KIND_META: Record<Kind, { label: string; Icon: typeof LineChart }> = {
     indicator: { label: 'Indicators', Icon: LineChart },
+    strategy: { label: 'Strategies', Icon: TrendingUp },
     drawing: { label: 'Drawings', Icon: DraftingCompass },
     'chart-type': { label: 'Chart types', Icon: BarChart2 },
     extension: { label: 'Extensions', Icon: Cpu },
@@ -59,6 +61,7 @@ const KIND_META: Record<Kind, { label: string; Icon: typeof LineChart }> = {
 const KIND_ORDER: Kind[] = [
     'extension',
     'indicator',
+    'strategy',
     'drawing',
     'chart-type',
     'data-source',

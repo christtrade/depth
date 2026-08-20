@@ -16,7 +16,13 @@ import type { BracketAmendment } from '../../lib/types/trading-types';
 import type { PlaceOrderRequest } from '../../lib/matchingEngine';
 
 // Plugin classification
-export type PluginType = 'indicator' | 'drawing' | 'chart-type' | 'data-source' | 'extension';
+export type PluginType =
+    | 'indicator'
+    | 'drawing'
+    | 'chart-type'
+    | 'data-source'
+    | 'extension'
+    | 'strategy';
 
 // Permissions
 export type Permission =

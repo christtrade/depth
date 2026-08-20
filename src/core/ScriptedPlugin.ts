@@ -14,6 +14,12 @@ import type {
 import type { DataLevel } from '../interfaces/IDataAdapter';
 import type { Indicator, RenderContext } from '../lib/types/indicator-types';
 import { executeDrawCommands, type DrawCommand } from '../lib/indicator-stdlib';
+import type {
+    StrategyEquityPoint,
+    StrategyPosition,
+    StrategyStats,
+    StrategyTrade,
+} from './strategy-runtime';
 import type { OhlcvBar } from '../lib/indicator-stdlib';
 import { makeScopedCompiler } from './script-scope';
 import type { IndicatorSettingField } from '../components/indicators/indicators-settings-dialog';
@@ -208,7 +214,7 @@ function initParamDefaults(key: string, def: ParamDef, out: Record<string, unkno
 interface ScriptDeclaration {
     id?: string;
     name: string;
-    type: 'indicator' | 'drawing' | 'chart-type' | 'data-source' | 'extension';
+    type: 'indicator' | 'drawing' | 'chart-type' | 'data-source' | 'extension' | 'strategy';
     require?: DataLevel;
     version?: string;
     layout?: 'overlay' | 'pane';
@@ -230,6 +236,25 @@ interface ScriptDeclaration {
      */
     lookback?: number | ((params: Record<string, unknown>) => number);
     params?: Record<string, ParamDef>;
+    /**
+     * Strategy account and fill settings. Every field is optional and falls back
+     * to DEFAULT_STRATEGY_CONFIG. A `params` entry of the same name overrides
+     * what is declared here, so commission and slippage can be swept from the
+     * settings dialog without touching the script.
+     */
+    strategy?: {
+        initialCapital?: number;
+        commission?: number;
+        slippageTicks?: number;
+        /** Overrides what SymbolInfo says. Rarely what you want. */
+        tickSize?: number;
+        contractSize?: number;
+        qtyStep?: number;
+        /** Entries allowed in the same direction. 1 = no adds. */
+        pyramiding?: number;
+        /** Whether an opposite order flips the position or only flattens it. */
+        allowReverse?: boolean;
+    };
     // drawing tool specific
     anchorCount?: number | 'dynamic';
     cursor?: string;
@@ -605,6 +630,25 @@ const indicatorCapability: CapabilityHandler = (
     let lastComputeData: Record<string, unknown> | null = null;
     let lastComputeBarNs: bigint = 0n;
 
+    const symbolContract = (): unknown => {
+        try {
+            const info = ctx.getData?.().symbolInfo;
+            if (!info) return null;
+            return {
+                symbol: info.symbol,
+                contract: info.contract ?? null,
+                priceFormat: info.priceFormat
+                    ? { minTick: info.priceFormat.minTick }
+                    : null,
+                tickSize: info.tickSize,
+            };
+        } catch {
+            // getData needs the data:read permission and a mounted chart; a
+            // strategy without either just falls back to its declared config
+            return null;
+        }
+    };
+
     // Indicator object
     const indicator: Indicator = {
         id: entryId,
@@ -707,6 +751,7 @@ const indicatorCapability: CapabilityHandler = (
                 data: lastComputeData,
                 barNs: lastComputeBarNs,
                 params: { ...currentParams },
+                symbolInfo: symbolContract(),
             });
         }
         // re-register with the new lookback if it depends on a param
@@ -719,6 +764,23 @@ const indicatorCapability: CapabilityHandler = (
             });
         }
     };
+
+    const offApplyParams = ctx.eventBus.on('plugin:apply-params', ({ id, params }) => {
+        if (id !== entryId) return;
+
+        const accepted: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(params)) {
+            // ignore anything that is not a declared param of this plugin -
+            // a sweep grid can carry keys from a strategy that is no longer the
+            // selected one, and silently writing those would corrupt settings
+            if (allParamKeys.has(key)) accepted[key] = value;
+        }
+        if (!Object.keys(accepted).length) return;
+
+        Object.assign(indicator.settings as object, accepted);
+        (indicator as any).__onParamsChanged(accepted);
+        ctx.eventBus.emit('plugin:indicator-updated', { id: entryId });
+    });
 
     onWorkerUpdate((msg) => {
         drawCommands = msg.drawCommands ?? [];
@@ -752,6 +814,7 @@ const indicatorCapability: CapabilityHandler = (
                 data,
                 barNs,
                 params: { ...currentParams },
+                symbolInfo: symbolContract(),
             });
         },
     );
@@ -778,6 +841,7 @@ const indicatorCapability: CapabilityHandler = (
                 barNs,
                 horizon,
                 params: { ...currentParams },
+                symbolInfo: symbolContract(),
             });
         },
     );
@@ -805,6 +869,7 @@ const indicatorCapability: CapabilityHandler = (
     return () => {
         offCompute();
         offAdvance();
+        offApplyParams();
         if (layout === 'pane') ctx.eventBus.emit('plugin:remove-pane', { id: entryId });
     };
 };
@@ -1401,11 +1466,193 @@ const extensionCapability: CapabilityHandler = (
 
 // declaration type -> handler. one entry per plugin type.
 
+ // the settings every strategy gets in its dialog without declaring anything
+function buildStrategySettings(decl: ScriptDeclaration): Record<string, ParamDef> {
+    const d = decl.strategy ?? {};
+    return {
+        initialCapital: {
+            label: 'Initial capital',
+            type: 'number',
+            default: d.initialCapital ?? 100_000,
+            min: 1,
+            step: 1000,
+        },
+        commission: {
+            label: 'Commission',
+            type: 'number',
+            default: d.commission ?? 0,
+            min: 0,
+            step: 0.25,
+            unit: 'per contract, per side',
+        },
+        slippageTicks: {
+            label: 'Slippage',
+            type: 'stepperInt',
+            default: d.slippageTicks ?? 0,
+            min: 0,
+            max: 100,
+        },
+        pyramiding: {
+            label: 'Pyramiding',
+            type: 'stepperInt',
+            default: d.pyramiding ?? 1,
+            min: 1,
+            max: 50,
+        },
+        allowReverse: {
+            label: 'Reverse on opposite signal',
+            type: 'checkbox',
+            default: d.allowReverse ?? true,
+            description: 'Off: an opposite order can only flatten, never flip the position',
+        },
+        // Left out tickSize, contractSize, and qtyStep. They describe the instrument and not
+        // the strategy, putting them in the dialog would invite someone to "fix" a multiplier
+        // and get a pnl that is wrong by 20x with not indicaton anythig happened
+    };
+}
+
+// Strategy capability
+//
+// A strategy draws on the chart, sits in the indicator list, ahs params and a
+// settings dialog, and rides the same two commute messages - so it *is* the
+// indicator capability, only with just some more stuff. reimplementing 250 lines
+// of that would only guarantee that they would drift eventually
+//
+// The bar budget is enforced in the worker rather than here, because the worker
+// is the thing that would hang, and because the same check has to hold for the
+// server runner when that arrives.
+const strategyCapability: CapabilityHandler = (...args) => {
+    const [worker, pluginMsg, entryId, pluginIndex, ctx, onWorkerUpdate, emitError] = args;
+    const decl = pluginMsg.decl as ScriptDeclaration;
+
+    decl.params = { ...buildStrategySettings(decl), ...(decl.params ?? {}) };
+
+    onWorkerUpdate((msg) => {
+        try {
+            const state = msg.state as {
+                trades?: StrategyTrade[];
+                equity?: StrategyEquityPoint[];
+                stats?: StrategyStats;
+                position?: StrategyPosition | null;
+                params?: Record<string, unknown>;
+            } | null;
+            if (!state?.stats) return;
+
+            ctx.eventBus.emit('plugin:strategy-updated', {
+                id: entryId,
+                name: decl.name,
+                stats: state.stats,
+                trades: state.trades ?? [],
+                equity: state.equity ?? [],
+                position: state.position ?? null,
+                params: state.params ?? {},
+                paramDefs: (decl.params ?? {}) as Record<string, unknown>,
+            });
+        } catch (e) {
+            emitError(`strategy results could not be published: ${e}`);
+        }
+    });
+
+    // The bars a sweep runs over. cached here rather than reached for inside
+    // indicatorCapability - the two are composed, not merged, and a 2nd subscription
+    // is cheaper than manking the first one's locals reachable
+    let sweepData: Record<string, unknown> | null = null;
+    let sweepBarNs = 0n;
+
+    const offComputeForSweep = ctx.eventBus.on(
+        'plugin:scripted-compute' as any,
+        ({ id, ohlcv, barNs }: any) => {
+            if (id !== entryId) return;
+            sweepData = { ohlcv, trades: [], ticks: [], snapshots: [] };
+            sweepBarNs = barNs;
+        },
+    );
+
+    const offSweep = ctx.eventBus.on(
+        'plugin:strategy-sweep',
+        ({ id, grid, oosFraction, params }) => {
+        if (id !== entryId) return;
+        if (!sweepData) {
+            emitError('no data loaded yet - let the chart finish loading, then sweep');
+            return;
+        }
+        worker.postMessage({
+            type: 'sweep',
+            pluginIndex,
+            data: sweepData,
+            barNs: sweepBarNs,
+            params: params ?? buildParamDefaults(decl.params ?? {}),
+            grid,
+            oosFraction,
+            symbolInfo: (() => {
+                try {
+                    const info = ctx.getData?.().symbolInfo;
+                    return info ? { symbol: info.symbol, contract: info.contract ?? null } : null;
+                } catch {
+                    return null;
+                }
+            })(),
+        });
+        },
+    );
+
+    const offSweepCancel = ctx.eventBus.on('plugin:strategy-sweep-cancel', ({ id }) => {
+        if (id !== entryId) return;
+        worker.postMessage({ type: 'sweep-cancel' });
+    });
+
+    const offWalkForward = ctx.eventBus.on('plugin:strategy-walkforward', (e) => {
+        if (e.id !== entryId) return;
+        if (!sweepData) {
+            emitError('no data loaded yet - let the chart finish loading, then run');
+            return;
+        }
+        const { id: _id, params, ...spec } = e;
+        worker.postMessage({
+            type: 'walk-forward',
+            pluginIndex,
+            data: sweepData,
+            barNs: sweepBarNs,
+            params: params ?? buildParamDefaults(decl.params ?? {}),
+            ...spec,
+            symbolInfo: (() => {
+                try {
+                    const info = ctx.getData?.().symbolInfo;
+                    return info ? { symbol: info.symbol, contract: info.contract ?? null } : null;
+                } catch {
+                    return null;
+                }
+            })(),
+        });
+    });
+
+    // one flag in the worker stops either loop - they never run at the same time
+    const offWalkForwardCancel = ctx.eventBus.on(
+        'plugin:strategy-walkforward-cancel',
+        ({ id }) => {
+            if (id !== entryId) return;
+            worker.postMessage({ type: 'sweep-cancel' });
+        },
+    );
+
+    const teardown = indicatorCapability(...args);
+
+    return () => {
+        offComputeForSweep();
+        offSweep();
+        offSweepCancel();
+        offWalkForward();
+        offWalkForwardCancel();
+        teardown?.();
+    };
+};
+
 const CAPABILITY_HANDLERS: Partial<Record<ScriptDeclaration['type'], CapabilityHandler>> = {
     indicator: indicatorCapability,
     drawing: drawingCapability,
     'chart-type': chartTypeCapability,
     extension: extensionCapability,
+    strategy: strategyCapability,
 };
 
 /**
@@ -1466,6 +1713,39 @@ export function createScriptedPlugin(script: string, id?: string, category?: str
                 const msg = e.data;
                 if (msg.type === 'error') {
                     emitError(msg.error, msg.line);
+                    return;
+                }
+                // Sweep traffic is relayed straight onto the bus. It carries no
+                // drawable state and no per-capability handlers, so routing it
+                // through the update listeners would only mean unwrapping it
+                // again on the other side
+                if (
+                    msg.type === 'sweep-progress' ||
+                    msg.type === 'sweep-done' ||
+                    msg.type === 'sweep-cancelled' ||
+                    msg.type === 'sweep-rejected' ||
+                    msg.type === 'walkforward-progress' ||
+                    msg.type === 'walkforward-done' ||
+                    msg.type === 'walkforward-cancelled' ||
+                    msg.type === 'walkforward-rejected'
+                ) {
+                    const id = `${pluginId}:${msg.pluginIndex}`;
+                    const { type, pluginIndex: _i, ...rest } = msg;
+                    ctx.eventBus.emit(`plugin:strategy-${type}` as any, { id, ...rest });
+                    return;
+                }
+                if (msg.type === 'strategy-rejected') {
+                    // deliberately not routed through emitError: nothing is wrong
+                    // with the script, the range is just too long for this host to
+                    // run it. The ui should say so rather than point at a line
+                    // number the author cannot fix
+                    ctx.eventBus.emit('plugin:strategy-rejected', {
+                        id: `${pluginId}:${msg.pluginIndex}`,
+                        name: msg.name,
+                        bars: msg.bars,
+                        maxBars: msg.maxBars,
+                        reason: msg.reason,
+                    });
                     return;
                 }
                 if (msg.type === 'parsed') {

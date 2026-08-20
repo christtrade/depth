@@ -56,6 +56,7 @@ export interface UseChartSubscriptionsParams {
 
     // Callbacks
     resetView: () => void;
+    gotoRange: (fromNs: bigint, toNs?: bigint, padding?: number) => void;
     buildChartTypeActiveCtx: () => ChartTypeActiveContext;
     pushDrawParams: () => void;
     runIndicatorWorker: (trades: SerialTrade[], barNs: bigint) => void;
@@ -103,6 +104,7 @@ export function useChartSubscriptions(p: UseChartSubscriptionsParams): void {
         setPluginChartTypes,
         setChartSettings,
         resetView,
+        gotoRange,
         buildChartTypeActiveCtx,
         pushDrawParams,
         runIndicatorWorker,
@@ -148,6 +150,9 @@ export function useChartSubscriptions(p: UseChartSubscriptionsParams): void {
 
         const unsubs = [
             eventBus.on('chart:reset-view', () => resetView()),
+            eventBus.on('chart:goto-range', ({ fromNs, toNs, padding }) =>
+                gotoRange(fromNs, toNs, padding),
+            ),
 
             // Sync in layout
             // Both switches are read per-event from the ref, so flipping one

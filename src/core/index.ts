@@ -76,6 +76,51 @@ export type {
 // Scripted plugin system
 export { createScriptedPlugin } from './ScriptedPlugin';
 
+// Strategy execution. The engine is exported so a host can score a run outside
+// the chart - the server runner is the reason, but a test harness or a param
+// sweep wants the same thing.
+export { StrategyEngine, DEFAULT_STRATEGY_CONFIG } from './strategy-runtime';
+// Sweeps: the host builds the grid and checks the budget, the worker runs it.
+// Exported because a sweep UI needs to show the combination count and refuse an
+// impossible grid *before* posting it, using the same arithmetic the worker will.
+export {
+    axisValues,
+    checkSweepBudget,
+    expandGrid,
+    splitIndex,
+    MAX_SWEEP_COMBOS,
+    MAX_SWEEP_BAR_ITERATIONS,
+} from './strategy-sweep';
+export type { SweepAxis, SweepSpec, SweepResult, SweepBudget } from './strategy-sweep';
+// Walk-forward. The host schedules the windows and reads the two diagnostics;
+// the worker runs them.
+export {
+    planWalkForward,
+    walkForwardEfficiency,
+    parameterStability,
+    pickBest,
+} from './strategy-walkforward';
+export type {
+    WalkForwardSpec,
+    WalkForwardWindow,
+    WalkForwardWindowResult,
+    ParameterStability,
+} from './strategy-walkforward';
+export type {
+    BrokerApi,
+    StrategyEquityPoint,
+    ExitReason,
+    OrderOpts,
+    Side,
+    StrategyBar,
+    StrategyConfig,
+    StrategyOrder,
+    StrategyPosition,
+    StrategyResult,
+    StrategyStats,
+    StrategyTrade,
+} from './strategy-runtime';
+
 // Data level utilities
 export { isCompatible, DATA_LEVEL_LABELS, incompatibleReason } from './processing/data-level';
 

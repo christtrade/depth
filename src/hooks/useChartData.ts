@@ -407,6 +407,8 @@ export interface ChartDataResult {
         /** Explicit navigation: bring the view along instead of leaving it behind. */
         recenter?: boolean,
     ) => void;
+    /** Frames a span of time. Does not move the playhead - see 'chart:goto-range'. */
+    gotoRange: (fromNs: bigint, toNs?: bigint, padding?: number) => void;
     applyHorizon: (horizon: bigint, triggerResample?: boolean, hotPath?: boolean) => void;
     scheduleResample: () => void;
     runIndicatorWorker: (trades: SerialTrade[], barNs: bigint) => void;
@@ -2211,6 +2213,72 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         p.renderEngineRef.current.markAllDirty();
     }, []);
 
+    /**
+     * Frames a span of time, without touching the playhead.
+     *
+     * Sibling of recenterViewOnHorizon, and deliberately not the same function:
+     * that one follows the playhead and bails when the target is already on
+     * screen, because a replay stepping forward should not yank the view. This
+     * one is a command - someone clicked a trade and asked to see it - so it
+     * always moves, and it frames the whole span rather than centring a point.
+     */
+    const gotoRange = useCallback((fromNs: bigint, toNs?: bigint, padding = 0.25) => {
+        const view = p.viewRef.current;
+        if (!view || !p.renderEngineRef.current) return;
+
+        const barNs = p.activeTimeframeRef.current.barNs;
+        const from = fromNs < (toNs ?? fromNs) ? fromNs : (toNs ?? fromNs);
+        const to = fromNs < (toNs ?? fromNs) ? (toNs ?? fromNs) : fromNs;
+
+        // A single moment, or a span so short it would zoom to one candle, keeps
+        // the zoom level the caller was already at and just recentres. Fitting
+        // literally to a one-bar trade leaves the user staring at a single wick
+        // with no context, which is never what "show me this trade" meant.
+        const span = to - from;
+        const currentSpan = view.tMax - view.tMin;
+        const minSpan = barNs * 20n;
+
+        let tMin: bigint;
+        let tMax: bigint;
+
+        if (span < minSpan) {
+            const mid = from + span / 2n;
+            const half = (currentSpan > minSpan ? currentSpan : minSpan) / 2n;
+            tMin = mid - half;
+            tMax = mid + half;
+        } else {
+            const padNs = BigInt(Math.round(Number(span) * Math.max(0, padding)));
+            tMin = from - padNs;
+            tMax = to + padNs;
+        }
+
+        // an in-flight follow animation is aiming somewhere else entirely
+        horizonScrollAnimRef.current = null;
+
+        view.tMin = tMin;
+        view.tMax = tMax;
+
+        p.transformer.update(view);
+        p.renderEngineRef.current.setView(view);
+
+        autoFitPriceAxis(
+            view,
+            priceHistoryRef.current,
+            tradesRef.current,
+            dataLevelRef.current === 'ohlcv'
+                ? ohlcvBarsRef.current.display
+                : previewBarsRef.current,
+            openBarRef.current,
+            p.chartSettingsRef.current,
+            p.horizonRef.current,
+            dataLevelRef.current,
+        );
+
+        // the visible window moved wholesale - same staleness as a pan
+        scheduleResample();
+        p.renderEngineRef.current.markAllDirty();
+    }, []);
+
     const seekHorizon = useCallback(
         (newHorizon: bigint, triggerResample = true, hotPath = false, recenter = false) => {
             const dataEnd = datasetEndRef.current;
@@ -2393,6 +2461,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         workerRequestIdRef,
         _internalDomPanelRef,
         seekHorizon,
+        gotoRange,
         applyHorizon,
         scheduleResample,
         runIndicatorWorker,

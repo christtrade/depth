@@ -25,12 +25,35 @@ const ALLOWED_SRC = new Set([
     'src/core/script-runtime.ts',
     'src/core/script-dsl.ts',
     'src/lib/indicator-stdlib.ts',
+    // the strategy engine ships to the server on purpose - a strategy has to
+    // score identically wherever it runs, which only holds if both hosts execute
+    // this module rather than two that agree today
+    'src/core/strategy-runtime.ts',
+    // grid expansion and the budget check, for the same reason: a server runner
+    // executing a sweep has to expand it the same way the browser would
+    'src/core/strategy-sweep.ts',
+    // window scheduling and the two walk-forward diagnostics, for the same
+    // reason again
+    'src/core/strategy-walkforward.ts',
 ]);
 
-// identifiers that mean the DOM leaked in. checked against the *bundle text*
+// Identifiers that mean the DOM leaked in. Checked against the *bundle text*
 // after minification, which is why they are all globals rather than local names
 // a minifier would rename.
-const DOM_MARKERS = ['document.createElement', 'window.', 'HTMLCanvasElement', 'react/jsx-runtime'];
+//
+// Each has to be unambiguous as a substring. A bare `window.` was not: walk-
+// forward results carry a `window` field describing a span of bars, so
+// `r.window.isTo` tripped a DOM check with no DOM anywhere near it. Match on
+// things only the real global is followed by.
+const DOM_MARKERS = [
+    'document.createElement',
+    'window.addEventListener',
+    'window.location',
+    'globalThis.document',
+    'HTMLCanvasElement',
+    'CanvasRenderingContext2D.prototype',
+    'react/jsx-runtime',
+];
 
 const result = await esbuild.build({
     entryPoints: [path.join(root, 'src/core/script-runtime.ts')],

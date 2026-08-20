@@ -1,6 +1,12 @@
 import { LiveTransformer } from '../interfaces/ICoordinateTransformer';
 import { ChartSettings } from '../lib/types/chart-settings';
 import { type SessionStatus } from './SessionUtils';
+import type {
+    StrategyEquityPoint,
+    StrategyPosition,
+    StrategyStats,
+    StrategyTrade,
+} from './strategy-runtime';
 import {
     BarPreviewResponse,
     OhlcvBar,
@@ -33,6 +39,13 @@ export interface ChartEvents {
 
     'chart:ready': void;
     'chart:reset-view': void;
+
+    'chart:goto-range': {
+        fromNs: bigint;
+        toNs?: bigint;
+        /** Fraction of the span to leave either side. Default 0.25. */
+        padding?: number;
+    };
     'chart:set-tool': { tool: ActiveDrawingTool };
     'chart:set-timeframe': { tf: Timeframe };
     'chart:add-indicator': { id: string };
@@ -447,6 +460,109 @@ export interface ChartEvents {
      * every cell has its own.
      */
     'plugin:indicator-updated': { id: string };
+
+    'plugin:strategy-updated': {
+        id: string;
+        name: string;
+        stats: StrategyStats;
+        trades: StrategyTrade[];
+        equity: StrategyEquityPoint[];
+        /** Still open at the last bar, if the run ended holding something. */
+        position: StrategyPosition | null;
+        /** The parameter values that produced these numbers. */
+        params: Record<string, unknown>;
+        /**
+         * The script's parameter declarations, so a sweep UI can offer a range
+         * for each without the author declaring anything extra - a numeric
+         * ParamDef already carries min, max and step.
+         */
+        paramDefs: Record<string, unknown>;
+    };
+
+    'plugin:apply-params': { id: string; params: Record<string, unknown> };
+
+    'plugin:strategy-sweep': {
+        id: string;
+        grid: Array<Record<string, unknown>>;
+        /** Fraction held back from the end as out-of-sample. */
+        oosFraction?: number;
+        /**
+         * What each grid point patches over. Pass what the settings dialog
+         * currently holds, so parameters that are not being swept keep the value
+         * the user set. Omitted falls back to the script's declared defaults.
+         */
+        params?: Record<string, unknown>;
+    };
+    'plugin:strategy-sweep-cancel': { id: string };
+    'plugin:strategy-sweep-progress': { id: string; done: number; total: number };
+    'plugin:strategy-sweep-done': {
+        id: string;
+        /** One entry per grid point, in grid order. `error` instead of `stats`
+         *  for a combination that threw. */
+        results: Array<{
+            params: Record<string, unknown>;
+            stats?: StrategyStats;
+            inSample?: StrategyStats;
+            outOfSample?: StrategyStats;
+            error?: string;
+        }>;
+    };
+    'plugin:strategy-sweep-cancelled': { id: string; done: number };
+    'plugin:strategy-sweep-rejected': {
+        id: string;
+        name: string;
+        combos: number;
+        bars: number;
+        iterations: number;
+        reason: string;
+    };
+
+    'plugin:strategy-walkforward': {
+        id: string;
+        grid: Array<Record<string, unknown>>;
+        params?: Record<string, unknown>;
+        /** Out-of-sample segments to test. Default 4. */
+        windows?: number;
+        /** In-sample length as a multiple of out-of-sample. Default 3. */
+        isMultiple?: number;
+        /** Fixed in-sample start rather than a sliding window. */
+        anchored?: boolean;
+        /** Which statistic the optimiser maximises. Default 'netPnl'. */
+        objective?: string;
+        /** False for drawdown-like objectives. */
+        higherIsBetter?: boolean;
+    };
+    'plugin:strategy-walkforward-cancel': { id: string };
+    'plugin:strategy-walkforward-progress': { id: string; done: number; total: number };
+    'plugin:strategy-walkforward-done': {
+        id: string;
+        results: Array<{
+            window: {
+                index: number;
+                isFrom: number;
+                isTo: number;
+                oosFrom: number;
+                oosTo: number;
+            };
+            params?: Record<string, unknown>;
+            inSample?: StrategyStats;
+            outOfSample?: StrategyStats;
+            /** The test segment's own curve. Stitched across windows, this is the
+             *  equity of parameters never fitted to the data they run over. */
+            outOfSampleEquity?: StrategyEquityPoint[];
+            error?: string;
+        }>;
+    };
+    'plugin:strategy-walkforward-cancelled': { id: string; done: number };
+    'plugin:strategy-walkforward-rejected': { id: string; name: string; reason: string };
+
+    'plugin:strategy-rejected': {
+        id: string;
+        name: string;
+        bars: number;
+        maxBars: number;
+        reason: string;
+    };
 
     'plugin:update-code': { id: string; code: string };
     'plugin:recompute-indicator': { id: string };

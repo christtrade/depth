@@ -10,6 +10,7 @@ export const PluginType = Object.freeze({
     chartType: 'chart-type',
     dataSource: 'data-source',
     extension: 'extension',
+    strategy: 'strategy',
 } as const);
 
 export const DataLevel = Object.freeze({
@@ -25,5 +26,14 @@ export const Layout = Object.freeze({
     pane: 'pane',
 } as const);
 
+/** Why a strategy position closed. Mirrors ExitReason in strategy-runtime.ts. */
+export const ExitReason = Object.freeze({
+    signal: 'signal',
+    stop: 'stop',
+    target: 'target',
+    reverse: 'reverse',
+    endOfData: 'end-of-data',
+} as const);
+
 /** The DSL globals as one bag, for splatting into an eval scope. */
-export const SCRIPT_DSL: Record<string, unknown> = { PluginType, DataLevel, Layout };
+export const SCRIPT_DSL: Record<string, unknown> = { PluginType, DataLevel, Layout, ExitReason };
