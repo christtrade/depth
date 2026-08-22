@@ -83,7 +83,7 @@ export interface ChartEvents {
     'layout:timeframe': { id: number; tf: Timeframe };
 
     'timeframe:change': { tf: Timeframe };
-    /** Runtime entitlement change (see `chart.allowTimeframes`). The UI re-reads
+    /** Runtime entitlement change. The UI re-reads
      *  `features` so locks and gates reflect what is allowed now. */
     'features:change': void;
     'timeframe:add-failed': {
@@ -477,9 +477,60 @@ export interface ChartEvents {
          * ParamDef already carries min, max and step.
          */
         paramDefs: Record<string, unknown>;
+        /** Bars this run actually covered - not always what was asked for. `clipped` is false for a run over everything loaded. */
+        range: {
+            fromNs: bigint | null;
+            toNs: bigint | null;
+            bars: number;
+            totalBars: number;
+            clipped: boolean;
+            /** Span the loaded data covers, so a picker can bound itself. */
+            dataFromNs: bigint | null;
+            dataToNs: bigint | null;
+        };
     };
 
     'plugin:apply-params': { id: string; params: Record<string, unknown> };
+
+    'plugin:strategy-range': {
+        id: string;
+        range: { fromNs?: bigint; toNs?: bigint } | null;
+        /**
+         * Fetch the span instead of clipping to what the chart holds. Opt-in -
+         * clipping is free and covers almost every range, fetching walks the
+         * network a chunk at a time. Requires `fromNs`; no streaming backwards
+         * from an open-ended start.
+         */
+        fetch?: boolean;
+    };
+
+    'plugin:strategy-run': {
+        id: string;
+        /** `null` clears any bound and runs over everything loaded; omitted keeps the stored bound. */
+        range?: { fromNs?: bigint; toNs?: bigint } | null;
+        /** As on 'plugin:strategy-range' - go get the span, don't clip. */
+        fetch?: boolean;
+    };
+
+    'plugin:strategy-mode': { id: string; manual: boolean };
+
+    'plugin:strategy-stale': {
+        id: string;
+        name: string;
+        /** Bars arrived since the last run, or 0. */
+        newBars: number;
+        /** Params edited since the last run. Empty when none. */
+        params: Record<string, unknown>;
+    };
+
+    'plugin:strategy-progress': {
+        id: string;
+        name: string;
+        phase: 'fetching' | 'running' | 'analysing' | 'done' | 'failed';
+        done: number;
+        total: number;
+        error?: string;
+    };
 
     'plugin:strategy-sweep': {
         id: string;

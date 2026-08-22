@@ -35,6 +35,9 @@ const ALLOWED_SRC = new Set([
     // window scheduling and the two walk-forward diagnostics, for the same
     // reason again
     'src/core/strategy-walkforward.ts',
+    // clipping a run to a span of time: the server runner bounds a job with the
+    // same arithmetic the browser used to describe it
+    'src/core/strategy-range.ts',
 ]);
 
 // Identifiers that mean the DOM leaked in. Checked against the *bundle text*

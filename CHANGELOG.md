@@ -8,7 +8,103 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Intrabar fill resolution in the strategy engine.** `beginBar(bar, index, sub?)`
+  takes an optional third argument: the same period at a finer resolution.
+  Pending orders and bracket exits resolve against each sub-bar in turn instead
+  of the aggregate, so a bar holding both a stop and a target can say which came
+  first. The script still gets one `update()` per chart bar - it was written for
+  that tf, and calling it 60x more often would change what the strategy *is*,
+  not just how precisely it fills.
+
+- `reconcileIntrabar(bar, sub, tolerance)` guards it: a sub-bar whose
+  open/high/low/close/timestamp ordering disagrees with the aggregate is
+  rejected and that bar falls back to the aggregate, rather than resolving a
+  stop against a range that's missing the second the price actually traded
+  through.
+
+- `StrategyStats` gains `intrabarBars`, `intrabarFallbacks` and
+  `ambiguousExits`; `StrategyTrade` gains `ambiguousExit`. A trade log that
+  hides which exits were guessed is how a backtest ends up better than the
+  account.
+
+- **A run range for strategies.** `plugin:strategy-range` (`{ id, range }`)
+  bounds a strategy to a span of time and re-runs it; `range: null` clears it.
+  Runs, sweeps and walk-forward all use the same range, which is a **sibling of
+  the parameters, never one of them** - a server runner keys its chunk cache on
+  `hash(script + params) + chunkIndex`, so folding range into params would turn
+  every range change into a total cache miss.
+
+- `clipRange`, `hasRange`, `emptyRangeReason`, `StrategyRange`, `ClippedRange` -
+  a host can resolve a range against bars it already holds and say "that range
+  holds no data" without a worker round trip.
+
+- `plugin:strategy-updated` now reports the `range` a run actually covered, and
+  a run whose range holds no bars is refused with a reason rather than an empty
+  result - so a strategy that took no trades doesn't look the same as one given
+  no bars.
+
+- **A strategy can now run over a range the chart has never loaded.**
+  `plugin:strategy-range`'s `fetch` flag walks the span a chunk at a time,
+  feeding each through the engine and dropping it - progress on
+  `plugin:strategy-progress`, result on `plugin:strategy-updated`. Nothing ever
+  holds the whole span, and the walk follows the adapter's `coveredTo` rather
+  than assuming it got what it asked for, so chunks can't be skipped silently.
+  Opt-in, since clipping to loaded bars is free and covers almost every range
+  anyone picks, while this one goes to the network.
+
+- `PluginContext.fetchRange` (behind `data:read`) and `DataEngine.fetchRangeBars`
+  do that fetch without joining it to the chart's loaded range - it won't scroll
+  the view or make the next pan believe it already has history it doesn't.
+
+- A `date` ParamDef type, rendered as a native date/`datetime-local` control.
+  Value is an ISO 8601 string rather than a nanosecond number, since params
+  persist as JSON with the chart and a bigint doesn't survive that.
+
+- **`planChunks` and `streamRangeChunks`** in `strategy-stream.ts`, walking a
+  span in order with several requests on the wire at once. Boundaries are
+  decided up front since a request has to be issued before its predecessor
+  answers; bars still reach the engine strictly in order, and a failure is
+  raised in *plan* order rather than when it happened, so a later chunk failing
+  can't skip the bars an earlier, still-outstanding one owns. Concurrency depth
+  is 4 - a few MB for roughly a 4x cut in wall clock, where 40 would be most of
+  a tab for little more. No DOM, no chart imports, same as the rest of the
+  strategy core.
+
+### Changed
+
+- **`plugin:strategy-progress` now describes the whole run, not just the
+  fetch.** `phase` gains `running` (every chunk's at the worker, engine
+  finishing up and computing stats) and `analysing` (host turning the result
+  into whatever it draws); `done` now fires when the numbers exist, not when
+  the last chunk was sent. The old contract ended at "fetched", which on a five
+  year run is seconds before anything on screen changes - a panel clearing its
+  progress on that event looked finished while the tab was still busy.
+  `analysing` is emitted by the host, not depth, since depth has no idea what a
+  host does with a result. A refused run and an abandoned stream are terminal
+  too, and now say so.
+
+- **A strategy run's memory no longer grows with its range.** Drawdown, ulcer
+  index, Sharpe, Sortino, CAGR are now accumulated per bar as the run proceeds,
+  so the stored equity curve is capped at 8,192 points and thinned as the run
+  outgrows it. Measured over a two million bar run: **221 MB before, 1.1 MB
+  after**, flat rather than linear in range. The numbers themselves are
+  unchanged - Sharpe/Sortino are still taken from the true per-bar sequence, not
+  the thinned curve, and use Welford rather than sums of squares since the
+  naive form loses precision over a couple million bars. `StrategyResult.equity`
+  still covers the whole run but is no longer one point per bar past the cap -
+  read `stats.totalBars` for the count.
+
+- Excursion is tracked per sub-bar when intrabar data is in use: a position
+  opened partway through a bar no longer inherits the range it wasn't open for
+  (a stop filling at 105 on a bar that dipped to 90 beforehand used to report a
+  15 point adverse excursion instead of the entry second's own range). MAE/MFE
+  timestamps land on the second rather than the whole bar.
+
 ## [0.12.25] - 2026-08-20
+
+(this should really have bumped the minor version... didnt think about that, whoops)
 
 ### Added
 
@@ -61,16 +157,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The sweep vocabulary: `expandGrid`, `axisValues`, `checkSweepBudget`,
   `splitIndex`, `MAX_SWEEP_COMBOS` (20,000), `MAX_SWEEP_BAR_ITERATIONS`
   (200,000,000) and the `SweepAxis`, `SweepSpec`, `SweepResult` and
-  `SweepBudget` types. A sweep UI has to show the combination count and refuse
-  an impossible grid *before* posting it, using the same arithmetic the worker
-  will. The budget is combinations * bars: neither one alone predicts a hang.
+  `SweepBudget` types - so a sweep UI can refuse an impossible grid *before*
+  posting it, with the same arithmetic the worker uses. Budget is combinations
+  × bars; neither alone predicts a hang.
 - Walk-forward: `planWalkForward`, `walkForwardEfficiency`,
   `parameterStability` and `pickBest`, with `WalkForwardSpec`,
   `WalkForwardWindow`, `WalkForwardWindowResult` and `ParameterStability`.
-  Efficiency is measured per bar so a long anchored window cannot dominate the
-  average, out-of-sample segments get no warmup from in-sample,
-  and a non-finite objective is skipped rather than chosen - profit factor is
-  `Infinity` for a window with no loser, which is noise dressed as perfection.
+  Efficiency is per bar so a long anchored window can't dominate the average,
+  out-of-sample segments get no in-sample warmup, and a non-finite objective is
+  skipped rather than chosen - `Infinity` profit factor is noise dressed as
+  perfection.
 - `ExitReason` in the script DSL - `signal`, `stop`, `target`, `reverse`,
   `end-of-data` - so a script can compare against a name instead of a string
   literal.
@@ -81,12 +177,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   module, rather than two implementations that agree today.
 - `chart:goto-range` (`{ fromNs, toNs?, padding? }`) and `gotoRange()` on the
   `useChartData` result, which frames a span of time without touching the
-  playhead. Deliberately not `recenterViewOnHorizon`: that one follows the
-  playhead and bails when the target is already on screen, because a replay
-  stepping forward should not yank the view. This one is a command - someone
-  clicked a trade and asked to see it - so it always moves. A span shorter than
-  twenty bars recentres at the current zoom instead of fitting to a single
-  wick.
+  playhead. Not `recenterViewOnHorizon` - that one follows the playhead and
+  bails if the target's already on screen, so replay doesn't get yanked around;
+  this one's a command, someone clicked a trade, so it always moves. A span
+  shorter than twenty bars recentres at the current zoom instead of fitting to
+  a single wick.
 - `plugin:apply-params` (`{ id, params }`), which writes values into any
   scripted indicator's settings, not only a strategy's. Keys the plugin does
   not declare are dropped rather than written - a sweep grid can carry keys

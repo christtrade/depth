@@ -310,6 +310,9 @@ export class PluginRegistry {
 
             getData: gate('data:read', ctx.getData) as typeof ctx.getData,
             openBar: gate('data:read', ctx.openBar) as typeof ctx.openBar,
+            // same permission as getData: it is the same data, just past the
+            // edge of what the chart happens to hold
+            fetchRange: gate('data:read', ctx.fetchRange) as typeof ctx.fetchRange,
             registerPanel: gate('ui:panel', ctx.registerPanel) as typeof ctx.registerPanel,
             registerToolbarItem: gate(
                 'ui:toolbar',
