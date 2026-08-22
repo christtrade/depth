@@ -46,6 +46,14 @@ export type IndicatorSettingField = BaseField &
               maxLength?: number;
           }
         | {
+              type: 'dateInput';
+              key: string;
+              label: string;
+              withTime?: boolean;
+              min?: string;
+              max?: string;
+          }
+        | {
               type: 'select';
               key: string;
               label: string;
@@ -764,6 +772,26 @@ function FieldRow({
                     value={String(local[field.key] ?? '')}
                     placeholder={field.placeholder}
                     maxLength={field.maxLength}
+                    onChange={(e) => patch(field.key, e.target.value)}
+                    onKeyDown={(e) => e.stopPropagation()}
+                />
+            </FieldSection>
+        );
+    }
+
+    if (field.type === 'dateInput') {
+        const withTime = !!field.withTime;
+        const width = withTime ? 16 : 10;
+        const trim = (v: unknown) => (typeof v === 'string' ? v.slice(0, width) : '');
+
+        return (
+            <FieldSection label={field.label}>
+                <input
+                    type={withTime ? 'datetime-local' : 'date'}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-[12px] text-white focus:outline-none focus:border-blue-500/60 [color-scheme:dark]"
+                    value={trim(local[field.key])}
+                    min={field.min ? trim(field.min) : undefined}
+                    max={field.max ? trim(field.max) : undefined}
                     onChange={(e) => patch(field.key, e.target.value)}
                     onKeyDown={(e) => e.stopPropagation()}
                 />

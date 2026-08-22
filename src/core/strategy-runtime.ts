@@ -1,10 +1,9 @@
 // the strategy execution engine: order handling, the bar-level fill model,
 // position accounting and the result statistics.
 //
-// no DOM, no chart, no imports outside this file - a strategy has to score indentically
-// wherever it runs, and the only way to guarantee that is for the browser worker
-// and the server runner to execute this exact module rather than two implementations
-// that agree today
+// no DOM, no chart, no imports outside this file - the browser worker and the
+// server runner both execute this exact module, so a strategy scores the same
+// wherever it runs
 
 /** Which way a position or fill points. */
 export type Side = 'long' | 'short' | 'flat';
@@ -40,13 +39,9 @@ export interface StrategyPosition {
     tp?: number;
     tag?: string;
     /**
-     * Best and worst price reached while this position has been open.
-     *
-     * Tracked from the bar the position opened, over that bar's full range. A
-     * market order fills at the open so the whole range is fair; a limit or stop
-     * filling mid-bar makes the entry bar's contribution an upper bound. Every
-     * later bar is exact. Worth knowing before reading MAE as gospel on
-     * one-bar trades.
+     * Best/worst price while open, from the entry bar's full range. Exact for
+     * a market fill; an upper bound for a limit/stop filling mid-bar - don't
+     * read MAE as gospel on a one-bar trade.
      */
     highWatermark: number;
     lowWatermark: number;
@@ -64,10 +59,9 @@ export interface StrategyPosition {
     /** Fills that have gone into this position. Checked against `pyramiding`. */
     entries: number;
     /**
-     * Commission already paid to open the quantity still held. Carried on the
-     * position so the trade log can report a round-trip fee: equity is charged
-     * at entry, but nothing is logged until the exit, and a trade whose pnl
-     * omitted the entry side would not sum to the equity curve.
+     * Commission already paid to open the quantity still held. Carried so the
+     * exit's trade record can report the round-trip fee - otherwise pnl
+     * wouldn't sum to the equity curve.
      */
     entryFees: number;
 }
@@ -97,6 +91,12 @@ export interface StrategyTrade {
     durationNs: bigint;
     tag?: string;
     reason: ExitReason;
+    /**
+     * Stop and target both sat inside the resolving bar, so which came first
+     * was assumed (stop wins) rather than observed. Intrabar data shrinks how
+     * often this happens but never zeroes it.
+     */
+    ambiguousExit?: boolean;
 
     // Excursion. Price units, always >= 0.
     /** Worst the price went against this position before it closed. */
@@ -235,16 +235,28 @@ export interface StrategyStats {
     totalFees: number;
     totalCommission: number;
     /**
-     * What slippage cost, in account currency.
-     *
-     * Not a separate deduction - slippage is already inside every fill price and
-     * so already inside netPnl. This reports what that was worth, so a strategy
-     * that only loses to slippage is distinguishable from one that is simply
-     * wrong. Subtracting it again would double-count it.
+     * What slippage cost, in account currency - already inside netPnl via the
+     * fill prices, reported here rather than deducted again.
      */
     totalSlippage: number;
     /** What the run would have made with no commission at all. */
     grossPnlBeforeCosts: number;
+
+    // Fill resolution. How much of this run was observed rather than assumed.
+    /** Chart bars whose fills were resolved against finer intrabar data. */
+    intrabarBars: number;
+    /**
+     * Bars given intrabar data that didn't reconcile with the aggregate and
+     * fell back to it. Non-zero means the finer feed has holes - the run is
+     * still valid, just not the run the intrabar toggle implies.
+     */
+    intrabarFallbacks: number;
+    /**
+     * Exits where stop and target shared a resolving bar and the stop was
+     * assumed first. Compare against `totalTrades` for how much of the result
+     * rests on that assumption.
+     */
+    ambiguousExits: number;
 }
 
 export interface StrategyConfig {
@@ -259,19 +271,15 @@ export interface StrategyConfig {
     /** How many entries may stack in the same direction. */
     pyramiding: number;
     /**
-     * Whether an opposite-side order flips an open position or merely closes it.
-     *
-     * True matches how most scripts read: sell() while long means "get out and go
-     * short". False means sell() can only ever flatten, and opening the other way
-     * takes a second, separate order.
+     * Whether an opposite-side order flips a position or just closes it. True
+     * matches how most scripts read: sell() while long means "get out and go
+     * short".
      */
     allowReverse: boolean;
     /**
-     * Smallest tradable quantity increment. Order sizes floor to it.
-     *
-     * 1 for a listed future, where a third of a contract does not exist; spot
-     * venues are the other case entirely, so this comes from the instrument
-     * rather than being assumed.
+     * Smallest tradable quantity increment; order sizes floor to it. 1 for a
+     * listed future, fractional for spot - comes from the instrument, not
+     * assumed.
      */
     qtyStep: number;
 }
@@ -303,6 +311,48 @@ export interface StrategyBar {
     low: number;
     close: number;
     volume: number;
+}
+
+/**
+ * Do these finer bars actually subdivide this one?
+ *
+ * A feed with a hole in it is worse than none at all - it'd resolve a stop
+ * against a range missing the second price actually traded through. Rejected
+ * whole rather than repaired, since fixing it would mean inventing the
+ * ordering inside the gap.
+ *
+ * @param tolerance Half a tick - two aggregation paths over the same trades
+ * agree to the tick, not the float.
+ */
+export function reconcileIntrabar(
+    bar: StrategyBar,
+    sub: readonly StrategyBar[] | undefined,
+    tolerance: number,
+): boolean {
+    if (!sub || sub.length === 0) return false;
+
+    const near = (a: number, b: number) => Math.abs(a - b) <= tolerance;
+
+    // right open/close but wrong extremes is the signature of a feed missing
+    // bars in the middle
+    if (!near(sub[0].open, bar.open)) return false;
+    if (!near(sub[sub.length - 1].close, bar.close)) return false;
+
+    let high = -Infinity;
+    let low = Infinity;
+    let prevTs = -1n;
+
+    for (const s of sub) {
+        // out of order or duplicate timestamps mean this isn't the order the
+        // market actually traded in
+        if (s.ts <= prevTs) return false;
+        prevTs = s.ts;
+
+        if (s.high > high) high = s.high;
+        if (s.low < low) low = s.low;
+    }
+
+    return near(high, bar.high) && near(low, bar.low);
 }
 
 export interface OrderOpts {
@@ -338,9 +388,7 @@ function median(values: number[]): number {
     return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-// system quality number: sqrt(n) * mean / stdev of trade P/L
-// the sqrt(n) term is the point, it rewards a result foor being backed by enough
-// trades to belive, which is what separates a real edge from a lucky streak
+// the sqrt(n) term rewards enough trades to trust, not just a lucky streak
 function sqn(pnls: number[]): number {
     if (pnls.length < 2) return 0;
 
@@ -354,6 +402,10 @@ function sqn(pnls: number[]): number {
 
     return sd === 0 ? 0 : (Math.sqrt(pnls.length) * mean) / sd;
 }
+
+// the only part of a result that grows with the range - a five year minute
+// run would otherwise retain hundreds of MB of it
+const MAX_EQUITY_POINTS = 8192;
 
 export class StrategyEngine {
     private cfg: StrategyConfig;
@@ -371,6 +423,32 @@ export class StrategyEngine {
     private closeRequested = false;
     private barNs = 0n;
     private slippagePaid = 0;
+    private usedIntrabar = false;
+    private intrabarBars = 0;
+    private intrabarFallbacks = 0;
+    private ambiguousExits = 0;
+
+    // accumulated per bar, not derived from equityCurve, so memory doesn't
+    // grow with the run
+    private pendingEquity: StrategyEquityPoint | null = null;
+    private equityCount = 0;
+    private firstTs: bigint | null = null;
+    private lastTs = 0n;
+    private lastEquity: number | null = null;
+    private prevEquity: number | null = null;
+    private maxDdAbs = 0;
+    private maxDdPct = 0;
+    private ulcerSum = 0;
+    // Welford, not sum-of-squares - the naive form loses precision over a
+    // couple million bars
+    private retN = 0;
+    private retMean = 0;
+    private retM2 = 0;
+    private downSum = 0;
+    private downCount = 0;
+    private curvePhase = 0;
+    private curveStride = 1;
+    private lastFolded: StrategyEquityPoint | null = null;
 
     constructor(cfg: Partial<StrategyConfig> = {}) {
         this.cfg = { ...DEFAULT_STRATEGY_CONFIG, ...cfg };
@@ -378,16 +456,32 @@ export class StrategyEngine {
         this.peak = this.cfg.initialCapital;
     }
 
-    //bar period, used only to annualize the sharpe ratio
+    // bar period, used only to annualize sharpe
     setBarNs(ns: bigint): void {
         this.barNs = ns;
     }
 
-    //everything that happesn to a bar before the script sees it: orders queued on the prev
-    // bar fill here, then the open position's stop and target are checked against this bar's range
-    beginBar(bar: StrategyBar, index: number): void {
+    // Fills pending orders and checks the open position's stop/target against
+    // this bar's range, before the script sees it. `sub` is the same period at
+    // finer resolution - when it reconciles, fills resolve against each
+    // sub-bar in turn instead of the aggregate, so a bar with both a stop and a
+    // target can say which came first. Still one call per chart bar either way.
+    beginBar(bar: StrategyBar, index: number, sub?: readonly StrategyBar[]): void {
         this.index = index;
         this.markPrice = bar.close;
+
+        // half a tick: two aggregation paths over the same trades agree to the
+        // tick, not to the float
+        const intrabar =
+            sub && sub.length > 0
+                ? reconcileIntrabar(bar, sub, Math.max(this.cfg.tickSize / 2, 1e-9))
+                : false;
+
+        if (sub && sub.length > 0) {
+            if (intrabar) this.intrabarBars++;
+            else this.intrabarFallbacks++;
+        }
+        this.usedIntrabar = intrabar;
 
         if (this.closeRequested) {
             this.closeRequested = false;
@@ -400,41 +494,117 @@ export class StrategyEngine {
             }
         }
 
-        if (this.pending.length) this.processPending(bar);
-        if (this.pos) this.checkBrackets(bar);
+        if (!intrabar) {
+            if (this.pending.length) this.processPending(bar);
+            if (this.pos) this.checkBrackets(bar);
+            return;
+        }
+
+        for (const s of sub!) {
+            if (this.pending.length) this.processPending(s);
+            if (this.pos) this.checkBrackets(s);
+            // a position opened partway through the bar no longer inherits the
+            // range it was never open for
+            if (this.pos) this.trackExcursion(s);
+        }
     }
 
-    // Mark to market and record the equity point. runs aftedr the script's update
+    // marks to market and records the equity point, after the script's update
     endBar(bar: StrategyBar): void {
         this.barCount++;
         this.markPrice = bar.close;
         if (this.pos) {
             this.barsInPosition++;
-            this.trackExcursion(bar);
+            // re-running this against the aggregate would widen a sub-bar's
+            // watermarks back out to the full bar
+            if (!this.usedIntrabar) this.trackExcursion(bar);
         }
 
         const eq = this.equity;
         if (eq > this.peak) this.peak = eq;
-        this.equityCurve.push({
+
+        // held one bar back - finish() can still revise a position closed at
+        // the last bar before it's counted
+        this.foldPending();
+
+        if (this.firstTs === null) this.firstTs = bar.ts;
+        this.pendingEquity = {
             ts: bar.ts,
             equity: eq,
             drawdown: this.peak > 0 ? (this.peak - eq) / this.peak : 0,
-        });
+        };
     }
 
-    // closes anything still open at the last  bar, so the trade log balances
+    // returns computed here, from the true per-bar sequence, not the (decimated) stored curve
+    private foldPending(): void {
+        const p = this.pendingEquity;
+        if (!p) return;
+        this.pendingEquity = null;
+
+        this.equityCount++;
+        this.lastTs = p.ts;
+        this.lastEquity = p.equity;
+
+        // this.peak has moved on by now - recover this point's own peak from
+        // the drawdown it carries
+        const peak = p.drawdown >= 1 ? p.equity : p.equity / (1 - p.drawdown);
+        const abs = peak - p.equity;
+        if (abs > this.maxDdAbs) this.maxDdAbs = abs;
+        if (p.drawdown > this.maxDdPct) this.maxDdPct = p.drawdown;
+        this.ulcerSum += p.drawdown * p.drawdown;
+
+        if (this.prevEquity !== null && this.prevEquity > 0) {
+            const r = (p.equity - this.prevEquity) / this.prevEquity;
+            this.retN++;
+            const delta = r - this.retMean;
+            this.retMean += delta / this.retN;
+            this.retM2 += delta * (r - this.retMean);
+            if (r < 0) {
+                this.downSum += r * r;
+                this.downCount++;
+            }
+        }
+        this.prevEquity = p.equity;
+
+        this.lastFolded = p;
+        this.keepInCurve(p);
+    }
+
+    // halving + doubling the stride on overflow keeps the whole span covered
+    // at a coarser resolution, instead of a detailed head and a missing tail
+    private keepInCurve(p: StrategyEquityPoint): void {
+        if (this.curvePhase === 0) {
+            this.equityCurve.push(p);
+            if (this.equityCurve.length > MAX_EQUITY_POINTS) {
+                const kept: StrategyEquityPoint[] = [];
+                for (let i = 0; i < this.equityCurve.length; i += 2) {
+                    kept.push(this.equityCurve[i]);
+                }
+                this.equityCurve = kept;
+                this.curveStride *= 2;
+            }
+        }
+        this.curvePhase = (this.curvePhase + 1) % this.curveStride;
+    }
+
+    // closes anything still open at the last bar, so the trade log balances
     finish(lastBar: StrategyBar | undefined): void {
-        if (!this.pos || !lastBar) return;
+        if (!this.pos || !lastBar) {
+            this.foldPending();
+            return;
+        }
 
         this.exit(lastBar, lastBar.close, 'end-of-data');
 
-        const last = this.equityCurve[this.equityCurve.length - 1];
-        if (!last) return;
+        const last = this.pendingEquity;
+        if (last) {
+            const eq = this.equity;
+            if (eq > this.peak) this.peak = eq;
+            last.equity = eq;
+            last.drawdown = this.peak > 0 ? (this.peak - eq) / this.peak : 0;
+        }
 
-        const eq = this.equity;
-        if (eq > this.peak) this.peak = eq;
-        last.equity = eq;
-        last.drawdown = this.peak > 0 ? (this.peak - eq) / this.peak : 0;
+        this.foldPending();
     }
 
     get equity(): number {
@@ -442,6 +612,15 @@ export class StrategyEngine {
     }
 
     get result(): StrategyResult {
+        // readable without finish() - a sweep scoring a combination has no
+        // open-position cleanup to do
+        this.foldPending();
+
+        // the stride can land the final bar between kept points; append it if so
+        if (this.lastFolded && this.equityCurve[this.equityCurve.length - 1] !== this.lastFolded) {
+            this.equityCurve.push(this.lastFolded);
+        }
+
         return {
             trades: this.trades,
             equity: this.equityCurve,
@@ -502,7 +681,6 @@ export class StrategyEngine {
         const stillPending: StrategyOrder[] = [];
 
         for (const order of this.pending) {
-            // placed during this same bar's update - it becomes eligible next bar
             if (order.placedIndex >= this.index) {
                 stillPending.push(order);
                 continue;
@@ -510,7 +688,6 @@ export class StrategyEngine {
 
             const fill = this.fillPrice(order, bar);
             if (fill == null) {
-                // a resting limit or stop that this bar did not reach
                 stillPending.push(order);
                 continue;
             }
@@ -531,9 +708,8 @@ export class StrategyEngine {
         const trigger = order.price!;
 
         if (order.kind === 'limit') {
-            // a buy limit needs the bar to trade down to it, a sell limit up to it.
-            // filled at the limit, never better - price improvement inside a bar is
-            // not something an aggregate can evidence.
+            // filled at the limit, never better - an aggregate bar can't evidence
+            // price improvement
             if (order.side === 'buy' && bar.low <= trigger) return trigger;
             if (order.side === 'sell' && bar.high >= trigger) return trigger;
             return null;
@@ -637,12 +813,17 @@ export class StrategyEngine {
         this.slippagePaid += this.slippageCost(qty);
     }
 
-    // what the configured slippage costs on one fill, in account currency
     private slippageCost(qty: number): number {
         return this.cfg.slippageTicks * this.cfg.tickSize * qty * this.cfg.contractSize;
     }
 
-    private exit(bar: StrategyBar, price: number, reason: ExitReason, qty?: number): void {
+    private exit(
+        bar: StrategyBar,
+        price: number,
+        reason: ExitReason,
+        qty?: number,
+        ambiguous = false,
+    ): void {
         const pos = this.pos;
         if (!pos) return;
 
@@ -650,9 +831,8 @@ export class StrategyEngine {
         const dir = pos.side === 'long' ? 1 : -1;
         const gross = (price - pos.avgPrice) * dir * closing * this.cfg.contractSize;
 
-        // the entry side was charged to equity when the position opened, so only
-        // the exit side moves equity here - but the trade reports the round trip,
-        // which is what makes the trade log sum to the equity curve
+        // entry side was already charged to equity at open, so only the exit
+        // side moves it here - the trade record still reports the round trip
         const exitFee = this.commissionFor(closing);
         const entryFee = pos.qty > 0 ? (pos.entryFees * closing) / pos.qty : 0;
         const fees = entryFee + exitFee;
@@ -665,9 +845,7 @@ export class StrategyEngine {
         const long = pos.side === 'long';
         const unit = closing * this.cfg.contractSize;
 
-        // excursion in price, then the same in money. Clamped at zero because a
-        // position closed on its entry bar can have a watermark equal to entry,
-        // and a negative "worst case" is nonsense.
+        // clamped at zero - a same-bar close can have a watermark equal to entry
         const mfeAbs = Math.max(0, long ? pos.highWatermark - pos.avgPrice : pos.avgPrice - pos.lowWatermark);
         const maeAbs = Math.max(0, long ? pos.avgPrice - pos.lowWatermark : pos.highWatermark - pos.avgPrice);
 
@@ -678,13 +856,10 @@ export class StrategyEngine {
         const maxFavorableR = riskTotal && riskTotal > 0 ? (mfeAbs * unit) / riskTotal : undefined;
         const maxAdverseR = riskTotal && riskTotal > 0 ? -(maeAbs * unit) / riskTotal : undefined;
 
-        // how much of the favourable move the exit kept. Undefined when the trade
-        // never went in favour at all - there was nothing to capture, which is
-        // not the same as capturing none of it.
+        // undefined (not 0) when the trade never went in favour - nothing to capture
         const efficiency =
             mfeAbs > 0 ? Math.max(0, (long ? price - pos.avgPrice : pos.avgPrice - price)) / mfeAbs : undefined;
 
-        // give-back: the best this position was worth, minus what it closed at
         const peakValue = mfeAbs * unit;
         const maxDrawdownAbs = Math.max(0, peakValue - (gross - fees));
 
@@ -706,6 +881,7 @@ export class StrategyEngine {
             durationNs: bar.ts - pos.entryTs,
             tag: pos.tag,
             reason,
+            ...(ambiguous ? { ambiguousExit: true } : {}),
 
             maeAbs,
             mfeAbs,
@@ -747,12 +923,14 @@ export class StrategyEngine {
         const stopHit = pos.sl != null && (long ? bar.low <= pos.sl : bar.high >= pos.sl);
         const targetHit = pos.tp != null && (long ? bar.high >= pos.tp : bar.low <= pos.tp);
 
-        // both inside one bar: the aggregate cannot say which came first, so the
-        // stop wins. see the header - this is the difference between a backtest
-        // and a fantasy.
+        // both in one bar: can't say which came first, so the stop wins - counted,
+        // since that's how much of the result rests on the assumption
+        const ambiguous = stopHit && targetHit;
+        if (ambiguous) this.ambiguousExits++;
+
         if (stopHit) {
             const gapped = long ? Math.min(pos.sl!, bar.open) : Math.max(pos.sl!, bar.open);
-            this.exit(bar, long ? gapped - slip : gapped + slip, 'stop');
+            this.exit(bar, long ? gapped - slip : gapped + slip, 'stop', undefined, ambiguous);
             return;
         }
         if (targetHit) {
@@ -886,19 +1064,11 @@ export class StrategyEngine {
             }
         }
 
-        let maxDd = 0;
-        let maxDdPct = 0;
-        let ulcerSum = 0;
-        for (const p of this.equityCurve) {
-            const abs = this.peakAt(p) - p.equity;
-            if (abs > maxDd) maxDd = abs;
-            if (p.drawdown > maxDdPct) maxDdPct = p.drawdown;
-            ulcerSum += p.drawdown * p.drawdown;
-        }
+        const maxDd = this.maxDdAbs;
+        const maxDdPct = this.maxDdPct;
+        const ulcerSum = this.ulcerSum;
 
-        const finalEquity = this.equityCurve.length
-            ? this.equityCurve[this.equityCurve.length - 1].equity
-            : cap;
+        const finalEquity = this.lastEquity ?? cap;
         const netPnl = finalEquity - cap;
         const returnPct = cap > 0 ? netPnl / cap : 0;
 
@@ -947,12 +1117,8 @@ export class StrategyEngine {
             sortino: this.sortino(),
             calmar: maxDdPct > 0 && years > 0 ? this.cagr(years) / maxDdPct : 0,
             recoveryFactor: maxDd > 0 ? netPnl / maxDd : 0,
-            ulcerIndex: this.equityCurve.length
-                ? Math.sqrt(ulcerSum / this.equityCurve.length)
-                : 0,
+            ulcerIndex: this.equityCount ? Math.sqrt(ulcerSum / this.equityCount) : 0,
             sqn: sqn(pnls),
-            // Kelly: the edge divided by the odds. Negative is the useful answer -
-            // it says the strategy has no edge to size into.
             kelly:
                 avgLoss !== 0
                     ? winRate - (1 - winRate) / (avgWin / Math.abs(avgLoss))
@@ -978,69 +1144,36 @@ export class StrategyEngine {
             totalCommission,
             totalSlippage: this.slippagePaid,
             grossPnlBeforeCosts: grossBeforeCosts,
+
+            intrabarBars: this.intrabarBars,
+            intrabarFallbacks: this.intrabarFallbacks,
+            ambiguousExits: this.ambiguousExits,
         };
     }
 
-    // Wall-clock span of the run in years, for anything annualized
     private runYears(): number {
-        const eq = this.equityCurve;
-        if (eq.length < 2) return 0;
-        const ns = eq[eq.length - 1].ts - eq[0].ts;
+        if (this.equityCount < 2 || this.firstTs === null) return 0;
+        const ns = this.lastTs - this.firstTs;
         return ns > 0n ? Number(ns) / 31_536_000_000_000_000 : 0;
     }
 
     private cagr(years: number): number {
         const cap = this.cfg.initialCapital;
         if (years <= 0 || cap <= 0) return 0;
-        const finalEquity = this.equityCurve.length
-            ? this.equityCurve[this.equityCurve.length - 1].equity
-            : cap;
+        const finalEquity = this.lastEquity ?? cap;
         if (finalEquity <= 0) return -1;
         return Math.pow(finalEquity / cap, 1 / years) - 1;
     }
 
-    // sharpe's doenwide-only sibling. upside volatility is not risk and a strategy
-    // with occasional big winners is pushied by sharpe for exactly the behavior
-    // you want
     private sortino(): number {
-        const rets = this.barReturns();
-        if (rets.length < 2 || this.barNs <= 0n) return 0;
+        if (this.retN < 2 || this.barNs <= 0n) return 0;
+        if (!this.downCount) return 0;
 
-        let mean = 0;
-        for (const r of rets) mean += r;
-        mean /= rets.length;
-
-        let downSum = 0;
-        let downCount = 0;
-        for (const r of rets) {
-            if (r < 0) {
-                downSum += r * r;
-                downCount++;
-            }
-        }
-        if (!downCount) return 0;
-
-        const downDev = Math.sqrt(downSum / downCount);
+        const downDev = Math.sqrt(this.downSum / this.downCount);
         if (downDev === 0) return 0;
 
         const barsPerYear = Number(31_536_000_000_000_000n / this.barNs);
-        return (mean / downDev) * Math.sqrt(barsPerYear);
-    }
-
-    private barReturns(): number[] {
-        const eq = this.equityCurve;
-        const rets: number[] = [];
-        for (let i = 1; i < eq.length; i++) {
-            const prev = eq[i - 1].equity;
-            if (prev > 0) rets.push((eq[i].equity - prev) / prev);
-        }
-        return rets;
-    }
-
-    // the curve already carries drawdown as a fraction of the running peak, so
-    // the peak is recoverable without keeping a second series around
-    private peakAt(p: StrategyEquityPoint): number {
-        return p.drawdown >= 1 ? p.equity : p.equity / (1 - p.drawdown);
+        return (this.retMean / downDev) * Math.sqrt(barsPerYear);
     }
 
     private barsInPositionTotal(): number {
@@ -1051,26 +1184,14 @@ export class StrategyEngine {
     }
 
     private sharpe(): number {
-        const eq = this.equityCurve;
-        if (eq.length < 3 || this.barNs <= 0n) return 0;
+        if (this.equityCount < 3 || this.barNs <= 0n) return 0;
+        if (this.retN < 2) return 0;
 
-        const rets: number[] = [];
-        for (let i = 1; i < eq.length; i++) {
-            const prev = eq[i - 1].equity;
-            if (prev > 0) rets.push((eq[i].equity - prev) / prev);
-        }
-        if (rets.length < 2) return 0;
-
-        let mean = 0;
-        for (const r of rets) mean += r;
-        mean /= rets.length;
-
-        let varSum = 0;
-        for (const r of rets) varSum += (r - mean) * (r - mean);
-        const sd = Math.sqrt(varSum / (rets.length - 1));
+        // sample deviation, n-1, which is what Welford's M2 divides to
+        const sd = Math.sqrt(this.retM2 / (this.retN - 1));
         if (sd === 0) return 0;
 
         const barsPerYear = Number(31_536_000_000_000_000n / this.barNs);
-        return (mean / sd) * Math.sqrt(barsPerYear);
+        return (this.retMean / sd) * Math.sqrt(barsPerYear);
     }
 }

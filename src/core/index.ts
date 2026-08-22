@@ -79,7 +79,7 @@ export { createScriptedPlugin } from './ScriptedPlugin';
 // Strategy execution. The engine is exported so a host can score a run outside
 // the chart - the server runner is the reason, but a test harness or a param
 // sweep wants the same thing.
-export { StrategyEngine, DEFAULT_STRATEGY_CONFIG } from './strategy-runtime';
+export { StrategyEngine, DEFAULT_STRATEGY_CONFIG, reconcileIntrabar } from './strategy-runtime';
 // Sweeps: the host builds the grid and checks the budget, the worker runs it.
 // Exported because a sweep UI needs to show the combination count and refuse an
 // impossible grid *before* posting it, using the same arithmetic the worker will.
@@ -92,6 +92,11 @@ export {
     MAX_SWEEP_BAR_ITERATIONS,
 } from './strategy-sweep';
 export type { SweepAxis, SweepSpec, SweepResult, SweepBudget } from './strategy-sweep';
+// Bounding a run to a span of time. Exported because the host resolves the range
+// against the bars it holds before posting it, so it can say "that range holds
+// no data" without a worker round trip.
+export { clipRange, hasRange, emptyRangeReason } from './strategy-range';
+export type { StrategyRange, ClippedRange } from './strategy-range';
 // Walk-forward. The host schedules the windows and reads the two diagnostics;
 // the worker runs them.
 export {

@@ -8,7 +8,12 @@ import type { IExecutionAdapter } from '../interfaces/IExecutionAdapter';
 import type { IAccountAdapter } from '../interfaces/IAccountAdapter';
 import type { ActiveDrawingTool, Drawing } from '../lib/types/drawing-types';
 import { CURSOR_TOOL, toolFromDrawing } from '../lib/types/drawing-types';
-import { parseCustomTimeframe, PRESET_TIMEFRAMES, type Timeframe } from '../lib/timeframes';
+import {
+    parseCustomTimeframe,
+    PRESET_TIMEFRAMES,
+    timeframeFromBarNs,
+    type Timeframe,
+} from '../lib/timeframes';
 import type { ChartSettings } from '../lib/types/chart-settings';
 import type { FootprintBar, FootprintOptions } from '../lib/types/footprint';
 import { PRESETS, type DepthProps } from '../ChartOuter';
@@ -771,7 +776,7 @@ export class DepthChart {
     /**
      * The currently charted symbol. Reads the focused pane, which is the real
      * truth - pane models update on every switch, whereas `state.symbol` is only
-     * a mirror (see _wireSymbolMirror) and as good as the events it has seen.
+     * a mirror and as good as the events it has seen.
      */
     getSymbol(): string {
         return this.focusedChart?.symbol ?? this.state.get('symbol');
@@ -780,7 +785,7 @@ export class DepthChart {
     /**
      * The tool armed for drawing - `{ name: 'cursor' }` when the chart is idle.
      * What the toolbar highlights, not what is selected on the canvas. For that
-     * see `getSelectedDrawing`.
+     * use `getSelectedDrawing`.
      */
     getActiveTool(): ActiveDrawingTool {
         return this.state.get('activeTool');
@@ -1398,6 +1403,13 @@ export class DepthChart {
             executionEngine: chart.executionEngine,
             transformer: chart.transformer,
             getData: () => chart.dataEngine.getSnapshot(),
+            fetchRange: (opts) =>
+                chart.dataEngine.fetchRangeBars({
+                    symbol: opts.symbol,
+                    fromNs: opts.fromNs,
+                    toNs: opts.toNs,
+                    timeframe: opts.barNs != null ? timeframeFromBarNs(opts.barNs) : undefined,
+                }),
             openBar: () => chart.openBar(),
 
             get dataLevel(): DataLevel {

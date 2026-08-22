@@ -732,6 +732,52 @@ export class DataEngine {
         });
     }
 
+    /**
+     * Bars for a span, without touching what the chart has loaded. Every other
+     * fetch path here joins the loaded-range bookkeeping (segments,
+     * `loadedFrom`/`loadedTo`, prefetch, playback horizon) - this one doesn't. A
+     * five-year backtest shouldn't drag five years into the chart's working set
+     * or make the next pan think it has history it doesn't.
+     *
+     * One request, one answer. Chunking a long span is the caller's job -
+     * holding chunks here to return one array would cost exactly the memory
+     * this exists to avoid.
+     */
+    async fetchRangeBars(opts: {
+        /** Defaults to the focused symbol. */
+        symbol?: string;
+        fromNs: bigint;
+        toNs: bigint;
+        /** Defaults to the chart's current timeframe. */
+        timeframe?: Timeframe;
+    }): Promise<{ bars: OhlcvBar[]; hasMore: boolean; coveredTo: bigint | null }> {
+        const symbol = this._targetSymbol(opts.symbol);
+        const adapter = this._adapterFor(symbol);
+        if (!adapter) throw new Error('no data adapter is attached');
+
+        const symbolInfo =
+            this.resolvedSymbols.get(symbol) ?? this._states.get(symbol)?.symbolInfo ?? null;
+        if (!symbolInfo) throw new Error(`symbol "${symbol}" has not been resolved yet`);
+
+        const timeframe = opts.timeframe ?? this.state.get('timeframe');
+
+        const response = await adapter.fetchBars({
+            symbolInfo,
+            range: makeTimeRange(opts.fromNs, opts.toNs),
+            timeframe,
+            // 'initial', not 'backward' - this isn't extending an edge, and an
+            // adapter that pages relative to what it last served would otherwise
+            // answer about the chart's window instead of the span asked for
+            direction: 'initial',
+        });
+
+        return {
+            bars: response.ohlcvBars ?? [],
+            hasMore: !!response.hasMore,
+            coveredTo: response.coveredTo ?? null,
+        };
+    }
+
     getSnapshot(): ChartDataSnapshot {
         const master = this._states.get(this.activeSymbol)?.master ?? null;
         if (!master) {

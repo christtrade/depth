@@ -11,15 +11,18 @@ import type {
     PluginType,
     Permission,
 } from './PluginRegistry';
-import type { DataLevel } from '../interfaces/IDataAdapter';
+import type { DataLevel, OhlcvBar as FetchedOhlcvBar } from '../interfaces/IDataAdapter';
 import type { Indicator, RenderContext } from '../lib/types/indicator-types';
 import { executeDrawCommands, type DrawCommand } from '../lib/indicator-stdlib';
 import type {
+    StrategyBar,
     StrategyEquityPoint,
     StrategyPosition,
     StrategyStats,
     StrategyTrade,
 } from './strategy-runtime';
+import type { StrategyRange } from './strategy-range';
+import { planChunks, streamRangeChunks } from './strategy-stream';
 import type { OhlcvBar } from '../lib/indicator-stdlib';
 import { makeScopedCompiler } from './script-scope';
 import type { IndicatorSettingField } from '../components/indicators/indicators-settings-dialog';
@@ -84,6 +87,14 @@ export type ParamDef =
     | { label: string; type: 'fontSize'; default: number }
     | { label: string; type: 'color'; default: string }
     | { label: string; type: 'text'; default: string; placeholder?: string; maxLength?: number }
+    | {
+          label: string;
+          type: 'date';
+          default: string;
+          withTime?: boolean;
+          min?: string;
+          max?: string;
+      }
     | {
           label: string;
           type: 'select';
@@ -220,7 +231,7 @@ interface ScriptDeclaration {
     layout?: 'overlay' | 'pane';
     /**
      * Groups the plugin in the indicators picker. A script may declare its own;
-     * otherwise the host-supplied fallback (see createScriptedPlugin) is used.
+     * otherwise the host-supplied fallback is used.
      */
     category?: string;
     /** Ticker-style abbreviation shown next to the name in the picker. */
@@ -305,6 +316,30 @@ interface WorkerUpdateMsg {
 }
 
 // Shared helpers
+const strategyRanges = new Map<string, StrategyRange>();
+const streamingEntries = new Map<string, number>();
+const runningTail = new Set<string>();
+const chunkProgress = new Map<string, { done: number; total: number }>();
+const strategyBars = new Map<string, OhlcvBar[]>();
+
+const STREAM_CHUNK_BARS = 20_000n;
+const MAX_STREAM_CHUNKS = 2_000;
+// engine eats a chunk in ~1.5ms, a fetch takes hundreds - 4 concurrent hides
+// most of that latency for a few MB resident
+const STREAM_PIPELINE_DEPTH = 4;
+const MAX_CHUNK_CONTINUATIONS = 16;
+
+function toStrategyBar(b: FetchedOhlcvBar): StrategyBar {
+    return {
+        ts: BigInt(Math.round(b.time)) * 1_000_000n,
+        open: b.open,
+        high: b.high,
+        low: b.low,
+        close: b.close,
+        volume: b.volume,
+    };
+}
+
 function buildDataForLevel(
     level: DataLevel,
     ohlcv: OhlcvBar[],
@@ -448,6 +483,15 @@ function buildParamSchema(paramDefs: Record<string, ParamDef>): IndicatorSetting
                     type: 'textInput',
                     placeholder: def.placeholder,
                     maxLength: def.maxLength,
+                });
+                break;
+            case 'date':
+                fields.push({
+                    ...base,
+                    type: 'dateInput',
+                    withTime: def.withTime,
+                    min: def.min,
+                    max: def.max,
                 });
                 break;
             case 'select': {
@@ -626,9 +670,43 @@ const indicatorCapability: CapabilityHandler = (
         return lb ?? 0;
     }
 
-    // cached from the last full compute, to recompute on a param change
     let lastComputeData: Record<string, unknown> | null = null;
     let lastComputeBarNs: bigint = 0n;
+
+    // A strategy recomputing on every bar/keystroke like a live indicator would
+    // silently replace the user's answer while they're reading it, and could
+    // never finish a bounded run on a live symbol. So it runs once, on first
+    // data, then waits - changes accumulate into 'plugin:strategy-stale' and
+    // are spent when asked. 'plugin:strategy-mode' opts back into live-recompute.
+    const isStrategy = decl.type === 'strategy';
+    let manualRun = isStrategy;
+    let hasRunOnce = false;
+    let pendingBars = 0;
+    let pendingParams: Record<string, unknown> | null = null;
+    // Separate from `lastComputeData`: rebuilding that per replay tick is the
+    // cost manual mode exists to avoid, so the newest slice waits here and the
+    // rebuild happens once, on run.
+    let pendingAdvance: {
+        trades: unknown;
+        ticks: unknown;
+        snapshots: unknown;
+        barNs: bigint;
+    } | null = null;
+
+    const emitStale = () => {
+        ctx.eventBus.emit('plugin:strategy-stale', {
+            id: entryId,
+            name: decl.name,
+            newBars: pendingBars,
+            params: pendingParams ?? {},
+        });
+    };
+
+    const clearStale = () => {
+        pendingBars = 0;
+        pendingParams = null;
+        emitStale();
+    };
 
     const symbolContract = (): unknown => {
         try {
@@ -730,21 +808,25 @@ const indicatorCapability: CapabilityHandler = (
         },
     };
 
-    // schema + param metadata for the settings dialog
     if (Object.keys(paramDefs).length > 0) {
         (indicator as any).settingsSchema = buildParamSchema(paramDefs);
     }
-    // every settings key owned by a param, so onUpdate can route to a worker
-    // recompute or just a canvas redraw
+    // so onUpdate can route to a worker recompute or just a canvas redraw
     const allParamKeys = new Set<string>();
     for (const [key, def] of Object.entries(paramDefs)) {
         for (const k of getParamKeys(key, def)) allParamKeys.add(k);
     }
     (indicator as any).__paramKeys = allParamKeys;
-    // called when a param field changes
     (indicator as any).__onParamsChanged = (patch: Record<string, unknown>) => {
         Object.assign(currentParams, patch);
-        if (lastComputeData !== null) {
+        if (manualRun && hasRunOnce) {
+            // The value is live in `currentParams` either way - what waits is
+            // spending several seconds of engine on it. Reported by name so the
+            // host can say *which* parameters are ahead of the numbers, which is
+            // the difference between "out of date" and "fast is 10, was 20".
+            pendingParams = { ...(pendingParams ?? {}), ...patch };
+            emitStale();
+        } else if (lastComputeData !== null) {
             worker.postMessage({
                 type: 'run-init',
                 pluginIndex,
@@ -752,6 +834,7 @@ const indicatorCapability: CapabilityHandler = (
                 barNs: lastComputeBarNs,
                 params: { ...currentParams },
                 symbolInfo: symbolContract(),
+                range: strategyRanges.get(entryId),
             });
         }
         // re-register with the new lookback if it depends on a param
@@ -764,6 +847,201 @@ const indicatorCapability: CapabilityHandler = (
             });
         }
     };
+
+    // Invalidates an in-flight stream when the user changes the range mid-fetch,
+    // so the abandoned run's late chunks don't feed the new one's session.
+    let streamToken = 0;
+
+    // Pipelining lives in strategy-stream.ts, not here - the server runner
+    // needs the identical walk against an object store instead of an adapter.
+    const streamRange = async (range: StrategyRange, token: number) => {
+        const barNs = lastComputeBarNs > 0n ? lastComputeBarNs : 60_000_000_000n;
+
+        const from = range.fromNs;
+        const to = range.toNs ?? BigInt(Date.now()) * 1_000_000n;
+        if (from == null) return;
+
+        const alive = () => token === streamToken;
+
+        const plan = planChunks(from, to, barNs, STREAM_CHUNK_BARS, MAX_STREAM_CHUNKS);
+        const total = plan.length || 1;
+
+        worker.postMessage({
+            type: 'strategy-begin',
+            pluginIndex,
+            params: { ...currentParams },
+            barNs,
+            symbolInfo: symbolContract(),
+            totalChunks: total,
+            barsPerChunk: Number(STREAM_CHUNK_BARS),
+        });
+        // Claimed unconditionally: a later stream for the same entry overwrites
+        // this, which is exactly right, since that later run is the one whose
+        // result the panel is waiting for.
+        streamingEntries.set(entryId, token);
+
+        let delivered = 0;
+
+        try {
+            ctx.eventBus.emit('plugin:strategy-progress', {
+                id: entryId,
+                name: decl.name,
+                phase: 'fetching',
+                done: 0,
+                total,
+            });
+
+            await streamRangeChunks<StrategyBar>({
+                plan,
+                barNs,
+                fetch: async (opts) => {
+                    const res = await ctx.fetchRange(opts);
+                    return { bars: res.bars.map(toStrategyBar), coveredTo: res.coveredTo };
+                },
+                deliver: (bars) => {
+                    worker.postMessage({ type: 'strategy-chunk', pluginIndex, bars });
+                },
+                isAlive: alive,
+                onProgress: (done) => {
+                    delivered = done;
+                    ctx.eventBus.emit('plugin:strategy-progress', {
+                        id: entryId,
+                        name: decl.name,
+                        phase: 'fetching',
+                        done,
+                        total,
+                    });
+                },
+                depth: STREAM_PIPELINE_DEPTH,
+                maxContinuations: MAX_CHUNK_CONTINUATIONS,
+            });
+
+            if (!alive()) return;
+
+            // Fetch is finished, run isn't - posting a chunk doesn't wait for the
+            // worker to process it. Open 'running' at whatever chunkProgress
+            // last reported so an already-caught-up worker doesn't look like it's restarting
+            runningTail.add(entryId);
+            const caughtUp = chunkProgress.get(entryId);
+            ctx.eventBus.emit('plugin:strategy-progress', {
+                id: entryId,
+                name: decl.name,
+                phase: 'running',
+                done: caughtUp?.done ?? 0,
+                total: caughtUp?.total ?? total,
+            });
+
+            worker.postMessage({ type: 'strategy-end', pluginIndex });
+        } catch (e) {
+            if (!alive()) return;
+            // Only if this run still owns the entry - a newer stream may have
+            // claimed it while this one was failing, and clearing that would
+            // leave the live run with no way to report itself finished.
+            if (streamingEntries.get(entryId) === token) streamingEntries.delete(entryId);
+            runningTail.delete(entryId);
+            chunkProgress.delete(entryId);
+            worker.postMessage({ type: 'strategy-cancel', pluginIndex });
+            ctx.eventBus.emit('plugin:strategy-progress', {
+                id: entryId,
+                name: decl.name,
+                phase: 'failed',
+                done: delivered,
+                total,
+                error: e instanceof Error ? e.message : String(e),
+            });
+        }
+    };
+
+    const runNow = (
+        range: { fromNs?: bigint; toNs?: bigint } | null | undefined,
+        fetch: boolean,
+    ) => {
+        // Bars withheld since the last run become this run's bars. Deferred to
+        // here, not per advance, since it's a full rebuild and a replay frame
+        // is thousands of advances - the whole reason the run is manual
+        if (pendingAdvance) {
+            lastComputeData = buildDataForLevel(
+                dataLevel,
+                fullBars,
+                pendingAdvance.trades as never,
+                pendingAdvance.ticks as never,
+                pendingAdvance.snapshots as never,
+            );
+            if (pendingAdvance.barNs) lastComputeBarNs = pendingAdvance.barNs;
+            pendingAdvance = null;
+        }
+
+        // any stream still running describes the previous range
+        streamToken++;
+        worker.postMessage({ type: 'strategy-cancel', pluginIndex });
+
+        if (range !== undefined) {
+            if (range && (range.fromNs != null || range.toNs != null)) {
+                strategyRanges.set(entryId, { fromNs: range.fromNs, toNs: range.toNs });
+            } else {
+                strategyRanges.delete(entryId);
+            }
+        }
+
+        const stored = strategyRanges.get(entryId);
+
+        if (fetch && stored?.fromNs != null) {
+            void streamRange(stored, streamToken);
+            return;
+        }
+
+        // Not streaming any more - clear any progress the abandoned walk was
+        // reporting, since the clipped run below may produce no result at all
+        // if the chart holds no bars yet
+        runningTail.delete(entryId);
+        chunkProgress.delete(entryId);
+        if (streamingEntries.delete(entryId)) {
+            ctx.eventBus.emit('plugin:strategy-progress', {
+                id: entryId,
+                name: decl.name,
+                phase: 'done',
+                done: 1,
+                total: 1,
+            });
+        }
+
+        if (lastComputeData !== null) {
+            worker.postMessage({
+                type: 'run-init',
+                pluginIndex,
+                data: lastComputeData,
+                barNs: lastComputeBarNs,
+                params: { ...currentParams },
+                symbolInfo: symbolContract(),
+                range: stored,
+            });
+        }
+    };
+
+    // Bounding the run and the Run button are the same operation - "run it
+    // again" and "run it over these dates" share one implementation so they
+    // can't drift into measuring different things
+    const offRange = ctx.eventBus.on('plugin:strategy-range', ({ id, range, fetch }) => {
+        if (id !== entryId) return;
+        runNow(range, !!fetch);
+        clearStale();
+        hasRunOnce = true;
+    });
+
+    const offRun = ctx.eventBus.on('plugin:strategy-run', ({ id, range, fetch }) => {
+        if (id !== entryId) return;
+        runNow(range, !!fetch);
+        clearStale();
+        hasRunOnce = true;
+    });
+
+    const offMode = ctx.eventBus.on('plugin:strategy-mode', ({ id, manual }) => {
+        if (id !== entryId) return;
+        manualRun = manual;
+        // Leaving manual mode with changes outstanding would strand them: the
+        // next tick recomputes anyway, so the honest thing is to say so.
+        if (!manual) clearStale();
+    });
 
     const offApplyParams = ctx.eventBus.on('plugin:apply-params', ({ id, params }) => {
         if (id !== entryId) return;
@@ -804,10 +1082,23 @@ const indicatorCapability: CapabilityHandler = (
         ({ id, ohlcv, trades, ticks, snapshots, barNs }: any) => {
             if (id !== entryId) return;
             fullBars = ohlcv;
+            if (isStrategy) strategyBars.set(entryId, fullBars);
             const data = buildDataForLevel(dataLevel, ohlcv, trades, ticks, snapshots);
             lastComputeData = data;
             lastComputeBarNs = barNs;
 
+            // cached either way - manual mode withholds the run, not the bars
+            if (manualRun && hasRunOnce) {
+                // A fresh compute means the whole series was replaced: a new
+                // symbol, a new timeframe, a reload. Counted as bars rather than
+                // given its own reason because the answer is the same one - press
+                // Run - and a second kind of staleness to explain buys nothing.
+                pendingBars = Array.isArray(ohlcv) ? ohlcv.length : 0;
+                emitStale();
+                return;
+            }
+
+            hasRunOnce = true;
             worker.postMessage({
                 type: 'run-init',
                 pluginIndex,
@@ -815,6 +1106,7 @@ const indicatorCapability: CapabilityHandler = (
                 barNs,
                 params: { ...currentParams },
                 symbolInfo: symbolContract(),
+                range: strategyRanges.get(entryId),
             });
         },
     );
@@ -824,6 +1116,22 @@ const indicatorCapability: CapabilityHandler = (
         ({ id, newOhlcv, newTrades, newTicks, newSnapshots, barNs, horizon }: any) => {
             if (id !== entryId) return;
             fullBars = mergeBars(fullBars, newOhlcv);
+            if (isStrategy) strategyBars.set(entryId, fullBars);
+
+            // merged, not run - a replay tick is thousands of these, and manual
+            // mode exists so they don't each restart a backtest
+            if (manualRun && hasRunOnce) {
+                pendingBars += Array.isArray(newOhlcv) ? newOhlcv.length : 0;
+                pendingAdvance = {
+                    trades: newTrades,
+                    ticks: newTicks,
+                    snapshots: newSnapshots,
+                    barNs,
+                };
+                emitStale();
+                return;
+            }
+
             const data = buildDataForLevel(dataLevel, fullBars, newTrades, newTicks, newSnapshots);
             const newData = buildDataForLevel(
                 dataLevel,
@@ -842,6 +1150,7 @@ const indicatorCapability: CapabilityHandler = (
                 horizon,
                 params: { ...currentParams },
                 symbolInfo: symbolContract(),
+                range: strategyRanges.get(entryId),
             });
         },
     );
@@ -870,6 +1179,12 @@ const indicatorCapability: CapabilityHandler = (
         offCompute();
         offAdvance();
         offApplyParams();
+        offRange();
+        offRun();
+        offMode();
+        strategyRanges.delete(entryId);
+        streamingEntries.delete(entryId);
+        strategyBars.delete(entryId);
         if (layout === 'pane') ctx.eventBus.emit('plugin:remove-pane', { id: entryId });
     };
 };
@@ -1151,12 +1466,10 @@ const chartTypeCapability: CapabilityHandler = (
     // so incremental horizon advances update our state
     onWorkerUpdate((msg) => {
         computedState = msg.state ?? computedState;
-        // Trigger a redraw via the render engine
         ctx.eventBus.emit('plugin:chart-type-updated', { id: entryId });
     });
 
-    // the dedicated worker does both the full recompute and the incremental
-    // update, on the same script.worker protocol: parse -> run-init / update
+    // same script.worker protocol as an indicator: parse -> run-init / update
     ctWorker.onmessage = (e: MessageEvent) => {
         const msg = e.data;
         if (msg.type === 'error') {
@@ -1164,7 +1477,6 @@ const chartTypeCapability: CapabilityHandler = (
             return;
         }
         if (msg.type === 'update') {
-            // full recompute or incremental update
             if (msg.points !== undefined) {
                 plugin.appendHydrate?.(msg.points, 0n);
             }
@@ -1173,7 +1485,6 @@ const chartTypeCapability: CapabilityHandler = (
         }
     };
 
-    // send the script over and parse it
     ctWorker.postMessage({ type: 'parse', script: getScript() });
 
     const plugin: ChartTypePlugin = {
@@ -1209,8 +1520,7 @@ const chartTypeCapability: CapabilityHandler = (
         },
 
         appendHydrate(points: unknown, _barNs: bigint) {
-            // merge points into computedState if its an object. plugins can
-            // override with a custom hydrate shape.
+            // plugins can override with a custom hydrate shape
             if (
                 points &&
                 typeof points === 'object' &&
@@ -1419,7 +1729,6 @@ const extensionCapability: CapabilityHandler = (
         emitError,
     );
 
-    // compile the panel render fn if there is one
     const drawFn = compile<(state: unknown, ctx: PluginContext) => React.ReactNode>(drawSrc);
 
     // wrapper that holds state and can be updated from outside
@@ -1464,9 +1773,7 @@ const extensionCapability: CapabilityHandler = (
     };
 };
 
-// declaration type -> handler. one entry per plugin type.
-
- // the settings every strategy gets in its dialog without declaring anything
+// the settings every strategy gets in its dialog without declaring anything
 function buildStrategySettings(decl: ScriptDeclaration): Record<string, ParamDef> {
     const d = decl.strategy ?? {};
     return {
@@ -1535,6 +1842,15 @@ const strategyCapability: CapabilityHandler = (...args) => {
                 stats?: StrategyStats;
                 position?: StrategyPosition | null;
                 params?: Record<string, unknown>;
+                range?: {
+                    fromNs: bigint | null;
+                    toNs: bigint | null;
+                    bars: number;
+                    totalBars: number;
+                    clipped: boolean;
+                    dataFromNs: bigint | null;
+                    dataToNs: bigint | null;
+                };
             } | null;
             if (!state?.stats) return;
 
@@ -1547,15 +1863,42 @@ const strategyCapability: CapabilityHandler = (...args) => {
                 position: state.position ?? null,
                 params: state.params ?? {},
                 paramDefs: (decl.params ?? {}) as Record<string, unknown>,
+                // a worker predating this field reports the run as unclipped,
+                // which is what an unclipped run looks like anyway
+                range: state.range ?? {
+                    fromNs: null,
+                    toNs: null,
+                    bars: state.equity?.length ?? 0,
+                    totalBars: state.equity?.length ?? 0,
+                    clipped: false,
+                    dataFromNs: null,
+                    dataToNs: null,
+                },
+            });
+
+            // A run is only over once its numbers exist - emitted after the
+            // result so a panel never sees cleared progress next to stale stats.
+            // Unconditional: the local path reports its own 'running' checkpoints
+            // too and needs the same close-out, or its progress sits at the last
+            // percentage forever
+            streamingEntries.delete(entryId);
+            runningTail.delete(entryId);
+            chunkProgress.delete(entryId);
+            ctx.eventBus.emit('plugin:strategy-progress', {
+                id: entryId,
+                name: decl.name,
+                phase: 'done',
+                done: 1,
+                total: 1,
             });
         } catch (e) {
             emitError(`strategy results could not be published: ${e}`);
         }
     });
 
-    // The bars a sweep runs over. cached here rather than reached for inside
-    // indicatorCapability - the two are composed, not merged, and a 2nd subscription
-    // is cheaper than manking the first one's locals reachable
+    // Cached here rather than reached for inside indicatorCapability - the two
+    // are composed, not merged, and a 2nd subscription is cheaper than making
+    // the first one's locals reachable.
     let sweepData: Record<string, unknown> | null = null;
     let sweepBarNs = 0n;
 
@@ -1568,22 +1911,37 @@ const strategyCapability: CapabilityHandler = (...args) => {
         },
     );
 
+    // Bars a sweep runs over: whatever the single run holds now. `sweepData` is
+    // the last-compute snapshot, a fallback before any bars are recorded; past
+    // that, `strategyBars` is the same array the Results tab measured - the
+    // only way Optimize can claim to improve on it.
+    const dataForSweep = (): Record<string, unknown> | null => {
+        const bars = strategyBars.get(entryId);
+        if (bars) return { ohlcv: bars, trades: [], ticks: [], snapshots: [] };
+        return sweepData;
+    };
+
     const offSweep = ctx.eventBus.on(
         'plugin:strategy-sweep',
         ({ id, grid, oosFraction, params }) => {
         if (id !== entryId) return;
-        if (!sweepData) {
+        const data = dataForSweep();
+        if (!data) {
             emitError('no data loaded yet - let the chart finish loading, then sweep');
             return;
         }
         worker.postMessage({
             type: 'sweep',
             pluginIndex,
-            data: sweepData,
+            data,
             barNs: sweepBarNs,
             params: params ?? buildParamDefaults(decl.params ?? {}),
             grid,
             oosFraction,
+            // the same bound the Results tab ran under - a sweep measured over a
+            // different span than the single run it is meant to improve on is
+            // comparing two different questions
+            range: strategyRanges.get(entryId),
             symbolInfo: (() => {
                 try {
                     const info = ctx.getData?.().symbolInfo;
@@ -1603,7 +1961,8 @@ const strategyCapability: CapabilityHandler = (...args) => {
 
     const offWalkForward = ctx.eventBus.on('plugin:strategy-walkforward', (e) => {
         if (e.id !== entryId) return;
-        if (!sweepData) {
+        const data = dataForSweep();
+        if (!data) {
             emitError('no data loaded yet - let the chart finish loading, then run');
             return;
         }
@@ -1611,9 +1970,10 @@ const strategyCapability: CapabilityHandler = (...args) => {
         worker.postMessage({
             type: 'walk-forward',
             pluginIndex,
-            data: sweepData,
+            data,
             barNs: sweepBarNs,
             params: params ?? buildParamDefaults(decl.params ?? {}),
+            range: strategyRanges.get(entryId),
             ...spec,
             symbolInfo: (() => {
                 try {
@@ -1739,17 +2099,64 @@ export function createScriptedPlugin(script: string, id?: string, category?: str
                     // with the script, the range is just too long for this host to
                     // run it. The ui should say so rather than point at a line
                     // number the author cannot fix
+                    const id = `${pluginId}:${msg.pluginIndex}`;
                     ctx.eventBus.emit('plugin:strategy-rejected', {
-                        id: `${pluginId}:${msg.pluginIndex}`,
+                        id,
                         name: msg.name,
                         bars: msg.bars,
                         maxBars: msg.maxBars,
                         reason: msg.reason,
                     });
+                    // A refusal is a terminal state too. Without this the
+                    // progress from the stream that led to it stays on screen
+                    // for the rest of the session, next to the message
+                    // explaining why nothing more is coming.
+                    runningTail.delete(id);
+                    chunkProgress.delete(id);
+                    if (streamingEntries.delete(id)) {
+                        ctx.eventBus.emit('plugin:strategy-progress', {
+                            id,
+                            name: msg.name,
+                            phase: 'failed',
+                            done: 0,
+                            total: 1,
+                            error: msg.reason,
+                        });
+                    }
+                    return;
+                }
+                if (msg.type === 'strategy-run-progress') {
+                    // The local (already-loaded) run path's own checkpoints -
+                    // Same event as the streamed path's 'running' phase, so
+                    // the panel needs no separate case for where the bars came from
+                    ctx.eventBus.emit('plugin:strategy-progress', {
+                        id: `${pluginId}:${msg.pluginIndex}`,
+                        name: msg.name,
+                        phase: 'running',
+                        done: msg.done,
+                        total: msg.total,
+                    });
+                    return;
+                }
+                if (msg.type === 'strategy-chunk-progress') {
+                    // Bars, not chunks, despite the name. Always recorded, so streamRange has an
+                    // up-to-date position when it needs one; only relayed as
+                    // 'running' once the entry is past its fetch (runningTail),
+                    // so it doesn't compete with fetch progress for the phase.
+                    const id = `${pluginId}:${msg.pluginIndex}`;
+                    chunkProgress.set(id, { done: msg.done, total: msg.total });
+                    if (runningTail.has(id)) {
+                        ctx.eventBus.emit('plugin:strategy-progress', {
+                            id,
+                            name: msg.name,
+                            phase: 'running',
+                            done: msg.done,
+                            total: msg.total,
+                        });
+                    }
                     return;
                 }
                 if (msg.type === 'parsed') {
-                    // fires once on parse, registers capabilities
                     for (const pluginMsg of msg.plugins) {
                         for (const cb of initListeners) cb(pluginMsg);
                     }
@@ -1769,7 +2176,6 @@ export function createScriptedPlugin(script: string, id?: string, category?: str
                 }
             };
 
-            // Each capability handler registers itself for a specific pluginIndex
             const onWorkerInit = (cb: (msg: WorkerInitMsg['plugins'][0]) => void) => {
                 initListeners.push(cb);
             };
@@ -1817,7 +2223,6 @@ export function createScriptedPlugin(script: string, id?: string, category?: str
                     return;
                 }
 
-                // tear the previous instance down before creating a new one
                 const prev = teardowns.get(pluginMsg.index);
                 if (prev) {
                     prev({ hotReload: true });

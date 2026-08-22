@@ -218,6 +218,15 @@ export interface PluginContext {
 
     getData(): Readonly<PluginDataSnapshot>;
 
+    fetchRange(opts: {
+        /** Defaults to the focused symbol. */
+        symbol?: string;
+        fromNs: bigint;
+        toNs: bigint;
+        /** Bar period to fetch at. Defaults to the chart's current timeframe. */
+        barNs?: bigint;
+    }): Promise<{ bars: OhlcvBar[]; hasMore: boolean; coveredTo: bigint | null }>;
+
     /**
      * The bar still being built at the playback horizon, or `null` before any
      * data has arrived.

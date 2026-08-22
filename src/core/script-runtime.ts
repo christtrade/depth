@@ -27,8 +27,10 @@ import { PluginType, DataLevel, Layout, ExitReason, SCRIPT_DSL } from './script-
 export { STDLIB, SCRIPT_DSL, PluginType, DataLevel, Layout, ExitReason };
 export type { OhlcvBar, DrawCommand } from '../lib/indicator-stdlib';
 
-export { StrategyEngine, DEFAULT_STRATEGY_CONFIG } from './strategy-runtime';
+export { StrategyEngine, DEFAULT_STRATEGY_CONFIG, reconcileIntrabar } from './strategy-runtime';
 export { axisValues, checkSweepBudget, expandGrid, splitIndex } from './strategy-sweep';
+export { clipRange, hasRange, emptyRangeReason } from './strategy-range';
+export type { StrategyRange, ClippedRange } from './strategy-range';
 export type { SweepAxis, SweepSpec, SweepResult, SweepBudget } from './strategy-sweep';
 export {
     planWalkForward,
