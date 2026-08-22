@@ -8,6 +8,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-08-22
+
+### Added
+- **Auditing a plugin's performance.** Opt-in - normal runs aren't touched,
+  but a run under audit wraps and timing every line and function call.
+  `plugin:audit-run` (`{ id }`) starts it; `plugin:audit-result` returns `{ id, result }`
+  (`result: AuditResult`) unless it failed, in which case `plugin:audit-error` reports `{ id, error }`.
+  Took one test strategy from ~20k to 70k+ bars/s once the slow parts were visible.
+  Auditing only works for indicator, strategy, and chart type plugins. 
+
+## [0.12.26] - 2026-08-21
+
 ### Added
 
 - **Intrabar fill resolution in the strategy engine.** `beginBar(bar, index, sub?)`

@@ -1189,7 +1189,7 @@ export default function Depth({
         // required to supply one.
         <TooltipProvider delayDuration={400}>
             <div
-                className="depth-root w-full h-full flex flex-col bg-background text-foreground overflow-hidden outline-none min-h-[120px]"
+                className="depth-root w-full h-full flex flex-col bg-background text-foreground overflow-hidden outline-none min-h-[340px]"
                 ref={containerRef}
                 tabIndex={0}
             >

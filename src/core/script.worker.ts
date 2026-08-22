@@ -10,6 +10,8 @@
 //   run-init  { pluginIndex, data, barNs, params } -> { points, state, drawCommands }
 //   update    { pluginIndex, data, newData, barNs, horizon, params }
 //                                                -> { points, state, drawCommands }
+//   audit-run { pluginIndex, data, barNs, params, range } -> { result: AuditResult }
+//                                                or { error }
 //   destroy                                      -> self.close()
 //
 // parse evals the script and reports what each plugin declared. run-init then
@@ -25,14 +27,26 @@ import { checkSweepBudget, splitIndex } from './strategy-sweep';
 import { clipRange, emptyRangeReason, hasRange, type StrategyRange } from './strategy-range';
 import { planWalkForward } from './strategy-walkforward';
 import { evictWasmModule, instantiateWasmPlugin, type WasmPlugin } from './WasmPluginHost';
+import {
+    AuditRecorder,
+    finishAudit,
+    instrumentScript,
+    profHandle,
+    timeOwnCode,
+    timedStdlib,
+    type AuditResult,
+} from './script-audit';
 
 // no DOM to escape to here, but shadow the network APIs anyway to stop
 // exfiltration; not frozen, the user needs mutable top-level vars. Scope
 // itself is built in script-runtime.ts, shared with the main-thread compiler
 // and the server runner.
 
-function buildScope(pluginDecl: (d: unknown) => void): Record<string, unknown> {
-    return buildScriptScope({ plugin: pluginDecl, shadowNetwork: true });
+function buildScope(
+    pluginDecl: (d: unknown) => void,
+    extra?: Record<string, unknown>,
+): Record<string, unknown> {
+    return buildScriptScope({ plugin: pluginDecl, shadowNetwork: true, extra });
 }
 
 interface PluginEntry {
@@ -86,7 +100,7 @@ interface PluginEntry {
     getTooltipSrc: string | null;
 }
 
-function evalScript(src: string): PluginEntry[] {
+function evalScript(src: string, extraScope?: Record<string, unknown>): PluginEntry[] {
     const entries: PluginEntry[] = [];
 
     function pluginFn(decl: unknown) {
@@ -213,7 +227,7 @@ function evalScript(src: string): PluginEntry[] {
         return builder;
     }
 
-    const scope = buildScope(pluginFn);
+    const scope = buildScope(pluginFn, extraScope);
     const keys = Object.keys(scope);
     const values = keys.map((k) => scope[k]);
     new Function(...keys, `"use strict";\n${src}`)(...values);
@@ -237,6 +251,9 @@ function evalScript(src: string): PluginEntry[] {
 }
 
 let entries: PluginEntry[] = [];
+// held so an audit-run can re-evaluate the same script into a second,
+// throwaway entries array with timed stdlib calls
+let lastScript = '';
 
 // Strategy execution
 
@@ -709,6 +726,81 @@ function runStrategy(
     return endSession(session, params, clipped);
 }
 
+function runAudit(
+    entry: PluginEntry,
+    pluginIndex: number,
+    data: any,
+    barNs: bigint,
+    params: Record<string, unknown>,
+    symbolInfo: any,
+    rawRange: unknown,
+): AuditResult {
+    if (entry.wasmUrl) {
+        throw new Error('Profiling is not available for WebAssembly-backed plugins.');
+    }
+
+    const recorder = new AuditRecorder();
+
+    let scriptToRun = lastScript;
+    let lineLevel = true;
+    try {
+        scriptToRun = instrumentScript(lastScript);
+    } catch {
+        lineLevel = false;
+    }
+
+    const scope = { ...timedStdlib(recorder), __prof: profHandle(recorder) };
+    let auditEntry: PluginEntry | undefined;
+    try {
+        auditEntry = evalScript(scriptToRun, scope)[pluginIndex];
+    } catch (err) {
+        if (!lineLevel) throw err; // already the fallback source; nothing left to try
+        lineLevel = false;
+        auditEntry = evalScript(lastScript, scope)[pluginIndex];
+    }
+    if (!auditEntry) throw new Error('Plugin not found.');
+
+    if (!lineLevel) {
+        if (auditEntry.init) auditEntry.init = timeOwnCode(recorder, '(your code - init)', auditEntry.init);
+        if (auditEntry.update) {
+            auditEntry.update = timeOwnCode(recorder, '(your code - update)', auditEntry.update);
+        }
+    }
+
+    const t0 = performance.now();
+    let barsOrPoints = 0;
+
+    if (entry.decl?.type === 'strategy') {
+        const { bars, clipped, range } = barsForRun(data, rawRange);
+        if (!bars.length) throw new Error(emptyRangeReason(clipped, range));
+        if (bars.length > MAX_LOCAL_STRATEGY_BARS) {
+            throw new Error(
+                `${bars.length.toLocaleString()} bars is past what an audit will run over ` +
+                    `(${MAX_LOCAL_STRATEGY_BARS.toLocaleString()}). Shorten the range first.`,
+            );
+        }
+        const session = beginSession(auditEntry, params, barNs, symbolInfo);
+        feedSession(session, auditEntry, bars, params, barNs);
+        endSession(session, params, clipped);
+        barsOrPoints = bars.length;
+    } else {
+        const points = data?.ohlcv ?? data ?? [];
+        barsOrPoints = Array.isArray(points) ? points.length : 0;
+        if (auditEntry.init) {
+            const state = auditEntry.init({ data, barNs, params });
+            // chart-type's draw runs on the main thread against a real canvas
+            // context, which this worker doesn't have - can't be timed here
+            if (auditEntry.draw && entry.decl?.type !== 'chart-type') {
+                (lineLevel ? auditEntry.draw : timeOwnCode(recorder, '(your code - draw)', auditEntry.draw))(
+                    state,
+                );
+            }
+        }
+    }
+
+    return finishAudit(recorder, performance.now() - t0, barsOrPoints, lastScript, lineLevel);
+}
+
 // split out from runStrategy because a chunked range needs the engine to
 // survive between messages - same loop either way, so scoring doesn't depend
 // on how the data was delivered
@@ -922,7 +1014,8 @@ let chain: Promise<void> = Promise.resolve();
 
 async function handle(msg: any): Promise<void> {
     if (msg.type === 'parse') {
-        entries = evalScript(msg.script ?? '');
+        lastScript = msg.script ?? '';
+        entries = evalScript(lastScript);
         entries.forEach(startWasm);
         self.postMessage({
             type: 'parsed', // a different type so it wont retrigger onWorkerInit
@@ -1166,6 +1259,30 @@ async function handle(msg: any): Promise<void> {
             });
         } catch (err) {
             postError(err);
+        }
+        return;
+    }
+
+    if (msg.type === 'audit-run') {
+        const entry = entries[msg.pluginIndex];
+        if (!entry) return;
+        try {
+            const result = runAudit(
+                entry,
+                msg.pluginIndex,
+                msg.data,
+                msg.barNs ?? 0n,
+                msg.params ?? {},
+                msg.symbolInfo,
+                msg.range,
+            );
+            self.postMessage({ type: 'audit-result', pluginIndex: msg.pluginIndex, result });
+        } catch (err) {
+            self.postMessage({
+                type: 'audit-error',
+                pluginIndex: msg.pluginIndex,
+                error: err instanceof Error ? err.message : String(err),
+            });
         }
         return;
     }

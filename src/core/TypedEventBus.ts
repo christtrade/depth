@@ -31,6 +31,7 @@ import { RenderEngine } from './RenderEngine';
 import { PlaybackMode } from '../hooks/usePlaybackEngine';
 import type { CrosshairSync, TimeRangeSync } from '../lib/types/layout-sync';
 import type { PlaceOrderRequest } from '../lib/matchingEngine';
+import type { AuditResult } from './script-audit';
 
 export interface ChartEvents {
     // View
@@ -460,6 +461,10 @@ export interface ChartEvents {
      * every cell has its own.
      */
     'plugin:indicator-updated': { id: string };
+
+    'plugin:audit-run': { id: string };
+    'plugin:audit-result': { id: string; result: AuditResult };
+    'plugin:audit-error': { id: string; error: string };
 
     'plugin:strategy-updated': {
         id: string;

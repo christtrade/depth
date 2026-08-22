@@ -1060,6 +1060,27 @@ const indicatorCapability: CapabilityHandler = (
         ctx.eventBus.emit('plugin:indicator-updated', { id: entryId });
     });
 
+    const pluginId = entryId.slice(0, entryId.lastIndexOf(':'));
+    const offAudit = ctx.eventBus.on('plugin:audit-run', ({ id }) => {
+        if (id !== pluginId) return;
+        if (lastComputeData === null) {
+            ctx.eventBus.emit('plugin:audit-error', {
+                id: pluginId,
+                error: 'Nothing loaded yet to audit.',
+            });
+            return;
+        }
+        worker.postMessage({
+            type: 'audit-run',
+            pluginIndex,
+            data: lastComputeData,
+            barNs: lastComputeBarNs,
+            params: { ...currentParams },
+            symbolInfo: symbolContract(),
+            range: strategyRanges.get(entryId),
+        });
+    });
+
     onWorkerUpdate((msg) => {
         drawCommands = msg.drawCommands ?? [];
         lastState = msg.state ?? lastState;
@@ -1179,6 +1200,7 @@ const indicatorCapability: CapabilityHandler = (
         offCompute();
         offAdvance();
         offApplyParams();
+        offAudit();
         offRange();
         offRun();
         offMode();
@@ -1407,6 +1429,7 @@ const chartTypeCapability: CapabilityHandler = (
     getScript,
 ) => {
     const decl = pluginMsg.decl as ScriptDeclaration;
+    const pluginId = entryId.slice(0, entryId.lastIndexOf(':'));
 
     // one chart type is active at a time, so unlike a drawing its params are a
     // single set. the host owns the saved values and hands them back through
@@ -1482,6 +1505,15 @@ const chartTypeCapability: CapabilityHandler = (
             }
             computedState = msg.state ?? computedState;
             ctx.eventBus.emit('plugin:chart-type-updated', { id: entryId });
+            return;
+        }
+        if (msg.type === 'audit-result') {
+            ctx.eventBus.emit('plugin:audit-result', { id: pluginId, result: msg.result });
+            return;
+        }
+        if (msg.type === 'audit-error') {
+            ctx.eventBus.emit('plugin:audit-error', { id: pluginId, error: msg.error });
+            return;
         }
     };
 
@@ -1695,9 +1727,28 @@ const chartTypeCapability: CapabilityHandler = (
         },
     );
 
+    const offAudit = ctx.eventBus.on('plugin:audit-run', ({ id }) => {
+        if (id !== pluginId) return;
+        if (lastComputeData === null) {
+            ctx.eventBus.emit('plugin:audit-error', {
+                id: pluginId,
+                error: 'Nothing loaded yet to audit.',
+            });
+            return;
+        }
+        ctWorker.postMessage({
+            type: 'audit-run',
+            pluginIndex: 0,
+            data: lastComputeData,
+            barNs: lastComputeBarNs,
+            params: { ...currentParams },
+        });
+    });
+
     return (opts) => {
         offCompute();
         offAdvance();
+        offAudit();
         ctWorker.postMessage({ type: 'destroy' });
         ctWorker.terminate();
         ctx.eventBus.emit('plugin:unregister-chart-type', {
@@ -2172,6 +2223,14 @@ export function createScriptedPlugin(script: string, id?: string, category?: str
                 if (msg.type === 'update') {
                     const listeners = updateListeners.get(msg.pluginIndex) ?? [];
                     for (const cb of listeners) cb(msg);
+                    return;
+                }
+                if (msg.type === 'audit-result') {
+                    ctx.eventBus.emit('plugin:audit-result', { id: pluginId, result: msg.result });
+                    return;
+                }
+                if (msg.type === 'audit-error') {
+                    ctx.eventBus.emit('plugin:audit-error', { id: pluginId, error: msg.error });
                     return;
                 }
             };

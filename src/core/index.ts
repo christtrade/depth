@@ -16,6 +16,7 @@ export { DataEngine } from './DataEngine';
 export type { DataEngineConfig, ChartDataSnapshot } from './DataEngine';
 export { TypedEventBus } from './TypedEventBus';
 export type { ChartEvents } from './TypedEventBus';
+export type { AuditResult, AuditFnEntry } from './script-audit';
 export { RenderEngine } from './RenderEngine';
 export type { DrawParams } from './RenderEngine';
 
