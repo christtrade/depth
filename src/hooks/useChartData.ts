@@ -489,6 +489,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
     const prevHorizonBarRef = useRef(0n);
     const lastBarAdvanceTimeRef = useRef<number>(0);
     const horizonScrollAnimRef = useRef<any>(null);
+    const horizonScrollRafRef = useRef<number | null>(null);
     const lastHorizonForIndicatorsRef = useRef<bigint>(0n);
     const resampleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const _internalDomPanelRef = useRef<DomPanelHandle | null>(null);
@@ -1800,6 +1801,54 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         }
     }, []);
 
+    // advances horizonScrollAnimRef on its own raf loop rather than only when
+    // applyHorizon happens to be called again. auto playback calls applyHorizon every tick
+    // so animation was fine there, but a single manual step only calls applyHorizon once
+    // so only shifted the chart by a px instead of a whole bar
+    const driveHorizonScrollAnim = useCallback(() => {
+        const anim = horizonScrollAnimRef.current;
+        const view = p.viewRef.current;
+        if (!anim || !view) {
+            horizonScrollRafRef.current = null;
+            return;
+        }
+        const duration = anim.duration ?? p.chartSettingsRef.current.horizonScrollDuration;
+        const raw = Math.min((performance.now() - anim.startTime) / duration, 1.0);
+        const eased = applyHorizonScrollEasing(
+            raw,
+            anim.easing ?? p.chartSettingsRef.current.horizonScrollEasing,
+        );
+        const lerp = (a: bigint, b: bigint, f: number) => a + BigInt(Math.round(Number(b - a) * f));
+        if (anim.startMMin !== undefined && anim.targetMMin !== undefined) {
+            const sm = p.sessionMapperRef.current;
+            view.tMin = sm.marketToTs(lerp(anim.startMMin, anim.targetMMin, eased));
+            view.tMax = sm.marketToTs(lerp(anim.startMMax, anim.targetMMax, eased));
+        } else {
+            view.tMin = lerp(anim.startTMin, anim.targetTMin, eased);
+            view.tMax = lerp(anim.startTMax, anim.targetTMax, eased);
+        }
+        p.transformer.update(view);
+        p.renderEngineRef.current?.setView(view);
+        p.renderEngineRef.current?.markDirty('base');
+        p.renderEngineRef.current?.markDirty('drawings');
+        if (raw >= 1.0) {
+            horizonScrollAnimRef.current = null;
+            horizonScrollRafRef.current = null;
+            scheduleResample();
+            return;
+        }
+        horizonScrollRafRef.current = requestAnimationFrame(driveHorizonScrollAnim);
+    }, [scheduleResample]);
+
+    useEffect(
+        () => () => {
+            if (horizonScrollRafRef.current !== null) {
+                cancelAnimationFrame(horizonScrollRafRef.current);
+            }
+        },
+        [],
+    );
+
     // applyHorizon / seekHorizon
     const applyHorizon = useCallback((horizon: bigint, triggerResample = true, hotPath = false) => {
         const cb = compactBufRef.current;
@@ -1892,6 +1941,9 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                             duration: animDuration,
                         };
                     }
+                }
+                if (horizonScrollAnimRef.current && horizonScrollRafRef.current === null) {
+                    horizonScrollRafRef.current = requestAnimationFrame(driveHorizonScrollAnim);
                 }
             }
         }
@@ -2090,32 +2142,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 }
             }
             runHorizonAdvance(horizon);
-            if (horizonScrollAnimRef.current && p.viewRef.current) {
-                const anim = horizonScrollAnimRef.current;
-                // Honor the easing/duration captured when this animation started, so a
-                // linear "can't keep up" glide stays linear even if the setting is eased.
-                const duration = anim.duration ?? p.chartSettingsRef.current.horizonScrollDuration;
-                const raw = Math.min((performance.now() - anim.startTime) / duration, 1.0);
-                const eased = applyHorizonScrollEasing(
-                    raw,
-                    anim.easing ?? p.chartSettingsRef.current.horizonScrollEasing,
-                );
-                const lerp = (a: bigint, b: bigint, f: number) =>
-                    a + BigInt(Math.round(Number(b - a) * f));
-                if (anim.startMMin !== undefined && anim.targetMMin !== undefined) {
-                    const sm = p.sessionMapperRef.current;
-                    p.viewRef.current.tMin = sm.marketToTs(
-                        lerp(anim.startMMin, anim.targetMMin, eased),
-                    );
-                    p.viewRef.current.tMax = sm.marketToTs(
-                        lerp(anim.startMMax, anim.targetMMax, eased),
-                    );
-                } else {
-                    p.viewRef.current.tMin = lerp(anim.startTMin, anim.targetTMin, eased);
-                    p.viewRef.current.tMax = lerp(anim.startTMax, anim.targetTMax, eased);
-                }
-                if (raw >= 1.0) horizonScrollAnimRef.current = null;
-            }
             syncOhlcvOpenBar(horizon);
             p.pushDrawParamsRef.current();
             if (tradesRef.current.length > 0) p.doBaseRedrawRef.current();

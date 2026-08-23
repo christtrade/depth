@@ -8,6 +8,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-08-23
+
+### Fixed
+
+- Single-stepping playback moved the chart like one pixel forward instead of a bar.
+- Default playback settings were not optimized for the average user. Used to be default
+  realtime mode with a 5s step. It's now step mode with a 1m step, with step snapping enabled.
+
 ## [0.13.0] - 2026-08-22
 
 ### Added
@@ -317,7 +325,10 @@ Not user-visible, but this is what the split out of the monorepo turned up:
 - 30 unused UI components were removed, taking `depth.css` from 147 KB to
   124 KB.
 
-[unreleased]: https://github.com/christtrade/depth/compare/v0.12.25...HEAD
+[unreleased]: https://github.com/christtrade/depth/compare/v0.13.1...HEAD
+[0.13.1]: https://github.com/christtrade/depth/compare/v0.13.0...v0.13.1
+[0.13.0]: https://github.com/christtrade/depth/compare/v0.12.26...v0.13.0
+[0.12.26]: https://github.com/christtrade/depth/compare/v0.12.25...v0.12.26
 [0.12.25]: https://github.com/christtrade/depth/compare/v0.12.24...v0.12.25
 [0.12.24]: https://github.com/christtrade/depth/compare/v0.12.23...v0.12.24
 [0.12.23]: https://github.com/christtrade/depth/compare/v0.12.22...v0.12.23

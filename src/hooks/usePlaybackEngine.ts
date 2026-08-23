@@ -15,9 +15,8 @@ const UNIT_NS: Record<string, bigint> = {
 // wins over 's'/'m' when matching.
 const STEP_SIZE_RE = /^(\d+)(ms|s|m|h)$/;
 
-export const DEFAULT_STEP_NS = 5_000_000_000n; // 5s
+export const DEFAULT_STEP_NS = 60_000_000_000n; // 60s
 
-/** Parse a step-size token into nanoseconds. Unknown tokens fall back to 5s. */
 export function stepSizeToNs(stepSize: string): bigint {
     const match = STEP_SIZE_RE.exec(stepSize);
     if (!match) return DEFAULT_STEP_NS;
@@ -69,11 +68,11 @@ export type PlaybackChartHandle = {
 // Helpers
 function createPlaybackState(datasetStart: bigint, dataEnd: bigint): PlaybackState {
     return {
-        mode: 'realtime',
+        mode: 'step',
         status: 'paused',
-        stepSnap: false,
+        stepSnap: true,
         speed: 1,
-        stepSize: '5s',
+        stepSize: '1m',
         wallStart: 0,
         dataStart: 0n,
         datasetStart,
@@ -193,11 +192,11 @@ export function usePlaybackEngine({
     const endOfDataRef = useRef(false);
 
     const [ui, setUi] = useState<PlaybackUi>({
-        mode: 'realtime',
+        mode: 'step',
         status: 'paused',
-        stepSnap: false,
+        stepSnap: true,
         speed: 1,
-        stepSize: '5s',
+        stepSize: '1m',
         datasetStart: 0n,
         datasetEnd: 0n,
     });
