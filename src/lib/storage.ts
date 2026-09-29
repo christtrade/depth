@@ -22,6 +22,7 @@ export const StorageKey = {
     customTimeframes: `${STORAGE_NAMESPACE}custom-timeframes`,
     favoriteTimeframes: `${STORAGE_NAMESPACE}favorite-timeframes`,
     drawingTemplates: `${STORAGE_NAMESPACE}drawing-templates`,
+    lastDrawingStyles: `${STORAGE_NAMESPACE}last-drawing-styles`,
     drawingFavorites: `${STORAGE_NAMESPACE}drawing-favorites`,
     colorSwatches: `${STORAGE_NAMESPACE}color-swatches`,
     pluginStartup: `${STORAGE_NAMESPACE}plugin-startup`,

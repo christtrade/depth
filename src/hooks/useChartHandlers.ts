@@ -1,6 +1,6 @@
 import { useCallback, useRef, type MutableRefObject, type RefObject } from 'react';
 import { nanoid } from 'nanoid';
-import { type Drawing, defaultStyleForTool } from '../lib/types/drawing-types';
+import { type Drawing, initialStyleForTool } from '../lib/types/drawing-types';
 import { type ChartPane, type Indicator, type Rect } from '../lib/types/indicator-types';
 import { X_AXIS_HEIGHT } from '../lib/renderers/renderer';
 import { getEffectiveDpr } from '../lib/dpr';
@@ -499,7 +499,7 @@ export function useChartHandlers(p: UseChartHandlersParams): UseChartHandlersRes
                 tool: 'fvp',
                 a: { ts: tS, price: midPrice - halfRange },
                 b: { ts: tE, price: midPrice + halfRange },
-                ...(defaultStyleForTool('fvp') as any),
+                ...(initialStyleForTool('fvp') as any),
             };
             drawingsRef.current = [...drawingsRef.current, newDrawing];
             selectedDrawingIdRef.current = newDrawing.id;

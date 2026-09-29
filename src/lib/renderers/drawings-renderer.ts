@@ -33,7 +33,6 @@ import type {
 } from '../types/drawing-types';
 import {
     HIT_TOLERANCE_PX,
-    DEFAULT_FIB_LEVELS,
     DEFAULT_CHANNEL_LEVELS,
 } from '../types/drawing-types';
 import { ChartSettings } from '../types/chart-settings';
@@ -2585,6 +2584,15 @@ export function drawDrawingsLayer(
 
         // Narrow away PluginDrawing (handled above) so the switch can discriminate
         if ('anchors' in d) continue;
+        renderBuiltIn(d, isSelected, isHovered, hot);
+    }
+
+    function renderBuiltIn(
+        d: Exclude<Drawing, PluginDrawing>,
+        isSelected: boolean,
+        isHovered: boolean,
+        hot: DrawingAnchorId | null,
+    ) {
         ctx.save();
 
         switch (d.tool) {
@@ -2905,247 +2913,45 @@ export function drawDrawingsLayer(
             }
         }
 
-        if (!('pluginToolId' in draft))
+        if (!('pluginToolId' in draft)) {
+            const ts = snapTs(draftMouseTs, barNs, transformer.getSessionMapper());
+            const price =
+                holdingShift && 'a' in draft
+                    ? draft.a.price
+                    : holdingCtrl
+                      ? snapPrice(
+                            ts,
+                            draftMousePrice,
+                            chartSettings,
+                            footprintBars,
+                            priceHistory,
+                            [],
+                            'l3',
+                            horizon,
+                        )
+                      : draftMousePrice;
+            const cursor: Anchor = { ts, price };
+            const ghost = { ...draft, id: '' } as any;
+
             switch (draft.tool) {
-                case 'hline': {
-                    const y = transformer.priceToY(draft.price, mainH) + mainOffsetY;
-                    ctx.strokeStyle = '#e0e0e0';
-                    ctx.lineWidth = 1;
-                    ctx.beginPath();
-                    ctx.moveTo(0, y);
-                    ctx.lineTo(chartW, y);
-                    ctx.stroke();
+                case 'triangle':
+                    renderBuiltIn(
+                        { ...ghost, b: draft.b ?? cursor, c: cursor },
+                        false,
+                        false,
+                        null,
+                    );
                     break;
-                }
-                case 'vline': {
-                    const x = transformer.tsToX(draft.ts, chartW);
-                    ctx.strokeStyle = '#888888';
-                    ctx.lineWidth = 1;
-                    ctx.beginPath();
-                    ctx.moveTo(x, 0);
-                    ctx.lineTo(x, totalH);
-                    ctx.stroke();
+                case 'parallel-channel':
+                    renderBuiltIn(
+                        draft.b
+                            ? { ...ghost, height: price - draft.b.price }
+                            : { ...ghost, b: cursor, height: 0 },
+                        false,
+                        false,
+                        null,
+                    );
                     break;
-                }
-                case 'extended-line':
-                case 'info-line':
-                case 'trend-angle':
-                case 'line':
-                case 'ray': {
-                    const x1 = transformer.tsToX(draft.a.ts, chartW);
-                    const y1 = transformer.priceToY(draft.a.price, mainH) + mainOffsetY;
-                    const ts = snapTs(draftMouseTs, barNs, transformer.getSessionMapper());
-                    const x2 = transformer.tsToX(ts, chartW);
-
-                    let _y = transformer.priceToY(draftMousePrice, mainH) + mainOffsetY;
-
-                    if (holdingShift) {
-                        _y = y1;
-                    } else if (holdingCtrl) {
-                        const price = snapPrice(
-                            ts,
-                            draftMousePrice,
-                            chartSettings,
-                            footprintBars,
-                            priceHistory,
-                            [],
-                            'l3',
-                            horizon,
-                        );
-                        _y = transformer.priceToY(price, mainH) + mainOffsetY;
-                    }
-
-                    const y2 = _y;
-                    ctx.strokeStyle = '#e0e0e0';
-                    ctx.lineWidth = 1;
-                    ctx.beginPath();
-                    if (draft.tool === 'ray') {
-                        const extendsRight = x2 >= x1;
-                        const [sx, sy, ex, ey] = extendedEndpoints(
-                            x1,
-                            y1,
-                            x2,
-                            y2,
-                            chartW,
-                            !extendsRight,
-                            extendsRight,
-                        );
-                        const farX = extendsRight ? ex : sx;
-                        const farY = extendsRight ? ey : sy;
-                        ctx.moveTo(x1, y1);
-                        ctx.lineTo(farX, farY);
-                    } else if (draft.tool === 'extended-line') {
-                        const [sx, sy, ex, ey] = extendedEndpoints(
-                            x1,
-                            y1,
-                            x2,
-                            y2,
-                            chartW,
-                            true,
-                            true,
-                        );
-                        ctx.moveTo(sx, sy);
-                        ctx.lineTo(ex, ey);
-                    } else if (draft.tool === 'trend-angle') {
-                        drawTrendAngle(
-                            ctx,
-                            { ...draft, b: { ts, price: draftMousePrice } },
-                            bounds,
-                            chartW,
-                            mainH,
-                            mainOffsetY,
-                            transformer,
-                        );
-                        ctx.moveTo(x1, y1);
-                        ctx.lineTo(x2, y2);
-                    } else {
-                        ctx.moveTo(x1, y1);
-                        ctx.lineTo(x2, y2);
-                    }
-                    ctx.stroke();
-                    break;
-                }
-                case 'parallel-channel': {
-                    const x1 = transformer.tsToX(draft.a.ts, chartW);
-                    const y1 = transformer.priceToY(draft.a.price, mainH) + mainOffsetY;
-                    const ts = snapTs(draftMouseTs, barNs, transformer.getSessionMapper());
-                    const x2 = transformer.tsToX(ts, chartW);
-                    let _y = transformer.priceToY(draftMousePrice, mainH) + mainOffsetY;
-
-                    if (holdingShift) {
-                        _y = y1;
-                    } else if (holdingCtrl) {
-                        const price = snapPrice(
-                            ts,
-                            draftMousePrice,
-                            chartSettings,
-                            footprintBars,
-                            priceHistory,
-                            [],
-                            'l3',
-                            horizon,
-                        );
-                        _y = transformer.priceToY(price, mainH) + mainOffsetY;
-                    }
-
-                    const y2 = _y;
-
-                    ctx.beginPath();
-                    if (draft?.b) {
-                        renderParallelChannel(
-                            ctx,
-                            {
-                                ...draft,
-                                b: draft.b,
-                                height: draftMousePrice - draft.b.price,
-                            } as ParallelChannelDrawing,
-                            bounds,
-                            chartW,
-                            mainH,
-                            mainOffsetY,
-                            false,
-                            false,
-                            null,
-                            transformer,
-                        );
-                    } else {
-                        ctx.strokeStyle = '#e0e0e0';
-                        ctx.moveTo(x1, y1);
-                        ctx.lineTo(x2, y2);
-                    }
-                    ctx.stroke();
-
-                    break;
-                }
-                case 'rect':
-                case 'fib': {
-                    if (!draft.b) {
-                        // Just a dot at a
-                        const x = transformer.tsToX(draft.a.ts, chartW);
-                        const y = transformer.priceToY(draft.a.price, mainH) + mainOffsetY;
-                        ctx.strokeStyle = '#3b82f6';
-                        ctx.lineWidth = 1;
-                        ctx.strokeRect(x - 4, y - 4, 8, 8);
-                    } else {
-                        const x1 = transformer.tsToX(draft.a.ts, chartW);
-                        const y1 = transformer.priceToY(draft.a.price, mainH) + mainOffsetY;
-                        const x2 = transformer.tsToX(draft.b.ts, chartW);
-                        const y2 = transformer.priceToY(draft.b.price, mainH) + mainOffsetY;
-                        if (draft.tool === 'rect') {
-                            ctx.strokeStyle = '#3b82f6';
-                            ctx.lineWidth = 1;
-                            ctx.strokeRect(
-                                Math.min(x1, x2),
-                                Math.min(y1, y2),
-                                Math.abs(x2 - x1),
-                                Math.abs(y2 - y1),
-                            );
-                        } else {
-                            // fib ghost - just horizontal lines
-                            ctx.strokeStyle = '#facc15';
-                            ctx.lineWidth = 1;
-                            for (const level of DEFAULT_FIB_LEVELS) {
-                                const diff = draft.a.price - draft.b.price;
-                                const lp = draft.b.price + diff * parseFloat(level.value);
-                                const ly = transformer.priceToY(lp, mainH) + mainOffsetY;
-                                ctx.beginPath();
-                                ctx.moveTo(transformer.tsToX(draft.a.ts, chartW), ly);
-                                ctx.lineTo(transformer.tsToX(draft.b.ts, chartW), ly);
-                                ctx.stroke();
-                            }
-                        }
-                    }
-                    break;
-                }
-                case 'triangle': {
-                    // First click placed `a`; the cursor is the in-flight vertex.
-                    // Before the second click we draw a line a->cursor; after it we
-                    // draw the full a->b->cursor triangle.
-                    const x1 = transformer.tsToX(draft.a.ts, chartW);
-                    const y1 = transformer.priceToY(draft.a.price, mainH) + mainOffsetY;
-
-                    const ts = snapTs(draftMouseTs, barNs, transformer.getSessionMapper());
-                    const x2 = transformer.tsToX(ts, chartW);
-
-                    let _y = transformer.priceToY(draftMousePrice, mainH) + mainOffsetY;
-
-                    if (holdingShift) {
-                        _y = y1;
-                    } else if (holdingCtrl) {
-                        const price = snapPrice(
-                            ts,
-                            draftMousePrice,
-                            chartSettings,
-                            footprintBars,
-                            priceHistory,
-                            [],
-                            'l3',
-                            horizon,
-                        );
-                        _y = transformer.priceToY(price, mainH) + mainOffsetY;
-                    }
-
-                    const y2 = _y;
-
-                    ctx.beginPath();
-                    ctx.moveTo(x1, y1);
-                    if (draft.b) {
-                        ctx.lineTo(
-                            transformer.tsToX(draft.b.ts, chartW),
-                            transformer.priceToY(draft.b.price, mainH) + mainOffsetY,
-                        );
-                        ctx.lineTo(x2, y2);
-                        ctx.closePath();
-                    } else {
-                        ctx.lineTo(x2, y2);
-                    }
-                    ctx.strokeStyle = '#3b82f6';
-                    ctx.fillStyle = '#3b82f61a';
-                    if (draft.b) ctx.fill();
-                    ctx.stroke();
-
-                    break;
-                }
                 case 'text': {
                     const x = transformer.tsToX(draft.anchor.ts, chartW);
                     const y = transformer.priceToY(draft.anchor.price, mainH) + mainOffsetY;
@@ -3187,7 +2993,10 @@ export function drawDrawingsLayer(
                     }
                     break;
                 }
+                default:
+                    renderBuiltIn({ ...ghost, b: cursor }, false, false, null);
             }
+        }
         ctx.restore();
     }
 }

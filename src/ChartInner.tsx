@@ -21,7 +21,8 @@ import {
     type Drawing,
     type DraftDrawing,
     type Anchor,
-    defaultStyleForTool,
+    initialStyleForTool,
+    rememberStyle,
     DrawingAnchorId,
     ActiveDrawingTool,
     CURSOR_TOOL,
@@ -2017,9 +2018,13 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
                                         drawing={d}
                                         containerRef={chartAreaRef}
                                         openDialog={openSettingsDialog}
-                                        onUpdate={(patch) =>
-                                            handleUpdateDrawing(selectedDrawingId, patch)
-                                        }
+                                        onUpdate={(patch) => {
+                                            handleUpdateDrawing(selectedDrawingId, patch);
+                                            const next = drawingsRef.current.find(
+                                                (d) => d.id === selectedDrawingId,
+                                            );
+                                            if (next) rememberStyle(next, patch);
+                                        }}
                                         onDelete={() => handleDeleteDrawing(selectedDrawingId)}
                                         onDuplicate={() =>
                                             handleDuplicateDrawing(selectedDrawingId)
@@ -2280,7 +2285,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
                                         tool: 'text',
                                         anchor: pendingText.anchor,
                                         text: text.trim(),
-                                        ...(defaultStyleForTool('text') as any),
+                                        ...(initialStyleForTool('text') as any),
                                     } as Drawing;
                                     drawingsRef.current = [...drawingsRef.current, newD];
                                     pushDrawParams();

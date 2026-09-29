@@ -12,17 +12,34 @@ import {
     Settings,
     Ticket,
     type LucideIcon,
+    Grid2x2Plus,
+    Trash,
+    X,
+    Check,
 } from 'lucide-react';
 import { DrawingSettingsDialog } from './drawing-settings-dialog';
-import type { Drawing, DrawingTool } from '../../lib/types/drawing-types';
+import {
+    defaultStylePatch,
+    deleteTemplate,
+    loadTemplates,
+    saveTemplateFromDrawing,
+    styleOf,
+    stylePatch,
+    type Drawing,
+    type DrawingStyleTemplate,
+    type DrawingTool,
+} from '../../lib/types/drawing-types';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
+    DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import { ColorPicker } from '../ui/color-picker';
+import { Input } from '../ui/input';
+import { Button } from '../ui/button';
 
 const DASH_PRESETS: { label: string; dash: number[] }[] = [
     { label: '─────', dash: [] },
@@ -237,6 +254,45 @@ export function DrawingSettingsBar({
     useEffect(() => {
         setLocalDrawing(drawing);
     }, [drawing.id]);
+
+    const loadToolTemplates = () =>
+        loadTemplates()
+            .filter((t) => t.tool === drawing.tool)
+            .sort((a, b) => b.createdAt - a.createdAt);
+    const [templates, setTemplates] = useState<DrawingStyleTemplate[]>(loadToolTemplates);
+    const [templatesOpen, setTemplatesOpen] = useState(false);
+    const [savingTemplate, setSavingTemplate] = useState(false);
+    const [newTplName, setNewTplName] = useState('');
+
+    const onTemplatesOpenChange = (open: boolean) => {
+        setTemplatesOpen(open);
+        if (open) setTemplates(loadToolTemplates());
+        else {
+            setSavingTemplate(false);
+            setNewTplName('');
+        }
+    };
+    const handleSaveTemplate = () => {
+        const name = newTplName.trim();
+        if (!name) return;
+        saveTemplateFromDrawing(name, localDrawing);
+        setTemplates(loadToolTemplates());
+        setSavingTemplate(false);
+        setNewTplName('');
+    };
+    const handleDeleteTemplate = (id: string) => {
+        deleteTemplate(id);
+        setTemplates(loadToolTemplates());
+    };
+    const handleApplyTemplate = (tpl: DrawingStyleTemplate) =>
+        handleUpdate(stylePatch(localDrawing, tpl.style));
+    const handleResetStyle = () => handleUpdate(defaultStylePatch(localDrawing));
+
+    const currentStyle = styleOf(localDrawing);
+    const isApplied = (tpl: DrawingStyleTemplate) =>
+        Object.entries(tpl.style).every(
+            ([k, v]) => JSON.stringify(currentStyle[k]) === JSON.stringify(v),
+        );
 
     const handleUpdate = useCallback(
         (patch: Partial<Drawing>) => {
@@ -875,6 +931,107 @@ export function DrawingSettingsBar({
                 >
                     <GripVertical size={13} />
                 </div>
+
+                <DropdownMenu open={templatesOpen} onOpenChange={onTemplatesOpenChange}>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <DropdownMenuTrigger asChild>
+                                <button className="flex items-center rounded-sm p-1 text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground">
+                                    <Grid2x2Plus size={18} />
+                                </button>
+                            </DropdownMenuTrigger>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="bg-background border border-border">
+                            Templates
+                        </TooltipContent>
+                    </Tooltip>
+                    <DropdownMenuContent className="text-sm min-w-44 mt-1 max-w-96 max-h-96 overflow-y-auto">
+                        {templates.map((template) => (
+                            <DropdownMenuItem
+                                key={template.id}
+                                className="py-0 pl-1.5 flex gap-1.5 group cursor-pointer"
+                                onClick={() => handleApplyTemplate(template)}
+                            >
+                                <Check
+                                    className={cn(
+                                        'w-3.5 h-3.5 shrink-0',
+                                        !isApplied(template) && 'invisible',
+                                    )}
+                                />
+                                <div className="py-1 min-w-0 flex-1 truncate">{template.name}</div>
+                                <button
+                                    className="p-1 rounded-sm text-transparent group-hover:text-muted-foreground group-focus:text-muted-foreground hover:!text-red-500 hover:bg-red-500/20 transition-colors"
+                                    title="Delete template"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteTemplate(template.id);
+                                    }}
+                                >
+                                    <Trash className="w-3 h-3" />
+                                </button>
+                            </DropdownMenuItem>
+                        ))}
+                        {!templates.length && (
+                            <div className="p-1.5 text-muted-foreground text-xs">No saved templates</div>
+                        )}
+                        <DropdownMenuSeparator />
+                        {savingTemplate ? (
+                            <div className="flex gap-1 p-0.5">
+                                <Input
+                                    autoFocus
+                                    className="w-full h-8"
+                                    placeholder="Template name"
+                                    value={newTplName}
+                                    onChange={(e) => setNewTplName(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        e.stopPropagation();
+                                        if (e.key === 'Enter') handleSaveTemplate();
+                                        if (e.key === 'Escape') {
+                                            setSavingTemplate(false);
+                                            setNewTplName('');
+                                        }
+                                    }}
+                                />
+                                <Button
+                                    variant="outline"
+                                    className="w-8 h-8 shrink-0"
+                                    disabled={!newTplName.trim()}
+                                    title={
+                                        templates.some((t) => t.name === newTplName.trim())
+                                            ? 'Overwrite template'
+                                            : 'Save template'
+                                    }
+                                    onClick={handleSaveTemplate}
+                                >
+                                    <Check className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    className="w-8 h-8 shrink-0"
+                                    onClick={() => {
+                                        setSavingTemplate(false);
+                                        setNewTplName('');
+                                    }}
+                                >
+                                    <X className="w-4 h-4" />
+                                </Button>
+                            </div>
+                        ) : (
+                            <DropdownMenuItem
+                                className="py-1 cursor-pointer"
+                                onSelect={(e) => {
+                                    e.preventDefault();
+                                    setSavingTemplate(true);
+                                }}
+                            >
+                                Save current as…
+                            </DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem className="py-1 cursor-pointer" onClick={handleResetStyle}>
+                            Reset to default
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
 
                 {fields.map((field, idx) => renderField(field, idx))}
 

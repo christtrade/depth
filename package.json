@@ -1,6 +1,6 @@
 {
     "name": "@christtrade/depth",
-    "version": "0.13.1",
+    "version": "0.14.0",
     "description": "Depth - the charting library built for ChristTrade.",
     "author": "ChristTrade",
     "license": "Apache-2.0",

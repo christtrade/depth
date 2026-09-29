@@ -8,6 +8,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-09-29
+
+Whoops. been a while... anyways, lets get on with the changes:
+
+### Added
+
+- New drawings start with the style of the last one you edited of that tool.
+  Plugin tools too, for the keys they declare in `defaultData`
+- Templates menu on the drawing settings bar. Checks the template the drawing
+  currently matches and saving under an existing name overwrites it.
+
+### Fixed
+
+- Drawing previews were hardcoded to use gray/blue lines before, now they render
+  correctly, showing what the drawing will look like when placed. Plugin previews
+  gets the tool's `data` too. Used to be `undefined` until the plugin seti ts own
+- Templates didnt save the right keys but intead used hardcoded ones, so rect borders,
+  fib opts, position colors etc etc and all plugin settings were dropped
+- Reset style left behind keys the defaults don't set, and on plugin drawings wiped
+  any state the plugin left in `data`.
+- `setDraft(null)` from a plugin tool left an empty draft instead of clearing it.
+
 ## [0.13.1] - 2026-08-23
 
 ### Fixed

@@ -293,22 +293,24 @@ export function PaneLegendScale({
                     </Tooltip>
                 </>
             )}
-            <Tooltip delayDuration={700}>
-                <TooltipTrigger asChild>
-                    <button
-                        className={cn(
-                            'p-0.5 rounded hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors',
-                            isMaximized && 'bg-muted text-white',
-                        )}
-                        onClick={() => onMaximize(pane.id)}
-                    >
-                        {isMaximized ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
-                    </button>
-                </TooltipTrigger>
-                <TooltipContent className="bg-background border border-border">
-                    {isMaximized ? 'Restore panes' : 'Maximize pane'}
-                </TooltipContent>
-            </Tooltip>
+            {pane.isMain && totalPanes > 1 && (
+                <Tooltip delayDuration={700}>
+                    <TooltipTrigger asChild>
+                        <button
+                            className={cn(
+                                'p-0.5 rounded hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors',
+                                isMaximized && 'bg-muted text-white',
+                            )}
+                            onClick={() => onMaximize(pane.id)}
+                        >
+                            {isMaximized ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+                        </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="bg-background border border-border">
+                        {isMaximized ? 'Restore panes' : 'Maximize pane'}
+                    </TooltipContent>
+                </Tooltip>
+            )}
         </div>
     );
 }

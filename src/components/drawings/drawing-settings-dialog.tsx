@@ -36,9 +36,10 @@ import type {
     ChannelLevel,
 } from '../../lib/types/drawing-types';
 import {
-    defaultStyleForTool,
+    defaultStylePatch,
     loadTemplates,
-    saveTemplate,
+    saveTemplateFromDrawing,
+    stylePatch,
     deleteTemplate,
     DEFAULT_CHANNEL_LEVELS,
 } from '../../lib/types/drawing-types';
@@ -770,35 +771,9 @@ export function DrawingSettingsDialog({
     const hasSingleAnchor = drawing.tool === 'text';
 
     const handleSaveTemplate = () => {
-        if (!newTplName.trim()) return;
-        const keys = [
-            'color',
-            'lineWidth',
-            'dash',
-            'fillOpacity',
-            'fontSize',
-            'extendLeft',
-            'extendRight',
-            'levels',
-            'labelColor',
-            'labelFontSize',
-            'labelBold',
-            'labelItalic',
-            'labelHorizontalAlign',
-            'labelVerticalAlign',
-            'labelTextOrientation',
-            'bold',
-            'italic',
-        ];
-        const style: any = {};
-        for (const k of keys) if (d[k] !== undefined) style[k] = d[k];
-        saveTemplate({
-            id: nanoid(8),
-            name: newTplName.trim(),
-            tool: drawing.tool as DrawingTool,
-            style,
-            createdAt: Date.now(),
-        });
+        const name = newTplName.trim();
+        if (!name) return;
+        saveTemplateFromDrawing(name, drawing);
         setTemplates(loadTemplates().filter((t) => t.tool === drawing.tool));
         setNewTplName('');
         flashSaved();
@@ -808,13 +783,10 @@ export function DrawingSettingsDialog({
         setTemplates(loadTemplates().filter((t) => t.tool === drawing.tool));
     };
     const handleApplyTemplate = (tpl: DrawingStyleTemplate) => {
-        onUpdate(tpl.style as Partial<Drawing>);
+        onUpdate(stylePatch(drawing, tpl.style));
         flashSaved();
     };
-    const handleResetStyle = () =>
-        pluginTool
-            ? onUpdate({ data: { ...pluginDefaults } } as Partial<Drawing>)
-            : onUpdate(defaultStyleForTool(drawing.tool as DrawingTool) as Partial<Drawing>);
+    const handleResetStyle = () => onUpdate(defaultStylePatch(drawing));
 
     const allTabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
         { id: 'style', label: 'Style', icon: <Palette size={13} /> },

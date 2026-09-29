@@ -11,6 +11,7 @@ import {
     ActiveDrawingTool,
     CURSOR_TOOL,
     armTool,
+    initialPluginData,
 } from '../lib/types/drawing-types';
 import {
     type ChartPane,
@@ -587,10 +588,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                     tool: toolId,
                     // a tool committing its own drawing still wants the params
                     // it declared, under whatever it put there itself
-                    data: {
-                        ...(drawingRegistry.get(toolId)?.defaultData as object),
-                        ...(d.data as object),
-                    },
+                    data: { ...initialPluginData(toolId), ...(d.data as object) },
                 };
                 drawingsRef.current = [...drawingsRef.current, committed as any];
                 draftRef.current = null;
@@ -607,7 +605,11 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             },
 
             setDraft(draft) {
-                draftRef.current = { ...draftRef.current, ...draft };
+                draftRef.current = draft && {
+                    data: initialPluginData(draft.pluginToolId),
+                    ...draftRef.current,
+                    ...draft,
+                };
                 pushDrawParams();
                 renderEngineRef.current?.markDirty('drawings');
             },
@@ -806,14 +808,13 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                             id: nanoid(),
                             tool: pluginTool.id,
                             anchors: newAnchors,
-                            // a copy: settings live in here now, and every
-                            // drawing this tool places gets its own
-                            data: { ...(pluginTool.defaultData as object) },
+                            data: initialPluginData(pluginTool.id),
                         } as any);
                     } else {
                         draftRef.current = {
                             pluginToolId: pluginTool.id,
                             anchors: newAnchors,
+                            data: pd?.data ?? initialPluginData(pluginTool.id),
                         } as any;
                         pushDrawParams();
                         renderEngineRef.current?.markDirty('drawings');

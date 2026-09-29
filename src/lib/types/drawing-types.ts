@@ -5,6 +5,7 @@
 import { nanoid } from 'nanoid';
 
 import { StorageKey, readJSON, writeJSON } from '../storage';
+import { drawingRegistry } from '../../core/DrawingRegistry';
 
 export type DrawingTool =
     | 'cursor'
@@ -733,7 +734,7 @@ export function armTool(tool: DrawingTool, style?: Partial<Drawing>): ActiveDraw
     return {
         name: tool,
         id: nanoid(),
-        state: { ...(defaultStyleForTool(tool) as AnyDrawing), ...(style as AnyDrawing) },
+        state: { ...(initialStyleForTool(tool) as AnyDrawing), ...(style as AnyDrawing) },
     };
 }
 
@@ -787,4 +788,91 @@ export function deleteTemplate(id: string): void {
         StorageKey.drawingTemplates,
         loadTemplates().filter((t) => t.id !== id),
     );
+}
+
+const NON_STYLE_KEYS = new Set([
+    'id',
+    'tool',
+    'a',
+    'b',
+    'c',
+    'anchor',
+    'anchors',
+    'price',
+    'ts',
+    'height',
+    'text',
+    'label',
+    'locked',
+    'visible',
+    'upAmount',
+    'downAmount',
+    'screenAnchored',
+    'screenX',
+    'screenY',
+    'vpData',
+    'data',
+]);
+
+function pluginSettings(d: PluginDrawing): Record<string, unknown> {
+    const declared = drawingRegistry.get(d.tool)?.defaultData ?? {};
+    const data = (d.data ?? {}) as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(declared)) if (k in data) out[k] = data[k];
+    return out;
+}
+
+export function styleOf(d: Drawing): Partial<Drawing> {
+    if ('anchors' in d) return { data: pluginSettings(d) } as Partial<Drawing>;
+    const style: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(d)) if (!NON_STYLE_KEYS.has(k)) style[k] = v;
+    return style as Partial<Drawing>;
+}
+
+export function stylePatch(d: Drawing, style: Partial<Drawing>): Partial<Drawing> {
+    if (!('anchors' in d)) return style;
+    return { data: { ...(d.data as object), ...((style as any).data as object) } } as any;
+}
+
+export function defaultStylePatch(d: Drawing): Partial<Drawing> {
+    if ('anchors' in d)
+        return stylePatch(d, { data: drawingRegistry.get(d.tool)?.defaultData } as any);
+    const cleared = Object.fromEntries(Object.keys(styleOf(d)).map((k) => [k, undefined]));
+    return { ...cleared, ...defaultStyleForTool(d.tool as DrawingTool) } as Partial<Drawing>;
+}
+
+export function saveTemplateFromDrawing(name: string, d: Drawing): void {
+    const existing = loadTemplates().find((t) => t.tool === d.tool && t.name === name);
+    saveTemplate({
+        id: existing?.id ?? nanoid(8),
+        name,
+        tool: d.tool as DrawingTool,
+        style: styleOf(d),
+        createdAt: Date.now(),
+    });
+}
+
+type LastStyles = Record<string, Partial<Drawing>>;
+
+function loadLastStyles(): LastStyles {
+    const styles = readJSON<unknown>(StorageKey.lastDrawingStyles, null);
+    return styles && typeof styles === 'object' ? (styles as LastStyles) : {};
+}
+
+export function rememberStyle(d: Drawing, patch: Partial<Drawing>): void {
+    const touched =
+        'anchors' in d ? 'data' in patch : Object.keys(patch).some((k) => !NON_STYLE_KEYS.has(k));
+    if (!touched) return;
+    writeJSON(StorageKey.lastDrawingStyles, { ...loadLastStyles(), [d.tool]: styleOf(d) });
+}
+
+export function initialStyleForTool(tool: DrawingTool): Partial<Drawing> {
+    return { ...defaultStyleForTool(tool), ...loadLastStyles()[tool] } as Partial<Drawing>;
+}
+
+export function initialPluginData(toolId: string): Record<string, unknown> {
+    return {
+        ...(drawingRegistry.get(toolId)?.defaultData as object),
+        ...((loadLastStyles()[toolId] as any)?.data as object),
+    };
 }
