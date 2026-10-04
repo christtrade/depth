@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo, KeyboardEvent } from 'react';
 import { Check, ChevronDown, Search, Globe, X } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { AnimatedPanel } from '../ui/animated-panel';
 
 interface TimezoneEntry {
     value: string;
@@ -298,8 +299,9 @@ export function TimezoneSelect({
                 </div>
             </button>
 
-            {open && (
-                <div
+                <AnimatedPanel
+                    open={open}
+                    side={compact ? 'top' : 'bottom'}
                     className={cn(
                         'absolute z-50 left-0 right-0',
                         compact ? 'bottom-full mb-1.5' : 'mt-1.5',
@@ -412,8 +414,7 @@ export function TimezoneSelect({
                         )}
                         <div className="h-1.5" />
                     </div>
-                </div>
-            )}
+                </AnimatedPanel>
         </div>
     );
 }

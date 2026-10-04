@@ -15,6 +15,7 @@ import {
     TrendingUp,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { AnimatedPanel } from '../ui/animated-panel';
 import {
     Dialog,
     DialogContent,
@@ -337,8 +338,11 @@ export function PluginManagerDialog({
                     Loaded plugins, and what starts with the chart
                 </TooltipContent>
             </Tooltip>
-        {open && (
-            <div className="absolute right-0 top-full mt-1.5 z-50 flex flex-col w-[30rem] max-h-[35rem] rounded-lg border border-[#1e2128] bg-[#16181d] shadow-2xl overflow-hidden">
+            <AnimatedPanel
+                open={open}
+                align="right"
+                className="absolute right-0 top-full mt-1.5 z-50 flex flex-col w-[30rem] max-h-[35rem] rounded-lg border border-[#1e2128] bg-[#16181d] shadow-2xl overflow-hidden"
+            >
                     <div className="px-4 pt-4 pb-3 shrink-0">
                         <div className="text-sm font-medium">Plugins</div>
                         <div className="text-xs">
@@ -396,8 +400,7 @@ export function PluginManagerDialog({
                             ))
                         )}
                     </div>
-            </div>
-        )}
+            </AnimatedPanel>
         </div>
     );
 }

@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'react';
 import { cn } from '../../lib/utils';
+import { AnimatedPanel } from '../ui/animated-panel';
 import {
     Trash2,
     Lock,
@@ -592,8 +593,8 @@ export function DrawingSettingsBar({
                                 {field.label ?? 'Line width'}
                             </TooltipContent>
                         </Tooltip>
-                        {openField === key && (
-                            <div
+                            <AnimatedPanel
+                                open={openField === key}
                                 className="absolute top-full mt-1 left-0 z-50 p-1.5 rounded-lg border border-border bg-[#1c1e24] shadow-xl flex flex-col gap-1 min-w-[80px]"
                                 onMouseDown={(e) => e.stopPropagation()}
                             >
@@ -616,8 +617,7 @@ export function DrawingSettingsBar({
                                         {w}px
                                     </button>
                                 ))}
-                            </div>
-                        )}
+                            </AnimatedPanel>
                     </div>
                 );
             }
@@ -645,8 +645,8 @@ export function DrawingSettingsBar({
                                 {field.label ?? 'Line style'}
                             </TooltipContent>
                         </Tooltip>
-                        {openField === key && (
-                            <div
+                            <AnimatedPanel
+                                open={openField === key}
                                 className="absolute top-full mt-1 left-0 z-50 p-1.5 rounded-lg border border-border bg-[#1c1e24] shadow-xl flex flex-col gap-1 min-w-[120px]"
                                 onMouseDown={(e) => e.stopPropagation()}
                             >
@@ -667,8 +667,7 @@ export function DrawingSettingsBar({
                                         {preset.label}
                                     </button>
                                 ))}
-                            </div>
-                        )}
+                            </AnimatedPanel>
                     </div>
                 );
             }

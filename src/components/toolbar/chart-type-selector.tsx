@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { cn } from '../../lib/utils';
+import { AnimatedPanel } from '../ui/animated-panel';
 import { ChevronDown, Puzzle, CircleQuestionMark, Lock } from 'lucide-react';
 import {
     CandlesIcon,
@@ -153,8 +154,10 @@ export function ChartTypeSelector({
                 />
             </button>
 
-            {open && (
-                <div className="absolute left-0 top-full mt-1.5 z-50 w-[212px] rounded-lg border border-[#1e2128] bg-[#16181d] shadow-2xl overflow-hidden">
+                <AnimatedPanel
+                    open={open}
+                    className="absolute left-0 top-full mt-1.5 z-50 w-[212px] rounded-lg border border-[#1e2128] bg-[#16181d] shadow-2xl overflow-hidden"
+                >
                     <div className="p-2.5 space-y-3">
                         <div>
                             <SectionLabel>Chart type</SectionLabel>
@@ -186,8 +189,7 @@ export function ChartTypeSelector({
                             </div>
                         )}
                     </div>
-                </div>
-            )}
+                </AnimatedPanel>
         </div>
     );
 }

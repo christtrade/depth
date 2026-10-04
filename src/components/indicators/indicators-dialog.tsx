@@ -22,6 +22,7 @@ import {
     ChartNoAxesCombined,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { AnimatedPanel } from '../ui/animated-panel';
 import type { ChartPane, Indicator } from '../../lib/types/indicator-types';
 import type { DataLevel } from '../../interfaces/IDataAdapter';
 import {
@@ -501,8 +502,10 @@ export function IndicatorsButton({
                 />
             </button>
 
-            {open && (
-                <div className="absolute left-0 top-full mt-1.5 z-50 flex flex-col w-[30rem] max-h-[30rem] rounded-lg border border-[#1e2128] bg-[#16181d] shadow-2xl overflow-hidden">
+                <AnimatedPanel
+                    open={open}
+                    className="absolute left-0 top-full mt-1.5 z-50 flex flex-col w-[30rem] max-h-[30rem] rounded-lg border border-[#1e2128] bg-[#16181d] shadow-2xl overflow-hidden"
+                >
                     <div className="flex items-center gap-2.5 px-3 h-11 border-b border-[#1e2128] shrink-0">
                         <Search size={14} className="text-slate-600 shrink-0" />
                         <input
@@ -627,8 +630,7 @@ export function IndicatorsButton({
                             <kbd className="font-sans">↵</kbd> add
                         </span>
                     </div>
-                </div>
-            )}
+                </AnimatedPanel>
         </div>
     );
 }

@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { cn } from '../../lib/utils';
+import { AnimatedPanel } from '../ui/animated-panel';
 import { X, Plus, ChevronDown, Star, Lock } from 'lucide-react';
 import {
     PRESET_TIMEFRAMES,
@@ -124,10 +125,6 @@ export function TimeframeSelector({
         };
     }, [open]);
 
-    useEffect(() => {
-        if (open) setTimeout(() => inputRef.current?.focus(), 50);
-    }, [open]);
-
     const handleSelect = useCallback(
         (tf: Timeframe) => {
             if (isLocked(tf.label)) {
@@ -215,6 +212,99 @@ export function TimeframeSelector({
 
             {!activeIsPinned && <QuickPick tf={value} active onSelect={handleSelect} />}
 
+            <div className="relative">
+                <AnimatedPanel
+                    open={open}
+                    className="absolute left-0 top-full mt-4 z-50 w-[244px] rounded-lg border border-[#1e2128] bg-[#16181d] shadow-2xl overflow-hidden"
+                >
+                        <div className="p-2.5 space-y-3 max-h-[22rem] overflow-y-auto">
+                            {PRESET_GROUPS.filter((g) => g.tfs.length > 0).map((group) => (
+                                <div key={group.label}>
+                                    <SectionLabel>{group.label}</SectionLabel>
+                                    <div className="flex flex-wrap gap-1">
+                                        {group.tfs.map((tf) => (
+                                            <TfChip
+                                                key={tf.label}
+                                                tf={tf}
+                                                active={value.label === tf.label}
+                                                pinned={favorites.includes(tf.label)}
+                                                locked={isLocked(tf.label)}
+                                                onSelect={handleSelect}
+                                                onTogglePin={() => toggleFavorite(tf.label)}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+
+                            {customTimeframes.length > 0 && (
+                                <div>
+                                    <SectionLabel>Custom</SectionLabel>
+                                    <div className="flex flex-wrap gap-1">
+                                        {customTimeframes.map((tf) => (
+                                            <TfChip
+                                                key={tf.label}
+                                                tf={tf}
+                                                active={value.label === tf.label}
+                                                pinned={favorites.includes(tf.label)}
+                                                locked={isLocked(tf.label)}
+                                                onSelect={handleSelect}
+                                                onTogglePin={() => toggleFavorite(tf.label)}
+                                                onRemove={() => {
+                                                    onRemoveCustom(tf.label);
+                                                    if (favorites.includes(tf.label))
+                                                        toggleFavorite(tf.label);
+                                                }}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                                <div className="pt-2 border-t border-[#1e2128]">
+                                    <SectionLabel>
+                                        <span className="inline-flex items-center gap-1">
+                                            Add custom
+                                            {!allowCustom && <Lock size={8} className="text-slate-600" />}
+                                        </span>
+                                    </SectionLabel>
+                                    <div className="flex gap-1.5 items-center">
+                                        <input
+                                            ref={inputRef}
+                                            value={customInput}
+                                            onChange={(e) => {
+                                                setCustomInput(e.target.value);
+                                                setInputError('');
+                                            }}
+                                            onKeyDown={handleInputKeyDown}
+                                            placeholder="e.g. 7m"
+                                            className={cn(
+                                                'w-full h-7 px-2 rounded-md text-xs bg-[#0e1014] font-[500] border outline-none transition-colors',
+                                                'placeholder:text-slate-700 text-slate-200',
+                                                inputError
+                                                    ? 'border-red-500/50 focus:border-red-500/80'
+                                                    : 'border-[#1e2128] focus:border-border',
+                                            )}
+                                        />
+                                        <button
+                                            onClick={handleAddCustom}
+                                            className="h-6 w-6 flex items-center justify-center rounded-md bg-muted border border-border hover:bg-muted/50 text-muted-foreground transition-all shrink-0"
+                                        >
+                                            <Plus size={11} />
+                                        </button>
+                                    </div>
+                                    {inputError && (
+                                        <div className="text-[10px] text-red-400/80 mt-1 px-0.5">
+                                            {inputError}
+                                        </div>
+                                    )}
+                                    <div className="text-[9px] text-slate-700 mt-1.5 px-0.5">
+                                        Click the star to pin a timeframe to the toolbar.
+                                    </div>
+                                </div>
+                        </div>
+                </AnimatedPanel>
+            </div>
             <button
                 onClick={() => setOpenWithCallback((p) => !p)}
                 aria-label="All timeframes"
@@ -230,97 +320,6 @@ export function TimeframeSelector({
                     className={cn('transition-transform duration-150', open && 'rotate-180')}
                 />
             </button>
-
-            {open && (
-                <div className="absolute left-0 top-full mt-1.5 z-50 w-[244px] rounded-lg border border-[#1e2128] bg-[#16181d] shadow-2xl overflow-hidden">
-                    <div className="p-2.5 space-y-3 max-h-[22rem] overflow-y-auto">
-                        {PRESET_GROUPS.filter((g) => g.tfs.length > 0).map((group) => (
-                            <div key={group.label}>
-                                <SectionLabel>{group.label}</SectionLabel>
-                                <div className="flex flex-wrap gap-1">
-                                    {group.tfs.map((tf) => (
-                                        <TfChip
-                                            key={tf.label}
-                                            tf={tf}
-                                            active={value.label === tf.label}
-                                            pinned={favorites.includes(tf.label)}
-                                            locked={isLocked(tf.label)}
-                                            onSelect={handleSelect}
-                                            onTogglePin={() => toggleFavorite(tf.label)}
-                                        />
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
-
-                        {customTimeframes.length > 0 && (
-                            <div>
-                                <SectionLabel>Custom</SectionLabel>
-                                <div className="flex flex-wrap gap-1">
-                                    {customTimeframes.map((tf) => (
-                                        <TfChip
-                                            key={tf.label}
-                                            tf={tf}
-                                            active={value.label === tf.label}
-                                            pinned={favorites.includes(tf.label)}
-                                            locked={isLocked(tf.label)}
-                                            onSelect={handleSelect}
-                                            onTogglePin={() => toggleFavorite(tf.label)}
-                                            onRemove={() => {
-                                                onRemoveCustom(tf.label);
-                                                if (favorites.includes(tf.label))
-                                                    toggleFavorite(tf.label);
-                                            }}
-                                        />
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                            <div className="pt-2 border-t border-[#1e2128]">
-                                <SectionLabel>
-                                    <span className="inline-flex items-center gap-1">
-                                        Add custom
-                                        {!allowCustom && <Lock size={8} className="text-slate-600" />}
-                                    </span>
-                                </SectionLabel>
-                                <div className="flex gap-1.5 items-center">
-                                    <input
-                                        ref={inputRef}
-                                        value={customInput}
-                                        onChange={(e) => {
-                                            setCustomInput(e.target.value);
-                                            setInputError('');
-                                        }}
-                                        onKeyDown={handleInputKeyDown}
-                                        placeholder="e.g. 7m"
-                                        className={cn(
-                                            'w-full h-7 px-2 rounded-md text-xs bg-[#0e1014] font-[500] border outline-none transition-colors',
-                                            'placeholder:text-slate-700 text-slate-200',
-                                            inputError
-                                                ? 'border-red-500/50 focus:border-red-500/80'
-                                                : 'border-[#1e2128] focus:border-border',
-                                        )}
-                                    />
-                                    <button
-                                        onClick={handleAddCustom}
-                                        className="h-6 w-6 flex items-center justify-center rounded-md bg-muted border border-border hover:bg-muted/50 text-muted-foreground transition-all shrink-0"
-                                    >
-                                        <Plus size={11} />
-                                    </button>
-                                </div>
-                                {inputError && (
-                                    <div className="text-[10px] text-red-400/80 mt-1 px-0.5">
-                                        {inputError}
-                                    </div>
-                                )}
-                                <div className="text-[9px] text-slate-700 mt-1.5 px-0.5">
-                                    Click the star to pin a timeframe to the toolbar.
-                                </div>
-                            </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }
