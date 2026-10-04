@@ -17,7 +17,6 @@ export function AnimatedPanel({
     onAnimationEnd,
     ...props
 }: AnimatedPanelProps) {
-    // outlives `open` so the close animation can play
     const [mounted, setMounted] = useState(open);
 
     useEffect(() => {
