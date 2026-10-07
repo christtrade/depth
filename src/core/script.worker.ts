@@ -49,8 +49,23 @@ function buildScope(
     return buildScriptScope({ plugin: pluginDecl, shadowNetwork: true, extra });
 }
 
+type ScriptCommand = {
+    help?: string;
+    args?: Record<string, unknown>;
+    run: (ctx: {
+        args: Record<string, unknown>;
+        params: Record<string, unknown>;
+        state: unknown;
+        print: (...values: unknown[]) => void;
+        recompute: () => void;
+    }) => unknown;
+};
+
 interface PluginEntry {
     decl: any;
+    commands: Map<string, ScriptCommand>;
+    // whatever the main thread last computed with so a command sees the same settings
+    lastParams: Record<string, unknown>;
     // run in the worker
     init: ((input: any) => unknown) | null;
     update: ((input: any) => { points: unknown; state: unknown }) | null;
@@ -103,9 +118,22 @@ interface PluginEntry {
 function evalScript(src: string, extraScope?: Record<string, unknown>): PluginEntry[] {
     const entries: PluginEntry[] = [];
 
-    function pluginFn(decl: unknown) {
+    function pluginFn(input: unknown) {
+        // functions cant cross postMessage so commands come off the decl here
+        const { commands: declared, ...decl } = (input ?? {}) as Record<string, unknown>;
+        const commands = new Map<string, ScriptCommand>();
+        const addCommand = (name: string, def: unknown) => {
+            const c = (typeof def === 'function' ? { run: def } : def) as ScriptCommand;
+            if (!name || typeof c?.run !== 'function') throw new Error(`command "${name}" needs a run function`);
+            commands.set(name, c);
+        };
+        if (declared && typeof declared === 'object') {
+            for (const [name, def] of Object.entries(declared)) addCommand(name, def);
+        }
         const entry: PluginEntry = {
             decl,
+            commands,
+            lastParams: {},
             state: {},
             init: null,
             update: null,
@@ -150,6 +178,10 @@ function evalScript(src: string, extraScope?: Record<string, unknown>): PluginEn
 
         // lets the user do p.onRender = fn; the setter captures it onto the entry
         const builder = {
+            command(name: string, def: unknown) {
+                addCommand(name, def);
+                return builder;
+            },
             set init(fn: Function) {
                 entry.init = fn as any;
             },
@@ -1012,7 +1044,57 @@ self.onmessage = (e: MessageEvent) => {
 // cant answer without awaiting its module first
 let chain: Promise<void> = Promise.resolve();
 
+// computes report how long they took, for the consoles `top`
 async function handle(msg: any): Promise<void> {
+    if (msg.type !== 'run-init' && msg.type !== 'update') return handleMessage(msg);
+
+    const started = performance.now();
+    await handleMessage(msg);
+    self.postMessage({ type: 'timing', pluginIndex: msg.pluginIndex, ms: performance.now() - started });
+}
+
+async function handleMessage(msg: any): Promise<void> {
+    if (msg.params && typeof msg.pluginIndex === 'number' && entries[msg.pluginIndex]) {
+        entries[msg.pluginIndex].lastParams = msg.params;
+    }
+
+    if (msg.type === 'command') {
+        const entry = entries[msg.pluginIndex];
+        const cmd = entry?.commands.get(msg.name);
+        const lines: string[] = [];
+        let recompute = false;
+        const show = (v: unknown) =>
+            typeof v === 'string' ? v : JSON.stringify(v, (_k, x) => (typeof x === 'bigint' ? `${x}n` : x));
+
+        try {
+            if (!cmd) throw new Error(`no command "${msg.name}"`);
+
+            const value = await cmd.run({
+                args: msg.args ?? {},
+                params: entry.lastParams,
+                state: entry.state,
+                print: (...values) => lines.push(values.map(show).join(' ')),
+                recompute: () => (recompute = true),
+            });
+
+            const reply = { type: 'command-result', reqId: msg.reqId, lines, value, recompute };
+            try {
+                self.postMessage(reply);
+            } catch {
+                // not cloneable (a function, a class with private state), send what it looks like
+                self.postMessage({ ...reply, value: show(value) });
+            }
+        } catch (err) {
+            self.postMessage({
+                type: 'command-result',
+                reqId: msg.reqId,
+                lines,
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
+        return;
+    }
+
     if (msg.type === 'parse') {
         lastScript = msg.script ?? '';
         entries = evalScript(lastScript);
@@ -1022,6 +1104,7 @@ async function handle(msg: any): Promise<void> {
             plugins: entries.map((e, i) => ({
                 index: i,
                 decl: e.decl,
+                commands: [...e.commands].map(([name, c]) => ({ name, help: c.help, args: c.args ?? {} })),
                 drawDirectSrc: e.drawDirectSrc,
                 drawUISrc: e.drawUISrc,
                 wasmUrl: e.wasmUrl,

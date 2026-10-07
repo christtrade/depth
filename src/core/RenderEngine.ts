@@ -133,6 +133,27 @@ export class RenderEngine {
 
     // runs forever, only paints dirty layers
     private rafId = 0;
+    /** The element the canvases sit in, for overlays that want to draw over the chart without touching it */
+    get container(): HTMLElement | null {
+        return this.uiCanvas.parentElement;
+    }
+
+    // the main plot in css px, the canvas minus the price & time axis
+    // what a drop hook passes to trans.tstox/pricetoy
+    get plotSize(): { width: number; height: number } {
+        const dpr = getEffectiveDpr();
+        const p = this.drawParams;
+        const cssW = this.baseCanvas.width / dpr;
+        const cssH = this.baseCanvas.height / dpr;
+        const main = p?.layouts?.['main'];
+        return {
+            width: cssW - (p?.priceScaleWidth ?? 0),
+            height: main ? main.h : cssH - (p?.hideTimeScale ? 0 : X_AXIS_HEIGHT),
+        };
+    }
+
+    /** Frames that painted something n what they cost. Read by the consoles `top` */
+    readonly paintStats = { frames: 0, totalMs: 0, lastMs: 0, maxMs: 0 };
     private dirty = { base: true, drawings: true, ui: true };
 
     // called inside the raf loop, around the data layer
@@ -183,6 +204,8 @@ export class RenderEngine {
     private startLoop(): void {
         const tick = () => {
             if (this.destroyed) return;
+            const started = performance.now();
+            const painting = this.dirty.base || this.dirty.drawings || this.dirty.ui;
 
             if (this.dirty.base) {
                 const ctx = this.baseCanvas.getContext('2d');
@@ -222,6 +245,15 @@ export class RenderEngine {
             // there. a base paint dirties ui above, so a tick arriving on base
             // still advances the tween.
             if (this.priceTransition.isAnimating(performance.now())) this.dirty.ui = true;
+
+            if (painting) {
+                const ms = performance.now() - started;
+                const s = this.paintStats;
+                s.frames++;
+                s.totalMs += ms;
+                s.lastMs = ms;
+                s.maxMs = Math.max(s.maxMs, ms);
+            }
 
             this.rafId = requestAnimationFrame(tick);
         };

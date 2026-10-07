@@ -287,6 +287,9 @@ interface Lot {
     commissionPerUnit: number;
 }
 //  Engine options & public interfaces
+export type BookLevel = { price: number; size: number; orders: number };
+export type BookDepth = { bids: BookLevel[]; asks: BookLevel[] };
+
 export interface L3EngineOptions {
     symbolInfo?: SymbolInfo;
     tickSize?: number;
@@ -417,6 +420,11 @@ export interface L3MatchingEngine {
     getFillSearch: () => FillSearchOptions;
     /** Cheap gate: is there any resting order / untriggered bracket that could fill? */
     hasPendingTriggers: () => boolean;
+    /**
+     * Resting size at the best `levels` prices each side (best first). Only an
+     * order by order feed builds a book, anything coarser returns empty sides
+     */
+    getDepth: (levels: number) => BookDepth;
     /**
      * Replay a skipped span's bars (fetched at fillSearch.maxResolution) to apply
      * fills the jump would otherwise have skipped. Bars must be time-ascending.
@@ -968,6 +976,18 @@ export function createL3MatchingEngine(
     }
     function getFillSearch(): FillSearchOptions {
         return _fillSearch;
+    }
+
+    function getDepth(levels: number): BookDepth {
+        const side = (book: SortedBook, best: 'bid' | 'ask') => {
+            const prices = book.getSortedPrices();
+            const picked = best === 'bid' ? prices.slice(-levels).reverse() : prices.slice(0, levels);
+            return picked.map((price) => {
+                const level = book.getLevel(price)!;
+                return { price, size: level.totalSize, orders: level.orders.size };
+            });
+        };
+        return { bids: side(bidBook, 'bid'), asks: side(askBook, 'ask') };
     }
 
     /** True if anything could fill - cheap gate so jumps with no orders do no work. */
@@ -2608,6 +2628,7 @@ export function createL3MatchingEngine(
         setFillSearch,
         getFillSearch,
         hasPendingTriggers,
+        getDepth,
         settleGapBars,
         destroy,
     };

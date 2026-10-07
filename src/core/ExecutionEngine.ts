@@ -4,7 +4,7 @@ import type {
     FillSearchOptions,
     FillAmbiguity,
 } from '../lib/matchingEngine';
-import { L3MatchingEngine, DEFAULT_FILL_SEARCH } from '../lib/matchingEngine';
+import { L3MatchingEngine, DEFAULT_FILL_SEARCH, type BookDepth } from '../lib/matchingEngine';
 import type { TypedEventBus } from './TypedEventBus';
 import type { BracketAmendment, Order, Position } from '../lib/types/trading-types';
 import type { MboEvent, PriceHistory } from '../lib/types';
@@ -130,6 +130,15 @@ export class ExecutionEngine {
 
     // Routing helpers
     // the built-in engine for a symbol, falling back to the active one
+    /**
+     * The resting book at the horizon, best `levels` prices each side. Null when
+     * a custom adapter executes
+     */
+    getDepth(levels = 10, symbol?: string): BookDepth | null {
+        if (this.custom) return null;
+        return this.builtInFor(symbol)?.getDepth(levels) ?? null;
+    }
+
     private builtInFor(symbol?: string): L3MatchingEngine | null {
         return this.builtIns.get(symbol ?? this.activeSymbol) ?? null;
     }

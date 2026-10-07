@@ -14,6 +14,7 @@ import type { SerialTrade, PriceHistory } from '../../lib/types';
 import type { FootprintBar } from '../../lib/types/footprint';
 import type { BracketAmendment } from '../../lib/types/trading-types';
 import type { PlaceOrderRequest } from '../../lib/matchingEngine';
+import type { CommandDef, CvarDef } from '../../console/Console';
 
 // Plugin classification
 export type PluginType =
@@ -309,6 +310,16 @@ export interface PluginContext {
 
     playback: {
         registerState(snapshot: PluginStateSnapshot): () => void;
+    };
+
+    /**
+    * add cmds and cvarsto the charts console. name them 'yourplugin:thing'
+    * so 'thing' alone still finds them. everything registered here goes away when the plugin
+    * uninstalls. the returned fn removes one sooner
+    */
+    console: {
+        register(def: CommandDef): () => void;
+        registerCvar(def: CvarDef): () => void;
     };
 }
 

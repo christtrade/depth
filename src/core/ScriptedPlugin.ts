@@ -25,6 +25,13 @@ import type { StrategyRange } from './strategy-range';
 import { planChunks, streamRangeChunks } from './strategy-stream';
 import type { OhlcvBar } from '../lib/indicator-stdlib';
 import { makeScopedCompiler } from './script-scope';
+import { paramCvars, scriptArgSpecs, slugOf, type ScriptCommandMeta } from '../console/plugin-console';
+import { formatValue } from '../console/values';
+
+export type ScriptStats = { name: string; type: string; computes: number; totalMs: number; lastMs: number; maxMs: number };
+
+/** Worker compute time per scripted plugin entry, keyed `${pluginId}:${index}` */
+export const scriptStats = new Map<string, ScriptStats>();
 import type { IndicatorSettingField } from '../components/indicators/indicators-settings-dialog';
 import type { StyleField } from '../components/drawings/drawing-settings-dialog';
 import type { SerialTrade } from '../lib/types';
@@ -279,6 +286,7 @@ interface WorkerInitMsg {
     plugins: Array<{
         index: number;
         decl: any;
+        commands?: ScriptCommandMeta[];
         initialState: unknown;
         drawCommands: DrawCommand[];
         drawUISrc: string | null;
@@ -817,6 +825,19 @@ const indicatorCapability: CapabilityHandler = (
         for (const k of getParamKeys(key, def)) allParamKeys.add(k);
     }
     (indicator as any).__paramKeys = allParamKeys;
+
+    const paramDefaults: Record<string, unknown> = {};
+    for (const [key, def] of Object.entries(paramDefs)) initParamDefaults(key, def, paramDefaults);
+    const offCvars = paramCvars({
+        slug: slugOf(decl.name),
+        paramDefs: paramDefs as never,
+        defaults: paramDefaults,
+        keysOf: (key, def) => getParamKeys(key, def as unknown as ParamDef),
+        get: (key) => currentParams[key],
+        set: (key, value) => ctx.eventBus.emit('plugin:apply-params', { id: entryId, params: { [key]: value } }),
+        group: decl.name,
+    }).map((cvar) => ctx.console?.registerCvar(cvar));
+
     (indicator as any).__onParamsChanged = (patch: Record<string, unknown>) => {
         Object.assign(currentParams, patch);
         if (manualRun && hasRunOnce) {
@@ -1197,6 +1218,7 @@ const indicatorCapability: CapabilityHandler = (
     });
 
     return () => {
+        offCvars.forEach((off) => off?.());
         offCompute();
         offAdvance();
         offApplyParams();
@@ -2119,9 +2141,28 @@ export function createScriptedPlugin(script: string, id?: string, category?: str
             const initListeners: ((pluginMsg: WorkerInitMsg['plugins'][0]) => void)[] = [];
             const initResultListeners: ((pluginMsg: WorkerInitMsg['plugins'][0]) => void)[] = [];
             const updateListeners = new Map<number, ((msg: WorkerUpdateMsg) => void)[]>();
+            const commandReplies = new Map<number, (msg: any) => void>();
+            const commandOffs = new Map<number, () => void>(); // by pluginIndex
+            let commandSeq = 0;
 
             worker.onmessage = (e: MessageEvent) => {
                 const msg = e.data;
+                if (msg.type === 'command-result') {
+                    commandReplies.get(msg.reqId)?.(msg);
+                    commandReplies.delete(msg.reqId);
+                    return;
+                }
+                if (msg.type === 'timing') {
+                    const id = `${pluginId}:${msg.pluginIndex}`;
+                    const s = scriptStats.get(id) ?? { name: pluginName, type: pluginType, computes: 0, totalMs: 0, lastMs: 0, maxMs: 0 };
+                    s.computes++;
+                    s.totalMs += msg.ms;
+                    s.lastMs = msg.ms;
+                    s.maxMs = Math.max(s.maxMs, msg.ms);
+
+                    scriptStats.set(id, s);
+                    return;
+                }
                 if (msg.type === 'error') {
                     emitError(msg.error, msg.line);
                     return;
@@ -2301,11 +2342,43 @@ export function createScriptedPlugin(script: string, id?: string, category?: str
                 );
                 teardowns.set(pluginMsg.index, teardown); // replaces, doesnt accumulate
 
+                commandOffs.get(pluginMsg.index)?.();
+                const slug = slugOf(decl.name);
+                const offs = (pluginMsg.commands ?? []).map((c) =>
+                    ctx.console?.register({
+                        name: `${slug}:${c.name}`,
+                        help: c.help,
+                        args: scriptArgSpecs(c.args),
+                        run: ({ args, print, signal }) =>
+                            new Promise<void>((resolve, reject) => {
+                                const reqId = ++commandSeq;
+                                commandReplies.set(reqId, (res) => {
+                                    for (const line of res.lines ?? []) print(line);
+
+                                    if (res.recompute) {
+                                        ctx.eventBus.emit('plugin:scripted-recompute' as any, { id: entryId });
+                                    }
+                                    if (res.error) return reject(new Error(res.error));
+                                    if (res.value !== undefined) print(formatValue(res.value, { timezone: 'UTC' }));
+
+                                    resolve();
+                                });
+                                signal.addEventListener('abort', () => (commandReplies.delete(reqId), resolve()), {
+                                    once: true,
+                                });
+                                worker.postMessage({ type: 'command', pluginIndex: pluginMsg.index, name: c.name, args, reqId });
+                            }),
+                    }),
+                );
+                commandOffs.set(pluginMsg.index, () => offs.forEach((off) => off?.()));
+
                 ctx.eventBus.emit('plugin:scripted-recompute' as any, { id: entryId });
             });
 
             return () => {
                 offUpdateCode();
+                for (const id of [...scriptStats.keys()]) if (id.startsWith(`${pluginId}:`)) scriptStats.delete(id);
+                for (const off of commandOffs.values()) off();
                 for (const t of teardowns.values()) t();
                 worker.postMessage({ type: 'destroy' });
                 worker.terminate();

@@ -27,6 +27,8 @@ export const StorageKey = {
     colorSwatches: `${STORAGE_NAMESPACE}color-swatches`,
     pluginStartup: `${STORAGE_NAMESPACE}plugin-startup`,
     pluginPanels: `${STORAGE_NAMESPACE}plugin-panels`,
+    console: `${STORAGE_NAMESPACE}console`,
+    consoleHistory: `${STORAGE_NAMESPACE}console-history`,
 } as const;
 
 /**  sdklaföfkdslfk:Settings blob a plugin owns via `ctx.getSettings()` / `ctx.saveSettings()`. */

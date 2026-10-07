@@ -1,6 +1,6 @@
 {
     "name": "@christtrade/depth",
-    "version": "0.14.1",
+    "version": "0.15.0",
     "description": "Depth - the charting library built for ChristTrade.",
     "author": "ChristTrade",
     "license": "Apache-2.0",
@@ -18,7 +18,8 @@
         "./script-runtime": "./src/core/script-runtime.ts"
     },
     "scripts": {
-        "dist": "npm run dist:js && npm run dist:types && npm run dist:css && npm run dist:smoke && npm run probe:script-runtime",
+        "console:manifest": "node build/console-manifest.mjs",
+        "dist": "node build/console-manifest.mjs --check && npm run dist:js && npm run dist:types && npm run dist:css && npm run dist:smoke && npm run probe:script-runtime",
         "dist:smoke": "node build/smoke.mjs",
         "probe:script-runtime": "node build/probe-script-runtime.mjs",
         "dist:slim": "SLIM=1 npm run dist:js && npm run dist:types && npm run dist:css && npm run dist:smoke",

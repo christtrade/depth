@@ -8,6 +8,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-07
+
+### Added
+- **A console.** It's sick and youll love it. `chart.console` creates it on first use. every
+  bus command and setting is already in it. Aliases, binds, cfgs and history is saved through
+  the chart's storage layer.
+- `console.register` / `registerCvar` to add your own commands and cvars. You also get `scope`,
+  `capture`, `suggest`, `highlight` and `complete` to build a ui around it.
+- Plugins also get `ctx.console.register/registerCvar` to make their own commands.
+- Scripted plugins can declare `commands: {}` or call `p.command(name, def)`. Commands
+  run in the worker with the plugins params and state. each param also shows up as a cvar, `slug.param` 
+- `chart.getData()` like the plugins `ctx.getData()`, returns the same snapshot.
+- `chart.renderEngine`, with `container`, `plotSize`, `paintStats`
+- `executionEngine.getDepth(levels)` - the resting book from the built in matching engine (best lvls first)
+- `eventBus.tap(fn)` to see every event before its handlers & interceptors run, and `eventBus.emitCounts`
+
+### Changed
+- `PluginContext` has a required `console`, and `L3MatchingEngine` has a required `getDepth`. this only
+  matters if you implement either one yourself.
+
+## [0.14.1] - 2026-10-04
+
+### Added
+- Animated dropdowns for the ones that didnt already. Makes it look nicer. thats all, simple patch
+
 ## [0.14.0] - 2026-09-29
 
 Whoops. been a while... anyways, lets get on with the changes:
@@ -347,7 +372,10 @@ Not user-visible, but this is what the split out of the monorepo turned up:
 - 30 unused UI components were removed, taking `depth.css` from 147 KB to
   124 KB.
 
-[unreleased]: https://github.com/christtrade/depth/compare/v0.13.1...HEAD
+[unreleased]: https://github.com/christtrade/depth/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/christtrade/depth/compare/v0.14.1...v0.15.0
+[0.14.1]: https://github.com/christtrade/depth/compare/v0.14.0...v0.14.1
+[0.14.0]: https://github.com/christtrade/depth/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/christtrade/depth/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/christtrade/depth/compare/v0.12.26...v0.13.0
 [0.12.26]: https://github.com/christtrade/depth/compare/v0.12.25...v0.12.26

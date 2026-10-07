@@ -5,6 +5,20 @@
 
 // Controller
 export { DepthChart } from './DepthChart';
+export { Console, keyName } from '../console/Console';
+export type {
+    ConsoleHost,
+    ConsoleStorage,
+    ConsoleDisplay,
+    CommandDef,
+    CommandContext,
+    CvarDef,
+    Screen,
+    ScreenKey,
+    ScreenOptions,
+} from '../console/Console';
+export type { ArgSpec, ArgType } from '../console/types';
+export type { TypeParser } from '../console/values';
 export type { ChartOptions } from './DepthChart';
 export { useDepthChart } from '../react/useDepthChart';
 export { default as Depth } from '../ChartOuter';
@@ -151,7 +165,7 @@ export type { ChartSettings } from '../lib/types/chart-settings';
 export { DEFAULT_CHART_SETTINGS } from '../lib/types/chart-settings';
 
 // Matching engine
-export type { PlaceOrderRequest, L3EngineOptions, FeeSchedule } from '../lib/matchingEngine';
+export type { PlaceOrderRequest, L3EngineOptions, FeeSchedule, BookDepth, BookLevel } from '../lib/matchingEngine';
 export {
     createL3MatchingEngine,
     feeScheduleFor,

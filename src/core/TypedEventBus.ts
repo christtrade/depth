@@ -407,6 +407,7 @@ export interface ChartEvents {
     // Plugin panel (DOM) lifecycle
     'plugin:panel-added': { id: string; title: string; visible: boolean };
     'plugin:panel-removed': { id: string };
+    /** @console command */
     'plugin:panel-toggle-visibility': { id: string; visible: boolean };
 
     'plugin:register-chart-type': { plugin: ChartTypePlugin };
@@ -497,6 +498,7 @@ export interface ChartEvents {
 
     'plugin:apply-params': { id: string; params: Record<string, unknown> };
 
+    /** @console command */
     'plugin:strategy-range': {
         id: string;
         range: { fromNs?: bigint; toNs?: bigint } | null;
@@ -517,6 +519,7 @@ export interface ChartEvents {
         fetch?: boolean;
     };
 
+    /** @console command */
     'plugin:strategy-mode': { id: string; manual: boolean };
 
     'plugin:strategy-stale': {
@@ -537,6 +540,7 @@ export interface ChartEvents {
         error?: string;
     };
 
+    /** @console command */
     'plugin:strategy-sweep': {
         id: string;
         grid: Array<Record<string, unknown>>;
@@ -573,6 +577,7 @@ export interface ChartEvents {
         reason: string;
     };
 
+    /** @console command */
     'plugin:strategy-walkforward': {
         id: string;
         grid: Array<Record<string, unknown>>;
@@ -761,7 +766,21 @@ export class TypedEventBus {
         };
     }
 
+    /** How many times each event has been emitted. Read by the consoles `top` */
+    readonly emitCounts = new Map<string, number>();
+
+    private readonly taps = new Set<(event: keyof ChartEvents, data: unknown) => void>();
+
+    // see every event as its emitted b4 its handlers run
+    // for tracing and debugging
+    tap(fn: (event: keyof ChartEvents, data: unknown) => void): () => void {
+        this.taps.add(fn);
+        return () => this.taps.delete(fn);
+    }
+
     emit<K extends keyof ChartEvents>(event: K, data: ChartEvents[K]): void {
+        this.emitCounts.set(event, (this.emitCounts.get(event) ?? 0) + 1);
+        if (this.taps.size) for (const fn of this.taps) fn(event, data);
         if (TypedEventBus.STICKY.has(event)) {
             this.stickyCache.set(event, data);
         }

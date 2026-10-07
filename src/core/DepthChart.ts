@@ -2,7 +2,7 @@
 // account, and is the whole public API. React is a view on top of it -
 // useDepthChart() builds one and hands back its element.
 
-import { DataEngine, type DataEngineConfig } from './DataEngine';
+import { DataEngine, type ChartDataSnapshot, type DataEngineConfig } from './DataEngine';
 import type { IDataAdapter, OhlcvBar, SymbolInfo } from '../interfaces/IDataAdapter';
 import type { IExecutionAdapter } from '../interfaces/IExecutionAdapter';
 import type { IAccountAdapter } from '../interfaces/IAccountAdapter';
@@ -86,6 +86,8 @@ import {
     type PluginStartupRecord,
 } from './plugin-startup';
 import { BUILTIN_INDICATORS } from '../plugins';
+import type { CommandDef, Console, CvarDef } from '../console/Console';
+import { createChartConsole } from '../console/chart-host';
 
 export interface FeaturesOptions {
     contextMenu?: boolean;
@@ -667,6 +669,16 @@ export class DepthChart {
         };
     }
 
+    /** What the chart holds for the active symbol - the same snapshot a plugin's `ctx.getData()` returns. */
+    getData(): ChartDataSnapshot {
+        return this.dataEngine.getSnapshot();
+    }
+
+    /** The paint loop, once a pane has mounted one. */
+    get renderEngine(): RenderEngine | null {
+        return this._renderEngine;
+    }
+
     getMaxLookbackBars(): number {
         let max = 0;
         for (const [, entry] of this.registeredPlugins) {
@@ -997,6 +1009,16 @@ export class DepthChart {
 
     off<K extends keyof ChartEvents>(event: K, handler: (data: ChartEvents[K]) => void): void {
         this.eventBus.off(event, handler);
+    }
+
+    private _console: Console | null = null;
+
+    /**
+     * The chart's command console. Every bus command and chart setting is
+     * already in it. `register` / `registerCvar` add your own
+     */
+    get console(): Console {
+        return (this._console ??= createChartConsole(this));
     }
 
     // Plugins
@@ -1383,6 +1405,25 @@ export class DepthChart {
                 chart.playbackStateRegistry.register(pluginId, snapshot),
         };
 
+        const consoleOffs = new Set<() => void>();
+        const track = (off: () => void) => {
+            consoleOffs.add(off);
+            return () => {
+                consoleOffs.delete(off);
+                off();
+            };
+        };
+        const offUninstalled = chart.eventBus.on('plugin:uninstalled', ({ id }) => {
+            if (id !== pluginId) return;
+            consoleOffs.forEach((off) => off());
+            consoleOffs.clear();
+            offUninstalled();
+        });
+        const pluginConsole = {
+            register: (def: CommandDef) => track(chart.console.register(def)),
+            registerCvar: (def: CvarDef) => track(chart.console.registerCvar(def)),
+        };
+
         return {
             eventBus: chart.eventBus,
             global: globalChartBus,
@@ -1552,6 +1593,7 @@ export class DepthChart {
             notify,
             playback,
             execution,
+            console: pluginConsole,
 
             registerContextMenuItem(_item: any): () => void {
                 return () => {
@@ -1572,6 +1614,7 @@ export class DepthChart {
     destroy(): void {
         if (this.destroyed) return;
         this.destroyed = true;
+        this._console?.dispose();
         globalChartBus.unregisterChart(this.id);
         this.dataEngine.destroy();
         this.executionEngine.destroy();
