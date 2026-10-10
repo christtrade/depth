@@ -595,7 +595,8 @@ export function DrawingSettingsBar({
                         </Tooltip>
                             <AnimatedPanel
                                 open={openField === key}
-                                className="absolute top-full mt-1 left-0 z-50 p-1.5 rounded-lg border border-border bg-[#1c1e24] shadow-xl flex flex-col gap-1 min-w-[80px]"
+                                offset={4}
+                                className="z-50 p-1.5 rounded-lg border border-border bg-[#1c1e24] shadow-xl flex flex-col gap-1 min-w-[80px] overflow-y-auto"
                                 onMouseDown={(e) => e.stopPropagation()}
                             >
                                 {LINE_WIDTHS.map((w) => (
@@ -647,7 +648,8 @@ export function DrawingSettingsBar({
                         </Tooltip>
                             <AnimatedPanel
                                 open={openField === key}
-                                className="absolute top-full mt-1 left-0 z-50 p-1.5 rounded-lg border border-border bg-[#1c1e24] shadow-xl flex flex-col gap-1 min-w-[120px]"
+                                offset={4}
+                                className="z-50 p-1.5 rounded-lg border border-border bg-[#1c1e24] shadow-xl flex flex-col gap-1 min-w-[120px] overflow-y-auto"
                                 onMouseDown={(e) => e.stopPropagation()}
                             >
                                 {DASH_PRESETS.map((preset) => (

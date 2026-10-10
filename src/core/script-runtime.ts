@@ -145,35 +145,9 @@ export function defaultStrategyDraw(state: unknown, layout: 'overlay' | 'pane'):
         return pts.length ? [STDLIB.drawLine(pts, '#38bdf8', 1.5, [], true)] : [];
     }
 
-    const commands: unknown[] = [];
-    const trades = s.trades ?? [];
-
-    for (const t of trades) {
-        const long = t.side === 'long';
-        // entry points the way the trade was taken, exit is coloured by outcome
-        // rather than direction - at a glance you want winners and losers, not a
-        // second copy of the side you can already read from the entry
-        commands.push(
-            STDLIB.drawArrow(
-                t.entryTs,
-                t.entryPrice,
-                long ? 'up' : 'down',
-                long ? '#22c55e' : '#ef4444',
-                9,
-            ),
-        );
-        commands.push(
-            STDLIB.drawArrow(
-                t.exitTs,
-                t.exitPrice,
-                long ? 'down' : 'up',
-                t.pnl >= 0 ? '#22c55e' : '#ef4444',
-                7,
-            ),
-        );
-    }
-
-    return commands;
+    return (s.trades ?? []).map((t) =>
+        STDLIB.drawTrade(t.side, t.entryTs, t.entryPrice, t.exitTs, t.exitPrice, t.pnl),
+    );
 }
 
 /**

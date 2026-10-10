@@ -1434,6 +1434,13 @@ function makeOpaque(hex) {
 
 type GridTick = { ts: bigint; isSessionStart: boolean };
 
+// Px per tick, sized off the widest label each bar size produces: "12:34:56.789", "12:34:56", "12:34 PM".
+// Capped at 12 so wide charts keep the density they always had.
+function timeTickBudget(w: number, barNs: bigint): number {
+    const px = barNs < 1_000_000_000n ? 110 : barNs < 60_000_000_000n ? 90 : 70;
+    return Math.max(2, Math.min(12, Math.floor(w / px)));
+}
+
 function getGridTicks(
     bounds: ViewBounds,
     barNs: bigint,
@@ -1750,7 +1757,7 @@ function drawPaneGrid(
     for (const { ts } of getGridTicks(
         bounds,
         barNs,
-        12,
+        timeTickBudget(w, barNs),
         transformer.getSessionMapper(),
         transformer,
     )) {
@@ -2212,13 +2219,13 @@ function drawDynamicLabels(
         ctx.textBaseline = 'top';
         const tz = chartSettings.timezone ?? 'UTC';
         const use24 = chartSettings.use24HourClock ?? true;
-        for (const { ts, isSessionStart } of getGridTicks(
+        const labels = getGridTicks(
             bounds,
             barNs,
-            12,
+            timeTickBudget(w, barNs),
             transformer.getSessionMapper(),
             transformer,
-        )) {
+        ).map(({ ts, isSessionStart }) => {
             const x = snapToDevicePx(transformer.tsToX(ts, w));
             const { bold, text } = formatTsTime(
                 ts,
@@ -2229,6 +2236,20 @@ function drawDynamicLabels(
                 false,
                 isSessionStart,
             );
+            ctx.font = `${bold ? 'bold' : ''} 11px "Inter"`;
+            const half = ctx.measureText(text).width / 2;
+            return { x, bold, text, l: x - half, r: x + half };
+        });
+
+        // Last line of defence against overlap: dates claim space first, times fill what's left.
+        const GAP = 8;
+        const placed: typeof labels = [];
+        const fits = (c: (typeof labels)[number]) =>
+            placed.every((p) => c.r + GAP <= p.l || c.l >= p.r + GAP);
+        for (const c of labels) if (c.bold && fits(c)) placed.push(c);
+        for (const c of labels) if (!c.bold && fits(c)) placed.push(c);
+
+        for (const { x, bold, text } of placed) {
             ctx.font = `${bold ? 'bold' : ''} 11px "Inter"`;
             ctx.fillText(text, x, snapToDevicePx(h + 8));
         }

@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo, KeyboardEvent } from 'react';
 import { Check, ChevronDown, Search, Globe, X } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { AnimatedPanel } from '../ui/animated-panel';
+import { AnimatedPanel, containsWithPanels } from '../ui/animated-panel';
 
 interface TimezoneEntry {
     value: string;
@@ -182,7 +182,7 @@ export function TimezoneSelect({
     useEffect(() => {
         if (!open) return;
         const handler = (e: MouseEvent) => {
-            if (!containerRef.current?.contains(e.target as Node)) {
+            if (!containsWithPanels(containerRef.current, e.target)) {
                 setOpen(false);
                 setQuery('');
             }
@@ -302,13 +302,12 @@ export function TimezoneSelect({
                 <AnimatedPanel
                     open={open}
                     side={compact ? 'top' : 'bottom'}
+                    matchWidth
+                    maxHeight={320}
                     className={cn(
-                        'absolute z-50 left-0 right-0',
-                        compact ? 'bottom-full mb-1.5' : 'mt-1.5',
-                        'rounded-xl border border-white/10 bg-[#1a1d23]',
+                        'z-50 rounded-xl border border-white/10 bg-[#1a1d23]',
                         'flex flex-col overflow-hidden',
                     )}
-                    style={{ maxHeight: 320 }}
                 >
                     <div className="flex items-center gap-2 px-3 py-2 border-b border-white/8 shrink-0">
                         <Search size={12} className="text-white/25 shrink-0" />

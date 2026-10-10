@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { cn } from '../../lib/utils';
-import { AnimatedPanel } from '../ui/animated-panel';
+import { AnimatedPanel, containsWithPanels } from '../ui/animated-panel';
 import { X, Plus, ChevronDown, Star, Lock } from 'lucide-react';
 import {
     PRESET_TIMEFRAMES,
@@ -13,6 +13,7 @@ import {
 } from '../../lib/timeframes';
 import type { FeaturesOptions } from '../../core/DepthChart';
 import type { TypedEventBus } from '../../core/TypedEventBus';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 
 const PRESET_GROUPS = [
     {
@@ -110,7 +111,7 @@ export function TimeframeSelector({
     useEffect(() => {
         if (!open) return;
         const onDown = (e: MouseEvent) => {
-            if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+            if (popoverRef.current && !containsWithPanels(popoverRef.current, e.target)) {
                 setOpenWithCallback(false);
             }
         };
@@ -215,9 +216,11 @@ export function TimeframeSelector({
             <div className="relative">
                 <AnimatedPanel
                     open={open}
-                    className="absolute left-0 top-full mt-4 z-50 w-[244px] rounded-lg border border-[#1e2128] bg-[#16181d] shadow-2xl overflow-hidden"
+                    offset={16}
+                    maxHeight={354}
+                    className="z-50 flex flex-col w-[244px] rounded-lg border border-[#1e2128] bg-[#16181d] shadow-2xl overflow-hidden"
                 >
-                        <div className="p-2.5 space-y-3 max-h-[22rem] overflow-y-auto">
+                        <div className="p-2.5 space-y-3 flex-1 min-h-0 overflow-y-auto">
                             {PRESET_GROUPS.filter((g) => g.tfs.length > 0).map((group) => (
                                 <div key={group.label}>
                                     <SectionLabel>{group.label}</SectionLabel>
@@ -336,24 +339,49 @@ function QuickPick({
     onSelect: (tf: Timeframe) => void;
 }) {
     return (
-        <button
-            onClick={() => onSelect(tf)}
-            title={locked ? `${tf.label} is a Pro timeframe` : undefined}
-            className={cn(
-                'relative h-7 px-2 rounded-md text-[11px] font-medium flex items-center gap-1 transition-colors duration-150 select-none',
-                locked
-                    ? 'text-slate-700 hover:text-cyan-300/80'
-                    : active
-                      ? 'text-white'
-                      : 'text-slate-500 hover:text-slate-200 hover:bg-[#1a1d23]',
-            )}
-        >
-            {tf.label}
-            {locked && <Lock size={8} />}
-            {active && (
-                <span className="absolute inset-x-1.5 bottom-[4px] h-[1px] rounded-full bg-[#08b3de]" />
-            )}
-        </button>
+        locked ? (
+            <Tooltip delayDuration={100}>
+                <TooltipTrigger asChild>
+                    <button
+                        onClick={() => onSelect(tf)}
+                        className={cn(
+                            'relative h-7 px-2 rounded-md text-[11px] font-medium flex items-center gap-1 transition-colors duration-150 select-none',
+                            locked
+                                ? 'text-slate-700 hover:text-cyan-300/80'
+                                : active
+                                  ? 'text-white'
+                                  : 'text-slate-500 hover:text-slate-200 hover:bg-[#1a1d23]',
+                        )}
+                    >
+                        {tf.label}
+                        {<Lock size={8} />}
+                        {active && (
+                            <span className="absolute inset-x-1.5 bottom-[4px] h-[1px] rounded-full bg-[#08b3de]" />
+                        )}
+                    </button>
+                </TooltipTrigger>
+                <TooltipContent className='bg-background border border-border'>
+                    {tf.label} is a Pro timeframe
+                </TooltipContent>
+            </Tooltip>
+        ) : (
+            <button
+                onClick={() => onSelect(tf)}
+                className={cn(
+                    'relative h-7 px-2 rounded-md text-[11px] font-medium flex items-center gap-1 transition-colors duration-150 select-none',
+                    locked
+                        ? 'text-slate-700 hover:text-cyan-300/80'
+                        : active
+                          ? 'text-white'
+                          : 'text-slate-500 hover:text-slate-200 hover:bg-[#1a1d23]',
+                )}
+            >
+                {tf.label}
+                {active && (
+                    <span className="absolute inset-x-1.5 bottom-[4px] h-[1px] rounded-full bg-[#08b3de]" />
+                )}
+            </button>
+        )
     );
 }
 
@@ -383,26 +411,58 @@ function TfChip({
     onRemove?: () => void;
 }) {
     return (
-        <div
-            title={locked ? `${tf.label} is a Pro timeframe` : undefined}
-            className={cn(
-                'group relative flex items-center h-6 rounded text-xs select-none cursor-pointer transition-all duration-100 font-[500] pl-2',
-                onRemove ? 'pr-1' : 'pr-1.5',
-                locked
-                    ? 'bg-transparent text-slate-600 border border-dashed border-[#1e2128] hover:text-cyan-300/80 hover:border-cyan-400/30'
-                    : active
-                      ? 'bg-[#1a1d23] text-white border border-border'
-                      : 'bg-[#1a1d23] text-slate-500 border border-[#1e2128] hover:text-slate-200 hover:border-slate-600 hover:bg-[#1e2229]',
-            )}
-            onClick={() => onSelect(tf)}
-        >
-            {tf.label}
+        locked ? (
+            <Tooltip delayDuration={100}>
+                <TooltipTrigger asChild>
+                    <div
+                        className={cn(
+                            'group relative flex items-center h-6 rounded text-xs select-none cursor-pointer transition-all duration-100 font-[500] pl-2',
+                            onRemove ? 'pr-1' : 'pr-1.5',
+                            locked
+                                ? 'bg-transparent text-slate-600 border border-dashed border-[#1e2128] hover:text-cyan-300/80 hover:border-cyan-400/30'
+                                : active
+                                  ? 'bg-[#1a1d23] text-white border border-border'
+                                  : 'bg-[#1a1d23] text-slate-500 border border-[#1e2128] hover:text-slate-200 hover:border-slate-600 hover:bg-[#1e2229]',
+                        )}
+                        onClick={() => onSelect(tf)}
+                    >
+                        {tf.label}
 
-            {/* a locked chip trades its pin toggle for the lock - pinning
-                something you can't select just moves the dead end to the toolbar */}
-            {locked ? (
-                <Lock size={8} className="ml-1.5 shrink-0" />
-            ) : (
+                        <Lock size={8} className="ml-1.5 shrink-0" />
+
+                        {onRemove && (
+                            <button
+                                className="ml-0.5 opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-all"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onRemove();
+                                }}
+                                aria-label="Delete timeframe"
+                            >
+                                <X size={8} />
+                            </button>
+                        )}
+                    </div>
+                </TooltipTrigger>
+                <TooltipContent className='bg-background border border-border'>
+                    {tf.label} is a Pro timeframe
+                </TooltipContent>
+            </Tooltip>
+        ) : (
+            <div
+                className={cn(
+                    'group relative flex items-center h-6 rounded text-xs select-none cursor-pointer transition-all duration-100 font-[500] pl-2',
+                    onRemove ? 'pr-1' : 'pr-1.5',
+                    locked
+                        ? 'bg-transparent text-slate-600 border border-dashed border-[#1e2128] hover:text-cyan-300/80 hover:border-cyan-400/30'
+                        : active
+                          ? 'bg-[#1a1d23] text-white border border-border'
+                          : 'bg-[#1a1d23] text-slate-500 border border-[#1e2128] hover:text-slate-200 hover:border-slate-600 hover:bg-[#1e2229]',
+                )}
+                onClick={() => onSelect(tf)}
+            >
+                {tf.label}
+
                 <button
                     className={cn(
                         'ml-1.5 transition-all',
@@ -418,20 +478,20 @@ function TfChip({
                 >
                     <Star size={9} className={pinned ? 'fill-current' : ''} />
                 </button>
-            )}
 
-            {onRemove && (
-                <button
-                    className="ml-0.5 opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-all"
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        onRemove();
-                    }}
-                    aria-label="Delete timeframe"
-                >
-                    <X size={8} />
-                </button>
-            )}
-        </div>
+                {onRemove && (
+                    <button
+                        className="ml-0.5 opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-all"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onRemove();
+                        }}
+                        aria-label="Delete timeframe"
+                    >
+                        <X size={8} />
+                    </button>
+                )}
+            </div>
+        )
     );
 }

@@ -746,6 +746,16 @@ export type DrawCommand =
           padding?: number;
           radius?: number;
           anchored?: boolean;
+      }
+    | {
+          /** Round-trip trade - entry and exit markers joined by a connector */
+          type: 'trade';
+          side: 'long' | 'short';
+          entryTs: bigint;
+          entryPrice: number;
+          exitTs: bigint;
+          exitPrice: number;
+          pnl: number;
       };
 
 // Draw command builders
@@ -1007,16 +1017,111 @@ export function drawBadge(
     return { type: 'badge', t, price, text, textColor, bgColor, ...opts };
 }
 
+/**
+ * drawTrade(side, entryTs, entryPrice, exitTs, exitPrice, pnl)
+ *
+ * Draws a closed trade the way the default strategy view does: an entry arrow
+ * coloured by side, an exit arrow and dashed connector coloured by outcome, and
+ * a P&L tag once zoomed in far enough to read it.
+ */
+export function drawTrade(
+    side: 'long' | 'short',
+    entryTs: bigint,
+    entryPrice: number,
+    exitTs: bigint,
+    exitPrice: number,
+    pnl: number,
+): DrawCommand {
+    return { type: 'trade', side, entryTs, entryPrice, exitTs, exitPrice, pnl };
+}
+
 // Draw command executor
 //
 // Runs on the main thread inside ScriptedPlugin's drawBase().
 // Translates DrawCommand[] -> actual canvas calls using the live transformer.
 // This is the only place that touches CanvasRenderingContext2D.
 
-export function executeDrawCommands(commands: DrawCommand[], renderCtx: RenderContext): void {
-    const { ctx: canvas, rect, tMin, tMax, barNs, transformer } = renderCtx;
+type Placed = { cmd: DrawCommand; lo: bigint; hi: bigint };
+type Run = { items: Placed[]; maxSpan: bigint; padPx: number };
+type DrawStep = DrawCommand | Run;
 
+// Consecutive time-anchored commands become one run sorted by start time, so a
+// frame only touches the visible slice - a backtest over years is 100k+ markers,
+// nearly all offscreen.
+const _drawPlans = new WeakMap<DrawCommand[], DrawStep[]>();
+
+// Text isn't measured until paint, so guess wide: ~0.62em per glyph for Inter.
+const _textPx = (text: string, fontSize: number) => text.length * fontSize * 0.62;
+
+/** [start, end, px it can reach past its anchors], or null if not tied to time. */
+function _placement(cmd: DrawCommand): [bigint, bigint, number] | null {
+    switch (cmd.type) {
+        case 'arrow':
+            return [cmd.t, cmd.t, (cmd.size ?? 10) + _textPx(cmd.label ?? '', (cmd.size ?? 10) * 0.9)];
+        case 'circle':
+            return [cmd.t, cmd.t, cmd.radius + (cmd.borderWidth ?? 1)];
+        case 'vline':
+            return [cmd.t, cmd.t, cmd.width];
+        case 'label': {
+            if (cmd.anchored) return null;
+            const t = BigInt(cmd.x);
+            return [t, t, Math.min(_textPx(cmd.text, cmd.fontSize ?? 12), cmd.maxWidth ?? Infinity)];
+        }
+        case 'badge':
+            if (cmd.anchored) return null;
+            return [cmd.t, cmd.t, _textPx(cmd.text, cmd.fontSize ?? 11) / 2 + (cmd.padding ?? 5)];
+        case 'trendline':
+        case 'rect': {
+            if (cmd.type === 'trendline' && cmd.extend && cmd.extend !== 'none') return null;
+            const w = cmd.type === 'rect' ? (cmd.borderWidth ?? 1) : (cmd.width ?? 1);
+            return cmd.t1 < cmd.t2 ? [cmd.t1, cmd.t2, w] : [cmd.t2, cmd.t1, w];
+        }
+        case 'trade':
+            return cmd.entryTs < cmd.exitTs
+                ? [cmd.entryTs, cmd.exitTs, TRADE_REACH_PX]
+                : [cmd.exitTs, cmd.entryTs, TRADE_REACH_PX];
+        default:
+            return null;
+    }
+}
+
+function _planFor(commands: DrawCommand[]): DrawStep[] {
+    let plan = _drawPlans.get(commands);
+    if (plan) return plan;
+    plan = [];
+    let run: Run | null = null;
     for (const cmd of commands) {
+        const at = _placement(cmd);
+        if (!at) {
+            run = null;
+            plan.push(cmd);
+            continue;
+        }
+        if (!run) {
+            run = { items: [], maxSpan: 0n, padPx: 0 };
+            plan.push(run);
+        }
+        const [lo, hi, padPx] = at;
+        run.items.push({ cmd, lo, hi });
+        if (hi - lo > run.maxSpan) run.maxSpan = hi - lo;
+        if (padPx > run.padPx) run.padPx = padPx;
+    }
+    for (const step of plan) {
+        if ('items' in step) step.items.sort((a, b) => (a.lo < b.lo ? -1 : a.lo > b.lo ? 1 : 0));
+    }
+    _drawPlans.set(commands, plan);
+    return plan;
+}
+
+export function executeDrawCommands(commands: DrawCommand[], renderCtx: RenderContext): void {
+    for (const step of _planFor(commands)) {
+        if ('items' in step) _execRun(step, renderCtx);
+        else _execOne(step, renderCtx);
+    }
+}
+
+function _execOne(cmd: DrawCommand, renderCtx: RenderContext): void {
+    const { ctx: canvas, rect, tMin, tMax, barNs, transformer } = renderCtx;
         switch (cmd.type) {
             case 'line':
                 _execLine(cmd, canvas, rect, tMin, tMax, barNs, transformer);
@@ -1060,8 +1165,10 @@ export function executeDrawCommands(commands: DrawCommand[], renderCtx: RenderCo
             case 'badge':
                 _execBadge(cmd, canvas, rect, transformer);
                 break;
+            case 'trade':
+                _drawTrades([cmd], canvas, rect, transformer);
+                break;
         }
-    }
 }
 
 // Executors
@@ -1460,22 +1567,11 @@ function _execArrow(
     const x = transformer.tsToX(t, rect.w);
     const y = transformer.priceToY(price, rect.h);
     const tip = direction === 'up' ? y - size * 0.5 : y + size * 0.5;
-    const base = direction === 'up' ? y + size * 0.3 : y - size * 0.3;
-    const half = size * 0.5;
 
     canvas.save();
     canvas.fillStyle = color;
     canvas.beginPath();
-    if (direction === 'up') {
-        canvas.moveTo(x, tip);
-        canvas.lineTo(x - half, base);
-        canvas.lineTo(x + half, base);
-    } else {
-        canvas.moveTo(x, tip);
-        canvas.lineTo(x - half, base);
-        canvas.lineTo(x + half, base);
-    }
-    canvas.closePath();
+    _arrowPath(canvas, x, y, direction, size);
     canvas.fill();
 
     if (label) {
@@ -1485,6 +1581,214 @@ function _execArrow(
         canvas.textBaseline = direction === 'up' ? 'bottom' : 'top';
         const labelY = direction === 'up' ? tip - 3 : tip + 3;
         canvas.fillText(label, x, labelY);
+    }
+    canvas.restore();
+}
+
+function _arrowPath(
+    canvas: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    direction: 'up' | 'down',
+    size: number,
+): void {
+    const tip = direction === 'up' ? y - size * 0.5 : y + size * 0.5;
+    const base = direction === 'up' ? y + size * 0.3 : y - size * 0.3;
+    const half = size * 0.5;
+    canvas.moveTo(x, tip);
+    canvas.lineTo(x - half, base);
+    canvas.lineTo(x + half, base);
+    canvas.closePath();
+}
+
+function _execRun(run: Run, renderCtx: RenderContext): void {
+    const { ctx: canvas, rect, transformer } = renderCtx;
+    const { items, maxSpan, padPx } = run;
+    const tsToX = transformer.makeTsToXFn(rect.w);
+    // tsToX is monotonic in every axis mode, so search by pixel rather than by
+    // time - session gaps make a time pad meaningless.
+    const firstWhere = (pred: (i: number) => boolean) => {
+        let lo = 0;
+        let hi = items.length;
+        while (lo < hi) {
+            const mid = (lo + hi) >>> 1;
+            if (pred(mid)) hi = mid;
+            else lo = mid + 1;
+        }
+        return lo;
+    };
+    // Nothing that starts more than maxSpan before the left edge can reach it.
+    const start = firstWhere((i) => tsToX(items[i].lo + maxSpan) >= -padPx);
+    const end = firstWhere((i) => tsToX(items[i].lo) > rect.w + padPx);
+    if (start >= end) return;
+
+    const plainArrows = new Map<string, Array<Extract<DrawCommand, { type: 'arrow' }>>>();
+    const trades: Array<Extract<DrawCommand, { type: 'trade' }>> = [];
+    for (let i = start; i < end; i++) {
+        const { cmd, lo, hi } = items[i];
+        if (hi !== lo && tsToX(hi) < -padPx) continue;
+        if (cmd.type === 'arrow' && !cmd.label) {
+            let group = plainArrows.get(cmd.color);
+            if (!group) plainArrows.set(cmd.color, (group = []));
+            group.push(cmd);
+        } else if (cmd.type === 'trade') trades.push(cmd);
+        else _execOne(cmd, renderCtx);
+    }
+
+    if (trades.length) _drawTrades(trades, canvas, rect, transformer);
+    if (!plainArrows.size) return;
+    const priceToY = transformer.makePriceToYFn(rect.h);
+    canvas.save();
+    for (const [color, arrows] of plainArrows) {
+        canvas.fillStyle = color;
+        canvas.beginPath();
+        for (const a of arrows) {
+            _arrowPath(canvas, tsToX(a.t), priceToY(a.price), a.direction, a.size ?? 10);
+        }
+        canvas.fill();
+    }
+    canvas.restore();
+}
+
+const TRADE_LONG = '#3b82f6';
+const TRADE_SHORT = '#f97316';
+const TRADE_WIN = '#22c55e';
+const TRADE_LOSS = '#ef4444';
+const TRADE_WIN_TAG = '#16a34a';
+const TRADE_LOSS_TAG = '#dc2626';
+const TRADE_ENTRY_SIZE = 13;
+const TRADE_EXIT_SIZE = 11;
+const TRADE_GAP_PX = 3;
+const TRADE_REACH_PX = 90;
+// P&L tags only once trades average this far apart, or they pile into mush.
+const TRADE_TAG_SPACING_PX = 70;
+
+/** Arrow with head and stem whose tip sits at (x, tipY). */
+function _pointerPath(
+    canvas: CanvasRenderingContext2D,
+    x: number,
+    tipY: number,
+    direction: 'up' | 'down',
+    size: number,
+): void {
+    const s = direction === 'up' ? 1 : -1;
+    const headY = tipY + s * size * 0.7;
+    const tailY = headY + s * size * 0.6;
+    const head = size * 0.55;
+    const stem = size * 0.18;
+    canvas.moveTo(x, tipY);
+    canvas.lineTo(x + head, headY);
+    canvas.lineTo(x + stem, headY);
+    canvas.lineTo(x + stem, tailY);
+    canvas.lineTo(x - stem, tailY);
+    canvas.lineTo(x - stem, headY);
+    canvas.lineTo(x - head, headY);
+    canvas.closePath();
+}
+
+function _fmtPnl(v: number): string {
+    const a = Math.abs(v);
+    return (v >= 0 ? '+' : '-') + (a >= 10_000 ? `${(a / 1000).toFixed(1)}k` : a.toFixed(2));
+}
+
+type Pointer = [x: number, tipY: number, direction: 'up' | 'down', size: number];
+
+function _drawTrades(
+    trades: Array<Extract<DrawCommand, { type: 'trade' }>>,
+    canvas: CanvasRenderingContext2D,
+    rect: { w: number; h: number },
+    transformer: LiveTransformer,
+): void {
+    const tsToX = transformer.makeTsToXFn(rect.w);
+    const priceToY = transformer.makePriceToYFn(rect.h);
+
+    const winLines: number[] = [];
+    const lossLines: number[] = [];
+    const longEntries: Pointer[] = [];
+    const shortEntries: Pointer[] = [];
+    const winExits: Pointer[] = [];
+    const lossExits: Pointer[] = [];
+    const tags: Array<{ x: number; y: number; below: boolean; text: string; color: string }> = [];
+    const showTags = trades.length * TRADE_TAG_SPACING_PX <= rect.w;
+
+    for (const t of trades) {
+        const x1 = tsToX(t.entryTs);
+        const y1 = priceToY(t.entryPrice);
+        const x2 = tsToX(t.exitTs);
+        const y2 = priceToY(t.exitPrice);
+        const won = t.pnl >= 0;
+        const long = t.side === 'long';
+        (won ? winLines : lossLines).push(x1, y1, x2, y2);
+        // longs enter from below and exit from above; shorts the other way round
+        if (long) longEntries.push([x1, y1 + TRADE_GAP_PX, 'up', TRADE_ENTRY_SIZE]);
+        else shortEntries.push([x1, y1 - TRADE_GAP_PX, 'down', TRADE_ENTRY_SIZE]);
+        const exitTip = long ? y2 - TRADE_GAP_PX : y2 + TRADE_GAP_PX;
+        (won ? winExits : lossExits).push([x2, exitTip, long ? 'down' : 'up', TRADE_EXIT_SIZE]);
+        if (showTags) {
+            const tail = TRADE_EXIT_SIZE * 1.3 + 3;
+            tags.push({
+                x: x2,
+                y: long ? exitTip - tail : exitTip + tail,
+                below: !long,
+                text: _fmtPnl(t.pnl),
+                color: won ? TRADE_WIN_TAG : TRADE_LOSS_TAG,
+            });
+        }
+    }
+
+    canvas.save();
+    canvas.lineWidth = 1;
+    canvas.setLineDash([4, 3]);
+    canvas.globalAlpha = 0.6;
+    for (const [color, segs] of [
+        [TRADE_WIN, winLines],
+        [TRADE_LOSS, lossLines],
+    ] as const) {
+        if (!segs.length) continue;
+        canvas.strokeStyle = color;
+        canvas.beginPath();
+        for (let i = 0; i < segs.length; i += 4) {
+            canvas.moveTo(segs[i], segs[i + 1]);
+            canvas.lineTo(segs[i + 2], segs[i + 3]);
+        }
+        canvas.stroke();
+    }
+
+    canvas.globalAlpha = 1;
+    canvas.setLineDash([]);
+    canvas.lineJoin = 'round';
+    // dark rim keeps the arrows readable on top of same-coloured candles
+    canvas.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+    for (const [color, pointers] of [
+        [TRADE_LONG, longEntries],
+        [TRADE_SHORT, shortEntries],
+        [TRADE_WIN, winExits],
+        [TRADE_LOSS, lossExits],
+    ] as const) {
+        if (!pointers.length) continue;
+        canvas.fillStyle = color;
+        canvas.beginPath();
+        for (const [x, y, dir, size] of pointers) _pointerPath(canvas, x, y, dir, size);
+        canvas.fill();
+        canvas.stroke();
+    }
+
+    if (tags.length) {
+        canvas.font = '600 10px "Inter", system-ui, sans-serif';
+        canvas.textAlign = 'center';
+        canvas.textBaseline = 'middle';
+        const h = 15;
+        for (const tag of tags) {
+            const w = canvas.measureText(tag.text).width + 10;
+            const top = tag.below ? tag.y : tag.y - h;
+            canvas.beginPath();
+            canvas.roundRect(tag.x - w / 2, top, w, h, 4);
+            // solid, not tinted - a see-through tag over a candle is unreadable
+            canvas.fillStyle = tag.color;
+            canvas.fill();
+            canvas.fillStyle = '#fff';
+            canvas.fillText(tag.text, tag.x, top + h / 2 + 0.5);
+        }
     }
     canvas.restore();
 }
@@ -2201,4 +2505,5 @@ export const STDLIB: Record<string, Function> = {
     drawPolygon,
     drawDots,
     drawBadge,
+    drawTrade,
 };

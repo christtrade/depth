@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { cn } from '../../lib/utils';
-import { AnimatedPanel } from '../ui/animated-panel';
+import { AnimatedPanel, containsWithPanels } from '../ui/animated-panel';
 import { ChevronDown, Puzzle, CircleQuestionMark, Lock } from 'lucide-react';
 import {
     CandlesIcon,
@@ -111,7 +111,7 @@ export function ChartTypeSelector({
     useEffect(() => {
         if (!open) return;
         const onDown = (e: MouseEvent) => {
-            if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+            if (popoverRef.current && !containsWithPanels(popoverRef.current, e.target)) {
                 setOpenWithCallback(false);
             }
         };
@@ -156,7 +156,7 @@ export function ChartTypeSelector({
 
                 <AnimatedPanel
                     open={open}
-                    className="absolute left-0 top-full mt-1.5 z-50 w-[212px] rounded-lg border border-[#1e2128] bg-[#16181d] shadow-2xl overflow-hidden"
+                    className="z-50 w-[212px] rounded-lg border border-[#1e2128] bg-[#16181d] shadow-2xl overflow-y-auto"
                 >
                     <div className="p-2.5 space-y-3">
                         <div>

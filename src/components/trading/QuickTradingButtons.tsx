@@ -42,7 +42,7 @@ export function QuickTradingButtons({ eventBus }: QuickTradingButtonsProps) {
 
     return (
         <div className="flex gap-2 justify-center md:justify-self-end items-center order-2 md:order-3">
-            <div className="flex items-center gap-1 rounded-md flex-wrap justify-center">
+            <div className="flex items-center gap-1 rounded-md justify-center">
                 <Button
                     variant="ghost"
                     size="icon"

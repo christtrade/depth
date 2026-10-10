@@ -6,7 +6,7 @@ import { ChevronDown, Loader2, Search } from 'lucide-react';
 import { nanoid } from 'nanoid';
 import { SymbolInfo } from '../../interfaces/IDataAdapter';
 import { cn } from '../../lib/utils';
-import { AnimatedPanel } from '../ui/animated-panel';
+import { AnimatedPanel, containsWithPanels } from '../ui/animated-panel';
 import { SymbolIcon } from '../chart/symbol-icon';
 import { describeDataError } from '../chart/chart-status-overlay';
 
@@ -101,7 +101,7 @@ export default function SymbolSwitcher({ eventBus, symbol, onSymbolChange }: Sym
         }
         const t = setTimeout(() => searchRef.current?.focus(), 40);
         const onDown = (e: MouseEvent) => {
-            if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+            if (popoverRef.current && !containsWithPanels(popoverRef.current, e.target)) {
                 setOpen(false);
             }
         };
@@ -188,7 +188,8 @@ export default function SymbolSwitcher({ eventBus, symbol, onSymbolChange }: Sym
 
                 <AnimatedPanel
                     open={open}
-                    className="absolute left-0 top-full mt-1.5 z-50 flex flex-col w-[35rem] max-h-[26rem] rounded-lg border border-[#1e2128] bg-[#16181d] shadow-2xl overflow-hidden"
+                    maxHeight={416}
+                    className="z-50 flex flex-col w-[35rem] rounded-lg border border-[#1e2128] bg-[#16181d] shadow-2xl overflow-hidden"
                 >
                     <div className="flex items-center gap-2.5 px-3 h-11 border-b border-[#1e2128] shrink-0">
                         <Search size={14} className="text-slate-600 shrink-0" />

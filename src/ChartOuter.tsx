@@ -13,6 +13,7 @@ import { DrawingToolbar } from './components/drawings/drawing-toolbar';
 import { IndicatorsButton } from './components/indicators/indicators-dialog';
 import { TimeframeSelector } from './components/toolbar/timeframe-selector';
 import { ChartTypeSelector } from './components/toolbar/chart-type-selector';
+import { ScrollStrip } from './components/ui/scroll-strip';
 import { loadCustomTimeframes, saveCustomTimeframes, type Timeframe } from './lib/timeframes';
 import {
     ChartSettings,
@@ -45,7 +46,12 @@ import { FeaturesOptions, TimePrecision } from './core/DepthChart';
 import { MAX, useCellBridges, useTradingBridge } from './hooks/useCellBridges';
 import { LETTERS, PRESETS, LayoutPicker, type Preset } from './components/multi-chart/LayoutPicker';
 import { DEFAULT_SYNC_IN_LAYOUT, type SyncInLayout } from './lib/types/layout-sync';
-import { Dividers, resizeSizesAbsolute, toFr } from './components/multi-chart/GridDividers';
+import {
+    Dividers,
+    parseAreas,
+    resizeSizesAbsolute,
+    toFr,
+} from './components/multi-chart/GridDividers';
 import { PluginFixedPanelHost } from './components/plugin-panels/PluginFixedPanelHost';
 import { PluginToolbarHost } from './components/plugin-panels/PluginToolbarHost';
 import { BottomBarPluginHost } from './components/plugin-panels/BottomBarPluginHost';
@@ -406,6 +412,20 @@ export default function Depth({
         const seen = new Set<string>();
         for (const ch of preset.areas.replace(/"/g, '')) if (ch >= 'a' && ch <= 'h') seen.add(ch);
         return [...seen].sort();
+    }, [preset]);
+
+    // Outer edges are left to the surrounding toolbars and panels, which draw their own.
+    const innerEdges = useMemo(() => {
+        const grid = parseAreas(preset.areas);
+        const edges: Record<string, { right: boolean; bottom: boolean }> = {};
+        grid.forEach((row, r) =>
+            row.forEach((ch, c) => {
+                const e = (edges[ch] ??= { right: false, bottom: false });
+                if (c < row.length - 1 && row[c + 1] !== ch) e.right = true;
+                if (r < grid.length - 1 && grid[r + 1][c] !== ch) e.bottom = true;
+            }),
+        );
+        return edges;
     }, [preset]);
 
     // Sync in layout: fan-out
@@ -1189,13 +1209,16 @@ export default function Depth({
         // required to supply one.
         <TooltipProvider delayDuration={400}>
             <div
-                className="depth-root w-full h-full flex flex-col bg-background text-foreground overflow-hidden outline-none min-h-[340px]"
+                className="depth-root w-full h-full flex flex-col bg-background text-foreground overflow-hidden outline-none min-h-[340px] min-w-[240px]"
                 ref={containerRef}
                 tabIndex={0}
             >
                 {!_hideToolbar && (
                     <TooltipProvider delayDuration={400}>
-                        <div className="flex items-center h-9 px-2 border-b shrink-0 gap-0.5">
+                        <ScrollStrip
+                            className="h-9 border-b shrink-0"
+                            innerClassName="flex items-center px-2 gap-0.5"
+                        >
                             {/*111d30*/}
                             <div className="absolute left-0 top-0 w-[15rem] h-[2.2rem] bg-gradient-to-r from-[#0286f9]/10 to-background" />
                             <SymbolSwitcher
@@ -1298,7 +1321,7 @@ export default function Depth({
                                     </TooltipContent>
                                 </Tooltip>
                             </div>
-                        </div>
+                        </ScrollStrip>
                     </TooltipProvider>
                 )}
 
@@ -1346,7 +1369,12 @@ export default function Depth({
                                             minHeight: 0,
                                             visibility: isActive ? 'visible' : 'hidden',
                                             pointerEvents: isActive ? 'auto' : 'none',
-                                            border: '0.5px solid #2b323c',
+                                            borderRight: innerEdges[letter]?.right
+                                                ? '1px solid #2b323c'
+                                                : undefined,
+                                            borderBottom: innerEdges[letter]?.bottom
+                                                ? '1px solid #2b323c'
+                                                : undefined,
                                         }}
                                         onMouseDownCapture={() => {
                                             if (isActive && !isFocused) {
@@ -1436,6 +1464,8 @@ export default function Depth({
                                         sizes={colSizes}
                                         containerRef={gridRef}
                                         onDrag={colDrag}
+                                        areas={preset.areas}
+                                        crossSizes={rowSizes}
                                     />
                                     <Dividers
                                         dir="row"
@@ -1443,7 +1473,7 @@ export default function Depth({
                                         containerRef={gridRef}
                                         onDrag={rowDrag}
                                         areas={preset.areas}
-                                        colSizes={colSizes}
+                                        crossSizes={colSizes}
                                     />
                                 </>
                             )}

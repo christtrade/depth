@@ -40,44 +40,41 @@ export function resizeSizesAbsolute(
 
 export const toFr = (s: number[]) => s.map((v) => `${v}fr`).join(' ');
 
-function rowDividerRange(
-    rowIndex: number,
-    areas: string,
-    colSizes: number[],
-): { left: number; right: number }[] {
-    const rows = (areas.match(/"([^"]+)"/g) ?? []).map((r) =>
-        r.replace(/"/g, '').trim().split(/\s+/),
-    );
-    if (rowIndex >= rows.length - 1) return [];
-    const above = rows[rowIndex];
-    const below = rows[rowIndex + 1];
-    const numCols = above.length;
+export const parseAreas = (areas: string): string[][] =>
+    (areas.match(/"([^"]+)"/g) ?? []).map((r: string) => r.replace(/"/g, '').trim().split(/\s+/));
 
-    const sum = colSizes.reduce((a, b) => a + b, 0);
-    const colFrac: number[] = [];
+// Spans along a divider where the cells on either side differ, as 0..1 fractions.
+function dividerRange(
+    dir: 'col' | 'row',
+    index: number,
+    areas: string,
+    crossSizes: number[],
+): { start: number; end: number }[] {
+    const grid = parseAreas(areas);
+    const cellAt = (along: number, side: number) =>
+        dir === 'row' ? grid[index + side]?.[along] : grid[along]?.[index + side];
+    const count = dir === 'row' ? (grid[0]?.length ?? 0) : grid.length;
+
+    const sum = crossSizes.reduce((a, b) => a + b, 0);
+    const frac: number[] = [];
     let acc = 0;
-    for (const s of colSizes) {
-        colFrac.push(acc / sum);
+    for (const s of crossSizes) {
+        frac.push(acc / sum);
         acc += s;
     }
-    colFrac.push(1);
+    frac.push(1);
 
-    const segments: { left: number; right: number }[] = [];
+    const segments: { start: number; end: number }[] = [];
     let spanStart: number | null = null;
-    for (let c = 0; c < numCols; c++) {
-        const bridges = above[c] === below[c];
-        if (!bridges) {
-            if (spanStart === null) spanStart = c;
-        } else {
-            if (spanStart !== null) {
-                segments.push({ left: colFrac[spanStart], right: colFrac[c] });
-                spanStart = null;
-            }
+    for (let k = 0; k < count; k++) {
+        if (cellAt(k, 0) !== cellAt(k, 1)) {
+            if (spanStart === null) spanStart = k;
+        } else if (spanStart !== null) {
+            segments.push({ start: frac[spanStart], end: frac[k] });
+            spanStart = null;
         }
     }
-    if (spanStart !== null) {
-        segments.push({ left: colFrac[spanStart], right: colFrac[numCols] });
-    }
+    if (spanStart !== null) segments.push({ start: frac[spanStart], end: frac[count] });
     return segments;
 }
 
@@ -87,14 +84,14 @@ export function Dividers({
     containerRef,
     onDrag,
     areas,
-    colSizes: colSizesProp,
+    crossSizes,
 }: {
     dir: 'col' | 'row';
     sizes: number[];
     containerRef: React.RefObject<HTMLDivElement>;
     onDrag: (i: number, targetPx: number) => void;
     areas?: string;
-    colSizes?: number[];
+    crossSizes?: number[];
 }) {
     const [pos, setPos] = useState<number[]>([]);
     const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
@@ -137,9 +134,9 @@ export function Dividers({
             )}
             {pos.map((p, i) => {
                 const segments =
-                    !isCol && areas && colSizesProp
-                        ? rowDividerRange(i, areas, colSizesProp)
-                        : null;
+                    areas && crossSizes
+                        ? dividerRange(dir, i, areas, crossSizes)
+                        : [{ start: 0, end: 1 }];
 
                 const makeMouseDown = (e: React.MouseEvent) => {
                     e.preventDefault();
@@ -174,53 +171,25 @@ export function Dividers({
                     window.addEventListener('mouseup', up);
                 };
 
-                if (isCol) {
-                    return (
-                        <div
-                            key={i}
-                            style={{
-                                position: 'absolute',
-                                left: p - 7,
-                                top: 1,
-                                width: 12,
-                                bottom: 3,
-                                cursor: 'col-resize',
-                                zIndex: 40,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                            }}
-                            onMouseDown={makeMouseDown}
-                            className='hover:bg-muted-foreground/15 active:bg-muted-foreground/15'
-                        >
-                        </div>
-                    );
-                }
-
                 return (
                     <React.Fragment key={i}>
-                        {(segments ?? [{ left: 0, right: 1 }]).map((seg, si) => {
-                            const leftPx = seg.left * containerSize.w;
-                            const rightPx = (1 - seg.right) * containerSize.w;
+                        {segments.map((seg, si) => {
+                            const span = isCol ? containerSize.h : containerSize.w;
+                            const start = seg.start * span + (isCol && seg.start === 0 ? 1 : 0);
+                            const end = (1 - seg.end) * span + (seg.end === 1 ? 3 : 0);
                             return (
                                 <div
                                     key={si}
                                     style={{
                                         position: 'absolute',
-                                        top: p - 7,
-                                        left: leftPx,
-                                        right: rightPx+3,
-                                        height: 12,
-                                        cursor: 'row-resize',
                                         zIndex: 40,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
+                                        ...(isCol
+                                            ? { left: p - 6.5, width: 12, top: start, bottom: end, cursor: 'col-resize' }
+                                            : { top: p - 6.5, height: 12, left: start, right: end, cursor: 'row-resize' }),
                                     }}
                                     onMouseDown={makeMouseDown}
-                                    className='hover:bg-muted-foreground/15 active:bg-muted-foreground/15'
-                                >
-                                </div>
+                                    className="hover:bg-muted-foreground/15 active:bg-muted-foreground/15"
+                                />
                             );
                         })}
                     </React.Fragment>

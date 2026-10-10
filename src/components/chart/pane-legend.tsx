@@ -66,7 +66,7 @@ export function PaneLegend({
                 {pane.isMain && (
                     <div className="flex flex-row items-center flex-wrap gap-x-2 gap-y-0.5 min-w-0">
                         <div
-                            className="flex items-center gap-0.5 hover:bg-[#1a1d23] rounded-sm border border-transparent hover:border-border"
+                            className="flex items-center gap-0.5 min-w-0 max-w-full hover:bg-[#1a1d23] rounded-sm border border-transparent hover:border-border [&>*]:shrink-0"
                             style={{ pointerEvents: 'auto' }}
                             onMouseEnter={() => setNameHovered(pane.id)}
                             onMouseLeave={() => setNameHovered(null)}
@@ -74,20 +74,20 @@ export function PaneLegend({
                                 if (e.button === 1) onRemoveIndicator(pane.id);
                             }}
                         >
-                            <span className="text-[1rem] text-white/90 flex items-center gap-0.5 select-none cursor-default hover:bg-muted px-1.5 rounded-sm -mr-1" onClick={() => eventBus.emit('chart:open-symbol-select', ({}))}>
+                            <span className="text-[1rem] text-white/90 flex items-center gap-0.5 select-none cursor-default hover:bg-muted px-1.5 rounded-sm -mr-1 min-w-0 !shrink" onClick={() => eventBus.emit('chart:open-symbol-select', ({}))}>
                                 {(symbolInfo?.legendIcon ?? symbolInfo?.icon) && (
-                                    <span className='pr-1'>
+                                    <span className='pr-1 shrink-0'>
                                         <SymbolIcon icon={symbolInfo?.legendIcon ?? symbolInfo?.icon} size={18} />
                                     </span>
                                 )}
-                                {symbolInfo?.longName ?? pane.symbol}
+                                <span className="truncate">{symbolInfo?.longName ?? pane.symbol}</span>
                             </span>
                             <Dot className="text-muted-foreground w-2" />
                             <span className="text-[1rem] text-white/90 select-none cursor-default hover:bg-muted px-1.5 rounded-sm -mx-1" onClick={onOpenTfSelect}>
                                 {pane.tf}
                             </span>
                             <Dot className="text-muted-foreground w-2 -ml-px" />
-                            <span className="text-[1rem] text-white/90 select-none cursor-default ml-px">
+                            <span className="text-[1rem] text-white/90 select-none cursor-default ml-px min-w-0 !shrink truncate">
                                 {pane.exchange}
                             </span>
                             {sessionStatus && (
@@ -103,11 +103,11 @@ export function PaneLegend({
                         {statusBar}
                     </div>
                 )}
-                <div className="flex flex-col gap-0 -ml-1">
+                <div className="flex flex-col gap-0 -ml-1 min-w-0">
                     {paneIndicators.map((ind) => (
                         <div
                             key={ind.id}
-                            className="flex items-center gap-0.5 self-start py-0.5 hover:bg-[#1a1d23] rounded-sm px-1 duration-100 hover:duration-0 border border-transparent hover:border-border"
+                            className="flex items-center gap-0.5 self-start max-w-full min-w-0 py-0.5 hover:bg-[#1a1d23] rounded-sm px-1 duration-100 hover:duration-0 border border-transparent hover:border-border"
                             style={{ pointerEvents: 'auto' }}
                             onMouseEnter={() => setNameHovered(ind.id)}
                             onMouseLeave={() => setNameHovered(null)}
@@ -118,7 +118,7 @@ export function PaneLegend({
                         >
                             <span
                                 className={cn(
-                                    'text-[13px] text-muted-foreground select-none mr-1 cursor-default',
+                                    'text-[13px] text-muted-foreground select-none mr-1 cursor-default truncate min-w-0',
                                     !ind.visible && 'opacity-50',
                                 )}
                             >
@@ -126,7 +126,7 @@ export function PaneLegend({
                             </span>
                             <div
                                 className={cn(
-                                    'flex items-center gap-0.5 transition-opacity duration-100',
+                                    'flex items-center gap-0.5 shrink-0 transition-opacity duration-100',
                                     nameHovered === ind.id ? 'opacity-100' : 'opacity-0',
                                 )}
                             >

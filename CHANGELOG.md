@@ -8,6 +8,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-10-10
+
+### Added
+- Added a minimum width to the chart to prevent bad ui
+
+### Changed
+- The default strategy plugin trade arrows on the chart look nicer
+- A nicer tooltip when hovering locked timeframes
+- Bottom bar uses the same scroll strip as the toolbar
+
+### Fixed
+- Dropdowns overflowing the chart when its small. they flip up and stay inside the window now
+- Top toolbar not overflowing properly when items dont fit, scrolls like the others now
+- Time labels in the time axis overlapping when the chart width was small
+- Legends overflowing under the price scale, they truncate now
+- Layout resizer highlight covering the whole grid height instead of just the divider
+- Double borders on the outer edges of multi-chart layouts
+
 ## [0.15.0] - 2026-10-07
 
 ### Added
@@ -372,7 +390,8 @@ Not user-visible, but this is what the split out of the monorepo turned up:
 - 30 unused UI components were removed, taking `depth.css` from 147 KB to
   124 KB.
 
-[unreleased]: https://github.com/christtrade/depth/compare/v0.15.0...HEAD
+[unreleased]: https://github.com/christtrade/depth/compare/v0.15.2...HEAD
+[0.15.1]: https://github.com/christtrade/depth/compare/v0.15.1...v0.15.0
 [0.15.0]: https://github.com/christtrade/depth/compare/v0.14.1...v0.15.0
 [0.14.1]: https://github.com/christtrade/depth/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/christtrade/depth/compare/v0.13.1...v0.14.0

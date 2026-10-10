@@ -166,10 +166,10 @@ describe('strategy plugins in the worker', () => {
         await parse(BUY_AND_HOLD);
         const result = await runInit({ ohlcv: bars([100, 110, 120]), trades: [] });
 
-        const arrows = result.drawCommands.filter((c: any) => c.type === 'arrow');
-        assert.equal(arrows.length, 2, 'one marker for the entry, one for the exit');
-        assert.equal(arrows[0].direction, 'up');
-        assert.equal(arrows[1].direction, 'down');
+        const trades = result.drawCommands.filter((c: any) => c.type === 'trade');
+        assert.equal(trades.length, 1);
+        assert.equal(trades[0].side, 'long');
+        assert.ok(trades[0].exitTs > trades[0].entryTs);
     });
 
     it('plots the equity curve instead when the strategy asks for a pane', async () => {
