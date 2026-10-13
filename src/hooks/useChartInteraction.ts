@@ -120,6 +120,34 @@ function scalePriceBounds(
     return [center - newSpan / 2, center + newSpan / 2];
 }
 
+function shiftPriceBounds(view: ViewBounds, dy: number, mainH: number, isLog: boolean): void {
+    if (isLog && view.pMin > 0 && view.pMax > 0) {
+        const factor = Math.exp((dy * (Math.log(view.pMax) - Math.log(view.pMin))) / mainH);
+        view.pMin *= factor;
+        view.pMax *= factor;
+    } else {
+        const priceShift = (dy * (view.pMax - view.pMin)) / mainH;
+        view.pMin += priceShift;
+        view.pMax += priceShift;
+    }
+}
+
+function findTouch(list: TouchList, id: number): Touch | null {
+    for (let i = 0; i < list.length; i++) if (list[i].identifier === id) return list[i];
+    return null;
+}
+
+type Pinch = {
+    a: number;
+    b: number;
+    anchor: number;
+    span0: number;
+    dist0: number;
+    midY: number;
+    to: (ts: bigint) => number;
+    from: (v: number) => bigint;
+};
+
 export interface UseChartInteractionParams {
     status: 'loading' | 'ready' | 'error';
 
@@ -1819,24 +1847,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                         if (!isYAxisAutoRef.current) {
                             const mainH =
                                 layouts['main']?.h ?? cssH - (p.hideTimeScale ? 0 : X_AXIS_HEIGHT);
-                            if (
-                                transformer.getScaleMode() === 'log' &&
-                                view.pMin > 0 &&
-                                view.pMax > 0
-                            ) {
-                                // Log axis: a constant pixel drag is a constant shift
-                                // in log space (a multiply), not a constant price add -
-                                // otherwise the content races the cursor.
-                                const logShift =
-                                    (dy * (Math.log(view.pMax) - Math.log(view.pMin))) / mainH;
-                                const factor = Math.exp(logShift);
-                                view.pMin *= factor;
-                                view.pMax *= factor;
-                            } else {
-                                const priceShift = (dy * (view.pMax - view.pMin)) / mainH;
-                                view.pMin += priceShift;
-                                view.pMax += priceShift;
-                            }
+                            shiftPriceBounds(view, dy, mainH, transformer.getScaleMode() === 'log');
                         } else {
                             autoFitPriceAxis(
                                 view,
@@ -2335,6 +2346,243 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             renderEngineRef.current?.markDirty('ui');
         };
 
+        // 1 finger goes through the mouse handlers as is (prolly gonna change but works for now), and 2 pinch
+        const touchAsMouse = (t: { clientX: number; clientY: number }, buttons: number) =>
+            ({
+                clientX: t.clientX,
+                clientY: t.clientY,
+                button: 0,
+                buttons,
+                shiftKey: false,
+                ctrlKey: false,
+                altKey: false,
+                metaKey: false,
+                target: canvas,
+                currentTarget: canvas,
+                preventDefault() {},
+                stopPropagation() {},
+            }) as unknown as MouseEvent;
+
+        let touchId: number | null = null;
+        let touchStart = { x: 0, y: 0 };
+        let touchLast = { clientX: 0, clientY: 0 };
+        let lastTap = { t: 0, x: 0, y: 0 };
+        let pressTimer: ReturnType<typeof setTimeout> | null = null;
+        let pinch: Pinch | null = null;
+        // after a pinch or long press menu, leftover fingers do nothing until all lift
+        let gestureDead = false;
+
+        const clearPressTimer = () => {
+            if (pressTimer) clearTimeout(pressTimer);
+            pressTimer = null;
+        };
+
+        const endSingleTouch = () => {
+            hasDragged.current = true;
+            handleMouseUp(touchAsMouse(touchLast, 0));
+            touchId = null;
+        };
+
+        const startPinch = (t1: Touch, t2: Touch) => {
+            const view = viewRef.current;
+            if (!view) return;
+            const rect = canvas.getBoundingClientRect();
+            const chartW = canvas.width / getEffectiveDpr() - priceScaleWidthRef.current;
+            const ord = transformer.getOrdinal();
+            const sm = transformer.getSessionMapper();
+            let to: (ts: bigint) => number;
+            let from: (v: number) => bigint;
+            // a bunch of this shii
+            if (ord) {
+                to = (ts) => transformer.tsToFracIndex(ts);
+                from = (v) => transformer.indexToTs(v);
+            } else if (sm && sm.hasSession) {
+                const base = sm.tsToMarket(view.tMin);
+                to = (ts) => Number(sm.tsToMarket(ts) - base);
+                from = (v) => sm.marketToTs(base + BigInt(Math.round(v)));
+            } else {
+                const base = view.tMin;
+                to = (ts) => Number(ts - base);
+                from = (v) => base + BigInt(Math.round(v));
+            }
+            const lo = to(view.tMin);
+            const span0 = to(view.tMax) - lo;
+            const midX = (t1.clientX + t2.clientX) / 2 - rect.left;
+            pinch = {
+                a: t1.identifier,
+                b: t2.identifier,
+                anchor: lo + (midX / chartW) * span0,
+                span0,
+                dist0: Math.max(Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY), 1),
+                midY: (t1.clientY + t2.clientY) / 2,
+                to,
+                from,
+            };
+            horizonScrollAnimRef.current = null;
+            crosshairRef.current = null;
+        };
+
+        const movePinch = (e: TouchEvent) => {
+            const pc = pinch!;
+            const t1 = findTouch(e.touches, pc.a);
+            const t2 = findTouch(e.touches, pc.b);
+            const view = viewRef.current;
+            if (!t1 || !t2 || !view) return;
+            const rect = canvas.getBoundingClientRect();
+            const dpr = getEffectiveDpr();
+            const cssW = canvas.width / dpr;
+            const cssH = canvas.height / dpr;
+            const chartW = cssW - priceScaleWidthRef.current;
+
+            // fingers midpoint keeps that time in the middle
+            const dist = Math.max(Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY), 1);
+            const { min, max } = getZoomLimits();
+            const span = Math.max(
+                Number(min),
+                Math.min(Number(max), (pc.span0 * pc.dist0) / dist),
+            );
+            const midX = (t1.clientX + t2.clientX) / 2 - rect.left;
+            const lo = pc.anchor - (midX / chartW) * span;
+            view.tMin = pc.from(lo);
+            view.tMax = pc.from(lo + span);
+            clampPan(view);
+
+            const midY = (t1.clientY + t2.clientY) / 2;
+            const dy = midY - pc.midY;
+            pc.midY = midY;
+            if (!isYAxisAutoRef.current) {
+                const mainH = getLayouts()['main']?.h ?? cssH - (p.hideTimeScale ? 0 : X_AXIS_HEIGHT);
+                shiftPriceBounds(view, dy, mainH, transformer.getScaleMode() === 'log');
+            } else {
+                autoFitPriceAxis(
+                    view,
+                    priceHistoryRef.current,
+                    tradesRef.current,
+                    dataLevelRef.current === 'ohlcv'
+                        ? ohlcvBarsRef.current.display
+                        : previewBarsRef.current,
+                    openBarRef.current,
+                    chartSettingsRef.current,
+                    horizonRef.current,
+                    dataLevelRef.current,
+                );
+            }
+            autofitPanesSilent();
+            transformer.update(view);
+            transformer.setSessionMapper(sessionMapperRef.current);
+            transformer.setSession(resolvedSessionRef.current);
+            scheduleResample();
+            pushDrawParams();
+            publishTimeRangeSync();
+            renderEngineRef.current?.markDirty('base');
+            renderEngineRef.current?.markDirty('drawings');
+            renderEngineRef.current?.markDirty('ui');
+            updateSettingsBarPos(selectedDrawingIdRef.current);
+            if (view.tMin < datasetStartRef.current) {
+                eventBus.emit('data:request-backward', {
+                    viewMin: view.tMin,
+                    symbol: symbolInfoRef.current?.symbol,
+                });
+            }
+        };
+
+        const handleTouchStart = (e: TouchEvent) => {
+            // also stops the browsers emulated mouse events which would double every tap
+            e.preventDefault();
+            setContextMenu(null);
+            if (e.touches.length === e.changedTouches.length) gestureDead = false;
+            if (gestureDead) return;
+
+            if (e.touches.length === 1) {
+                const t = e.touches[0];
+                touchId = t.identifier;
+                touchStart = { x: t.clientX, y: t.clientY };
+                touchLast = { clientX: t.clientX, clientY: t.clientY };
+                const m = touchAsMouse(t, 1);
+
+                handleMouseMove(m);
+                handleMouseDown(m);
+                clearPressTimer();
+                pressTimer = setTimeout(() => {
+                    pressTimer = null;
+                    if (
+                        !features.contextMenu ||
+                        touchId === null ||
+                        draggingAnchorRef.current ||
+                        activeToolRef.current.name !== 'cursor'
+                    )
+                        return;
+                    endSingleTouch();
+                    gestureDead = true;
+                    handleContextMenu(touchAsMouse(touchLast, 0));
+                }, 500);
+            } else if (e.touches.length === 2) {
+                clearPressTimer();
+                if (touchId !== null) endSingleTouch();
+                startPinch(e.touches[0], e.touches[1]);
+            }
+        };
+
+        const handleTouchMove = (e: TouchEvent) => {
+            e.preventDefault();
+            if (pinch) {
+                movePinch(e);
+                return;
+            }
+            if (touchId === null || gestureDead) return;
+            const t = findTouch(e.changedTouches, touchId);
+            if (!t) return;
+            touchLast = { clientX: t.clientX, clientY: t.clientY };
+            if (Math.hypot(t.clientX - touchStart.x, t.clientY - touchStart.y) > 8) {
+                clearPressTimer();
+            }
+            handleMouseMove(touchAsMouse(t, 1));
+        };
+
+        const handleTouchEnd = (e: TouchEvent) => {
+            e.preventDefault();
+            clearPressTimer();
+            if (pinch) {
+                if (e.touches.length < 2) {
+                    pinch = null;
+                    gestureDead = true;
+                    autofitIndicatorPanes();
+                }
+                return;
+            }
+            if (touchId === null) return;
+            const t = findTouch(e.changedTouches, touchId);
+            if (!t) return;
+            touchId = null;
+            const m = touchAsMouse(t, 0);
+            handleMouseUp(m);
+
+            if (!hasDragged.current) {
+                const now = performance.now();
+                const near = Math.hypot(t.clientX - lastTap.x, t.clientY - lastTap.y) < 24;
+                if (now - lastTap.t < 300 && near) {
+                    lastTap.t = 0;
+                    handleDoubleClick(m);
+                } else {
+                    lastTap = { t: now, x: t.clientX, y: t.clientY };
+                }
+            } else {
+                lastTap.t = 0;
+            }
+            handleMouseLeave();
+        };
+
+        const handleTouchCancel = () => {
+            clearPressTimer();
+            pinch = null;
+            if (touchId !== null) endSingleTouch();
+            handleMouseLeave();
+        };
+
+        canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+        canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+        canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+        canvas.addEventListener('touchcancel', handleTouchCancel);
         canvas.addEventListener('mousedown', handleMouseDown);
         canvas.addEventListener('dblclick', handleDoubleClick);
         window.addEventListener('mousemove', handleMouseMove);
@@ -2358,6 +2606,11 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
         });
 
         return () => {
+            clearPressTimer();
+            canvas.removeEventListener('touchstart', handleTouchStart);
+            canvas.removeEventListener('touchmove', handleTouchMove);
+            canvas.removeEventListener('touchend', handleTouchEnd);
+            canvas.removeEventListener('touchcancel', handleTouchCancel);
             canvas.removeEventListener('mousedown', handleMouseDown);
             canvas.removeEventListener('dblclick', handleDoubleClick);
             window.removeEventListener('mousemove', handleMouseMove);

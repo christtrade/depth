@@ -1587,7 +1587,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         const area = chartAreaRef.current;
         if (status !== 'ready' || !area) return;
         const PROXIMITY = 100; // px from the menu's edges
-        const onMove = (e: MouseEvent) => {
+        const onMove = (e: { clientX: number; clientY: number }) => {
             const menu = menuRef.current;
             if (!menu) return;
             const r = menu.getBoundingClientRect();
@@ -1598,11 +1598,15 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         const onLeave = () => {
             if (menuRef.current) menuRef.current.style.opacity = '0';
         };
+
+        const onTouch = (e: TouchEvent) => onMove(e.touches[0]);
         area.addEventListener('mousemove', onMove);
         area.addEventListener('mouseleave', onLeave);
+        area.addEventListener('touchstart', onTouch, { passive: true });
         return () => {
             area.removeEventListener('mousemove', onMove);
             area.removeEventListener('mouseleave', onLeave);
+            area.removeEventListener('touchstart', onTouch);
         };
     }, [status]);
 

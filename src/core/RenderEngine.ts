@@ -185,10 +185,15 @@ export class RenderEngine {
         this.chartId = chartId;
 
         this.resizeObserver = new ResizeObserver((entries) => this.handleResize(entries[0]));
-        // parent, not canvas - the canvases are absolutely positioned inside it,
-        // so the parent is what actually changes size. device-pixel-content-box
-        // is what lands the bitmap on exact device pixels, and observe() throws
-        // on browsers that dont know the box type, hence the fallback.
+        this.observeSize();
+        this.watchDpr();
+        this.startLoop();
+    }
+
+    // use the parent and not the canvas because canvases are absolutely positioned
+    // inside it, so the parent is what actually changes size
+    private observeSize(): void {
+        this.resizeObserver.disconnect();
         try {
             this.resizeObserver.observe(this.baseCanvas.parentElement!, {
                 box: 'device-pixel-content-box',
@@ -196,7 +201,21 @@ export class RenderEngine {
         } catch {
             this.resizeObserver.observe(this.baseCanvas.parentElement!);
         }
-        this.startLoop();
+    }
+
+    // a dpr change doesnt reliably fire the observer apparently
+    // so reobserving gets a fresh measurement
+    private dprQuery: MediaQueryList | null = null;
+    private readonly onDprChange = () => {
+        this.watchDpr();
+        this.observeSize();
+    };
+
+    private watchDpr(): void {
+        this.dprQuery?.removeEventListener('change', this.onDprChange);
+        if (typeof window === 'undefined' || !window.matchMedia) return;
+        this.dprQuery = window.matchMedia(`(resolution: ${getEffectiveDpr()}dppx)`);
+        this.dprQuery.addEventListener('change', this.onDprChange);
     }
 
     // only paints layers marked dirty, so it costs about nothing when idle
@@ -528,16 +547,22 @@ export class RenderEngine {
         const dpr = getEffectiveDpr();
         const container = this.baseCanvas.parentElement!;
 
+        const cssBox = entry?.contentBoxSize?.[0];
+        const cssW = cssBox ? cssBox.inlineSize : container.getBoundingClientRect().width;
+        const cssH = cssBox ? cssBox.blockSize : container.getBoundingClientRect().height;
+        let physW = Math.round(cssW * dpr);
+        let physH = Math.round(cssH * dpr);
+
+        // devtools device mode gives an emulated dpr(...why?) but the device box in real screen pxs
+        // so only trust it when the box agrees with css*dpr
         const devBox = entry?.devicePixelContentBoxSize?.[0];
-        let physW: number;
-        let physH: number;
-        if (devBox) {
+        if (
+            devBox &&
+            Math.abs(devBox.inlineSize - physW) <= 2 &&
+            Math.abs(devBox.blockSize - physH) <= 2
+        ) {
             physW = devBox.inlineSize;
             physH = devBox.blockSize;
-        } else {
-            const rect = container.getBoundingClientRect();
-            physW = Math.round(rect.width * dpr);
-            physH = Math.round(rect.height * dpr);
         }
 
         if (physW <= 0 || physH <= 0) return;
@@ -604,6 +629,7 @@ export class RenderEngine {
     destroy(): void {
         this.destroyed = true;
         this.resizeObserver.disconnect();
+        this.dprQuery?.removeEventListener('change', this.onDprChange);
         cancelAnimationFrame(this.rafId);
     }
 }

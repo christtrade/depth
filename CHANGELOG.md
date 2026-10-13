@@ -8,6 +8,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-13
+
+### Added
+- Touch support. Works as you’d expect: one finger pans, scales, and drags; two fingers zoom;
+  double tap acts as a double click; and long press opens the context menu).
+
+### Fixed
+- Chart drawn too big, with the price axis eating half the inputs, after the dpr changed.
+- Gradient on the left on the top toolbar wasnt fully fixed to the left side
+
+### Known issues
+- Drawing handles are too small for fingers
+
 ## [0.15.1] - 2026-10-10
 
 ### Added
@@ -390,8 +403,9 @@ Not user-visible, but this is what the split out of the monorepo turned up:
 - 30 unused UI components were removed, taking `depth.css` from 147 KB to
   124 KB.
 
-[unreleased]: https://github.com/christtrade/depth/compare/v0.15.2...HEAD
-[0.15.1]: https://github.com/christtrade/depth/compare/v0.15.1...v0.15.0
+[unreleased]: https://github.com/christtrade/depth/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/christtrade/depth/compare/v0.15.1...v0.16.0
+[0.15.1]: https://github.com/christtrade/depth/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/christtrade/depth/compare/v0.14.1...v0.15.0
 [0.14.1]: https://github.com/christtrade/depth/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/christtrade/depth/compare/v0.13.1...v0.14.0

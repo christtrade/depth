@@ -1164,7 +1164,13 @@ export default function Depth({
             }
         };
         window.addEventListener('mouseup', onUp);
-        return () => window.removeEventListener('mouseup', onUp);
+        window.addEventListener('touchend', onUp);
+        window.addEventListener('touchcancel', onUp);
+        return () => {
+            window.removeEventListener('mouseup', onUp);
+            window.removeEventListener('touchend', onUp);
+            window.removeEventListener('touchcancel', onUp);
+        };
     }, []);
 
     // Layout / grid
@@ -1220,7 +1226,9 @@ export default function Depth({
                             innerClassName="flex items-center px-2 gap-0.5"
                         >
                             {/*111d30*/}
-                            <div className="absolute left-0 top-0 w-[15rem] h-[2.2rem] bg-gradient-to-r from-[#0286f9]/10 to-background" />
+                            <div className="relative -ml-2">
+                                <div className="absolute left-0 top-0 -translate-y-1/2 w-[15rem] h-[2.2rem] bg-gradient-to-r from-[#0286f9]/10 to-background" />
+                            </div>
                             <SymbolSwitcher
                                 eventBus={eventBus}
                                 symbol={cellSymbols[focused] ?? defaultSymbol}
@@ -1358,6 +1366,14 @@ export default function Depth({
                                 const isActive = i < activeLetters.length;
                                 const isFocused = focused === i;
                                 const mounted = everActive[i];
+                                const grabCell = () => {
+                                    if (isActive && !isFocused) {
+                                        setFocused(i);
+                                        chartRefs.current[i]?.setActiveTool(activeTool);
+                                        globalChartBus.setFocus(_chart.id);
+                                    }
+                                    if (isActive) panningChartRef.current = i;
+                                };
                                 return (
                                     <div
                                         key={letter}
@@ -1376,14 +1392,8 @@ export default function Depth({
                                                 ? '1px solid #2b323c'
                                                 : undefined,
                                         }}
-                                        onMouseDownCapture={() => {
-                                            if (isActive && !isFocused) {
-                                                setFocused(i);
-                                                chartRefs.current[i]?.setActiveTool(activeTool);
-                                                globalChartBus.setFocus(_chart.id);
-                                            }
-                                            if (isActive) panningChartRef.current = i;
-                                        }}
+                                        onMouseDownCapture={grabCell}
+                                        onTouchStartCapture={grabCell}
                                     >
                                         {mounted && (
                                             <Chart
