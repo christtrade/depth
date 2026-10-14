@@ -19,6 +19,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   off screen until the next step.
 - Indicator buttons in the legend couldn't be reached on touch, and hidden ones could still be
   tapped. Tap an indicator to show them now, they're bigger on touch screens too.
+- Zoom/pan menu at the bottom of the chart is gone on touch screens. It popped up on any tap
+  near it, and its invisible buttons could be hit while panning.
 
 ## [0.16.2] - 2026-10-14
 

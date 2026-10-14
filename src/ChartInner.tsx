@@ -1580,9 +1580,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         });
     }, [eventBus]);
 
-    // Fade the bottom control menu in only when the pointer is near it. The menu
-    // container itself is pointer-events-none (only the buttons are clickable), so
-    // panning/dragging the chart still works while the menu is hovered & visible.
+    // menu container is pointer-events-none so the chart still pans under it
     useEffect(() => {
         const area = chartAreaRef.current;
         if (status !== 'ready' || !area) return;
@@ -1599,14 +1597,11 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
             if (menuRef.current) menuRef.current.style.opacity = '0';
         };
 
-        const onTouch = (e: TouchEvent) => onMove(e.touches[0]);
         area.addEventListener('mousemove', onMove);
         area.addEventListener('mouseleave', onLeave);
-        area.addEventListener('touchstart', onTouch, { passive: true });
         return () => {
             area.removeEventListener('mousemove', onMove);
             area.removeEventListener('mouseleave', onLeave);
-            area.removeEventListener('touchstart', onTouch);
         };
     }, [status]);
 
@@ -1930,7 +1925,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
                         <div
                             ref={menuRef}
                             style={{ opacity: 0 }}
-                            className="absolute left-1/2 bottom-8 -translate-x-1/2 w-fit px-2 backdrop-blur-sm h-8 rounded-lg flex gap-3 items-center transition-opacity duration-200 pointer-events-none"
+                            className="absolute left-1/2 bottom-8 -translate-x-1/2 w-fit px-2 backdrop-blur-sm h-8 rounded-lg flex gap-3 items-center transition-opacity duration-200 pointer-events-none [@media(pointer:coarse)]:hidden"
                         >
                             <div className="flex gap-1">
                                 <Tooltip delayDuration={700}>
