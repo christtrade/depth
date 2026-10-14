@@ -9,6 +9,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Changed
+- Improved touch to be more familiar. Panning has no crosshair, long press brings it up, and
+  while it's up drags move it around instead of panning the chart.
+- Drawing on touch - arming a tool spawns the crosshair, drag to aim and tap to place anchor
+  at the crosshair rather than under the finger.
+- Long press no longer opens the context menu, a `+` on the crosshair line does instead.
 - Buttom bar quick settings fold into a popover button, and the timezone label hides, when
   the width is too narrow and a plugin has registered items on it, so those items get some room.
 - Legend hides the timeframe and exchange when narrow instead of truncating them. The symbol

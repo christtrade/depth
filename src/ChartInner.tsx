@@ -961,6 +961,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
 
     const chartAreaRef = useRef<HTMLDivElement>(null);
     const menuRef = useRef<HTMLDivElement>(null);
+    const touchPlusRef = useRef<HTMLButtonElement>(null);
     const viewAnimRef = useRef<number | null>(null);
     // Always-current symbol for this pane, readable from the stable closures
     // below (the drawingsRef proxy, the store subscription). The prop is the
@@ -1543,6 +1544,8 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         applyLayoutsToDom,
         buildChartTypeActiveCtx,
         hideTimeScale,
+        activeTool,
+        touchPlusRef,
     });
 
     // Tell the DataEngine what this pane needs fetched. Shared state only knows
@@ -1920,6 +1923,13 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
                         ref={uiCanvasRef}
                         className="absolute inset-0 w-full h-full block touch-none pointer-events-none"
                     />
+                    <button
+                        ref={touchPlusRef}
+                        style={{ display: 'none' }}
+                        className="absolute z-10 w-6 h-5 items-center justify-center rounded-l-md rounded-r-none border border-border bg-background/90 text-foreground"
+                    >
+                        <Plus className="w-3.5 h-3.5" />
+                    </button>
 
                     {status === 'ready' && (
                         <div

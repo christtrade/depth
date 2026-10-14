@@ -1,4 +1,4 @@
-import { useEffect, type MutableRefObject, type RefObject } from 'react';
+import { useEffect, useRef, type MutableRefObject, type RefObject } from 'react';
 import { nanoid } from 'nanoid';
 import {
     type Drawing,
@@ -278,6 +278,8 @@ export interface UseChartInteractionParams {
     buildChartTypeActiveCtx: () => ChartTypeActiveContext;
 
     hideTimeScale: boolean;
+    activeTool: ActiveDrawingTool;
+    touchPlusRef: RefObject<HTMLButtonElement>;
 }
 
 export function useChartInteraction(p: UseChartInteractionParams): void {
@@ -374,7 +376,17 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
         recomputeLayouts,
         applyLayoutsToDom,
         buildChartTypeActiveCtx,
+        activeTool,
+        touchPlusRef,
     } = p;
+
+    const lastInputTouchRef = useRef(false);
+    const touchCrosshairRef = useRef<{ x: number; y: number } | null>(null);
+    const touchCrosshairApiRef = useRef<{
+        show: (x: number, y: number) => void;
+        hide: () => void;
+        center: () => { x: number; y: number };
+    } | null>(null);
 
     /**
      * Arm a tool. The ref is what every pointer handler reads (they run outside
@@ -692,6 +704,9 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
         }
 
         let scaleXStart: { x0: number; tMin0: bigint; tMax0: bigint } | null = null;
+        // panning shouldnt drag crosshair along with it
+        let hideTouchPointer = false;
+        let touchCrosshairMoving = false;
 
         const handleMouseDown = (e: MouseEvent) => {
             // Trade line interaction
@@ -1491,7 +1506,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             // is genuinely over the chart area; anything else means "something is on top".
             // We skip this check while dragging so that pan/zoom still tracks the mouse even
             // when it strays outside the canvas.
-            if (!isDragging.current && !draggingAnchorRef.current) {
+            if (!isDragging.current && !draggingAnchorRef.current && !touchCrosshairMoving) {
                 const topEl = document.elementFromPoint(e.clientX, e.clientY);
                 if (topEl !== canvas) {
                     if (crosshairRef.current !== null) {
@@ -1506,11 +1521,9 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             const chartW = cssW - priceScaleWidthRef.current;
             const inChart = x < chartW && y < cssH - (p.hideTimeScale ? 0 : X_AXIS_HEIGHT);
 
-            crosshairRef.current = { x, y };
-
-            eventBus.emit('crosshair:move', { x, y });
-
-            if (crosshairRef.current && viewRef.current) {
+            crosshairRef.current = hideTouchPointer ? null : { x, y };
+            if (!hideTouchPointer) {
+                eventBus.emit('crosshair:move', { x, y });
                 emitStatusCompute(x);
             }
 
@@ -1724,7 +1737,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                 isDragging.current &&
                 (dragMode.current === 'scaleY' || dragMode.current === 'scaleX');
 
-            crosshairRef.current = onDivider || isScaling ? null : { x, y };
+            crosshairRef.current = onDivider || isScaling || hideTouchPointer ? null : { x, y };
 
             const newPaneId = hoverPane?.id ?? null;
             if (newPaneId !== hoveredPaneIdRef.current) {
@@ -2399,7 +2412,8 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             renderEngineRef.current?.markDirty('ui');
         };
 
-        // 1 finger goes through the mouse handlers as is (prolly gonna change but works for now), and 2 pinch
+        // 1 finger pans with no crosshair, long press (or armed tool) spawns crosshair that
+        // drags move relatively and taps act at, 2 fingers pinch
         const touchAsMouse = (t: { clientX: number; clientY: number }, buttons: number) =>
             ({
                 clientX: t.clientX,
@@ -2417,12 +2431,15 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             }) as unknown as MouseEvent;
 
         let touchId: number | null = null;
-        let touchStart = { x: 0, y: 0 };
+        let touchMode: 'direct' | 'crosshair' = 'direct';
+        let touchStart = { x: 0, y: 0, t: 0 };
         let touchLast = { clientX: 0, clientY: 0 };
+        let touchMoved = false;
+        let crossStart = { x: 0, y: 0 };
         let lastTap = { t: 0, x: 0, y: 0 };
         let pressTimer: ReturnType<typeof setTimeout> | null = null;
         let pinch: Pinch | null = null;
-        // after a pinch or long press menu, leftover fingers do nothing until all lift
+        // after a pinch, leftover fingers do nothing until all lift
         let gestureDead = false;
 
         const clearPressTimer = () => {
@@ -2430,10 +2447,105 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             pressTimer = null;
         };
 
+        const chartBox = () => {
+            const rect = canvas.getBoundingClientRect();
+            const dpr = getEffectiveDpr();
+            const chartW = canvas.width / dpr - priceScaleWidthRef.current;
+            const chartH = canvas.height / dpr - (p.hideTimeScale ? 0 : X_AXIS_HEIGHT);
+            return { rect, chartW, chartH };
+        };
+
+        const placePlus = () => {
+            const btn = touchPlusRef.current;
+            if (!btn) return;
+            const ch = touchCrosshairRef.current;
+            if (
+                !ch ||
+                hideTouchPointer ||
+                pinch ||
+                !features.contextMenu ||
+                activeToolRef.current.name !== 'cursor'
+            ) {
+                btn.style.display = 'none';
+                return;
+            }
+            const { chartW } = chartBox();
+            btn.style.display = 'flex';
+            btn.style.left = `${chartW - btn.offsetWidth}px`;
+            btn.style.top = `${ch.y - btn.offsetHeight / 2}px`;
+        };
+
+        const showTouchCrosshair = (x: number, y: number) => {
+            const { rect, chartW, chartH } = chartBox();
+            const cx = Math.max(0, Math.min(chartW - 1, x));
+            const cy = Math.max(0, Math.min(chartH - 1, y));
+            touchCrosshairRef.current = { x: cx, y: cy };
+            touchCrosshairMoving = true;
+            handleMouseMove(touchAsMouse({ clientX: rect.left + cx, clientY: rect.top + cy }, 0));
+            touchCrosshairMoving = false;
+            placePlus();
+        };
+
+        const hideTouchCrosshair = () => {
+            if (!touchCrosshairRef.current) return;
+            touchCrosshairRef.current = null;
+            placePlus();
+            handleMouseLeave();
+        };
+
+        const crosshairCenter = () => {
+            const { chartW, chartH } = chartBox();
+            const main = getLayouts()['main'];
+            return { x: chartW / 2, y: main ? main.y + main.h / 2 : chartH / 2 };
+        };
+
+        touchCrosshairApiRef.current = {
+            show: showTouchCrosshair,
+            hide: hideTouchCrosshair,
+            center: crosshairCenter,
+        };
+
+        const toolArmed = () => activeToolRef.current.name !== 'cursor';
+
+        const tapAtCrosshair = () => {
+            const ch = touchCrosshairRef.current!;
+            if (!toolArmed()) {
+                hideTouchCrosshair();
+                return;
+            }
+            const { rect } = chartBox();
+            const at = { clientX: rect.left + ch.x, clientY: rect.top + ch.y };
+            hasDragged.current = false;
+            handleMouseDown(touchAsMouse(at, 1));
+            handleMouseUp(touchAsMouse(at, 0));
+            if (toolArmed()) showTouchCrosshair(ch.x, ch.y);
+            else hideTouchCrosshair();
+        };
+
         const endSingleTouch = () => {
-            hasDragged.current = true;
-            handleMouseUp(touchAsMouse(touchLast, 0));
+            if (touchMode === 'direct') {
+                hasDragged.current = true;
+                handleMouseUp(touchAsMouse(touchLast, 0));
+                hideTouchPointer = false;
+            }
             touchId = null;
+        };
+
+        const enterCrosshairMode = () => {
+            const id = touchId;
+            endSingleTouch();
+            touchId = id;
+            touchMode = 'crosshair';
+            touchMoved = true;
+            const { rect } = chartBox();
+            showTouchCrosshair(touchLast.clientX - rect.left, touchLast.clientY - rect.top);
+            crossStart = { ...touchCrosshairRef.current! };
+            touchStart = { x: touchLast.clientX, y: touchLast.clientY, t: 0 };
+        };
+
+        const onAxis = (clientX: number, clientY: number) => {
+            const { rect, chartW, chartH } = chartBox();
+            return clientX - rect.left >= chartW || clientY - rect.top >= chartH;
         };
 
         const startPinch = (t1: Touch, t2: Touch) => {
@@ -2542,6 +2654,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
         const handleTouchStart = (e: TouchEvent) => {
             // also stops the browsers emulated mouse events which would double every tap
             e.preventDefault();
+            lastInputTouchRef.current = true;
             setContextMenu(null);
             if (e.touches.length === e.changedTouches.length) gestureDead = false;
             if (gestureDead) return;
@@ -2549,30 +2662,39 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             if (e.touches.length === 1) {
                 const t = e.touches[0];
                 touchId = t.identifier;
-                touchStart = { x: t.clientX, y: t.clientY };
+                touchStart = { x: t.clientX, y: t.clientY, t: performance.now() };
                 touchLast = { clientX: t.clientX, clientY: t.clientY };
-                const m = touchAsMouse(t, 1);
+                touchMoved = false;
+                clearPressTimer();
 
+                // axes keep scaling even with the crosshair up
+                if (!onAxis(t.clientX, t.clientY) && (touchCrosshairRef.current || toolArmed())) {
+                    touchMode = 'crosshair';
+                    if (!touchCrosshairRef.current) {
+                        const c = crosshairCenter();
+                        showTouchCrosshair(c.x, c.y);
+                    }
+                    crossStart = { ...touchCrosshairRef.current! };
+                    return;
+                }
+
+                touchMode = 'direct';
+                hideTouchPointer = true;
+                placePlus();
+                const m = touchAsMouse(t, 1);
                 handleMouseMove(m);
                 handleMouseDown(m);
-                clearPressTimer();
+                if (onAxis(t.clientX, t.clientY)) return;
                 pressTimer = setTimeout(() => {
                     pressTimer = null;
-                    if (
-                        !features.contextMenu ||
-                        touchId === null ||
-                        draggingAnchorRef.current ||
-                        activeToolRef.current.name !== 'cursor'
-                    )
-                        return;
-                    endSingleTouch();
-                    gestureDead = true;
-                    handleContextMenu(touchAsMouse(touchLast, 0));
-                }, 500);
+                    if (touchId === null || touchMoved || draggingAnchorRef.current) return;
+                    enterCrosshairMode();
+                }, 400);
             } else if (e.touches.length === 2) {
                 clearPressTimer();
                 if (touchId !== null) endSingleTouch();
                 startPinch(e.touches[0], e.touches[1]);
+                placePlus();
             }
         };
 
@@ -2586,10 +2708,14 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             const t = findTouch(e.changedTouches, touchId);
             if (!t) return;
             touchLast = { clientX: t.clientX, clientY: t.clientY };
-            if (Math.hypot(t.clientX - touchStart.x, t.clientY - touchStart.y) > 8) {
+            const dx = t.clientX - touchStart.x;
+            const dy = t.clientY - touchStart.y;
+            if (Math.hypot(dx, dy) > 8) {
+                touchMoved = true;
                 clearPressTimer();
             }
-            handleMouseMove(touchAsMouse(t, 1));
+            if (touchMode === 'crosshair') showTouchCrosshair(crossStart.x + dx, crossStart.y + dy);
+            else handleMouseMove(touchAsMouse(t, 1));
         };
 
         const handleTouchEnd = (e: TouchEvent) => {
@@ -2600,6 +2726,8 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                     pinch = null;
                     gestureDead = true;
                     autofitIndicatorPanes();
+                    const ch = touchCrosshairRef.current;
+                    if (ch) showTouchCrosshair(ch.x, ch.y);
                 }
                 return;
             }
@@ -2607,8 +2735,23 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             const t = findTouch(e.changedTouches, touchId);
             if (!t) return;
             touchId = null;
+
+            if (touchMode === 'crosshair') {
+                if (!touchMoved && performance.now() - touchStart.t < 400) {
+                    touchCrosshairRef.current = crossStart;
+                    tapAtCrosshair();
+                }
+                return;
+            }
+
             const m = touchAsMouse(t, 0);
             handleMouseUp(m);
+            hideTouchPointer = false;
+            const ch = touchCrosshairRef.current;
+            if (ch) {
+                showTouchCrosshair(ch.x, ch.y);
+                return;
+            }
 
             if (!hasDragged.current) {
                 const now = performance.now();
@@ -2629,13 +2772,44 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             clearPressTimer();
             pinch = null;
             if (touchId !== null) endSingleTouch();
-            handleMouseLeave();
+            hideTouchPointer = false;
+            const ch = touchCrosshairRef.current;
+            if (ch) showTouchCrosshair(ch.x, ch.y);
+            else handleMouseLeave();
+        };
+
+        const dropTouchCrosshairFor = (e: PointerEvent) => {
+            if (e.pointerType !== 'mouse' || !touchCrosshairRef.current) return;
+            touchCrosshairRef.current = null;
+            placePlus();
+        };
+
+        const handlePointerDownWindow = (e: PointerEvent) => {
+            lastInputTouchRef.current = e.pointerType === 'touch';
+            dropTouchCrosshairFor(e);
+        };
+
+        const handlePlusClick = () => {
+            const ch = touchCrosshairRef.current;
+            const btn = touchPlusRef.current;
+            if (!ch || !btn) return;
+            const { rect } = chartBox();
+            const at = touchAsMouse(
+                { clientX: btn.getBoundingClientRect().left, clientY: rect.top + ch.y },
+                0,
+            );
+            hideTouchCrosshair();
+            handleContextMenu(at);
         };
 
         canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
         canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
         canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
         canvas.addEventListener('touchcancel', handleTouchCancel);
+        window.addEventListener('pointerdown', handlePointerDownWindow, true);
+        window.addEventListener('pointermove', dropTouchCrosshairFor, true);
+        const plusBtn = touchPlusRef.current;
+        plusBtn?.addEventListener('click', handlePlusClick);
         canvas.addEventListener('mousedown', handleMouseDown);
         canvas.addEventListener('dblclick', handleDoubleClick);
         window.addEventListener('mousemove', handleMouseMove);
@@ -2664,6 +2838,10 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             canvas.removeEventListener('touchmove', handleTouchMove);
             canvas.removeEventListener('touchend', handleTouchEnd);
             canvas.removeEventListener('touchcancel', handleTouchCancel);
+            window.removeEventListener('pointerdown', handlePointerDownWindow, true);
+            window.removeEventListener('pointermove', dropTouchCrosshairFor, true);
+            plusBtn?.removeEventListener('click', handlePlusClick);
+            touchCrosshairApiRef.current = null;
             canvas.removeEventListener('mousedown', handleMouseDown);
             canvas.removeEventListener('dblclick', handleDoubleClick);
             window.removeEventListener('mousemove', handleMouseMove);
@@ -2676,4 +2854,16 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             unsubStatusRefresh();
         };
     }, [status]);
+
+    // spawn crosshair when arming a tool from touch
+    useEffect(() => {
+        const api = touchCrosshairApiRef.current;
+        if (!api) return;
+        if (activeTool.name === 'cursor') {
+            api.hide();
+        } else if (lastInputTouchRef.current) {
+            const ch = touchCrosshairRef.current ?? api.center();
+            api.show(ch.x, ch.y);
+        }
+    }, [activeTool.name, status]);
 }
