@@ -23,7 +23,16 @@ import {
 import { Separator } from './components/ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip';
 import { cn } from './lib/utils';
-import { Lock, LockOpen, Grid3X3, Magnet, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import {
+    Lock,
+    LockOpen,
+    Grid3X3,
+    Magnet,
+    PanelLeftClose,
+    PanelLeftOpen,
+    SlidersHorizontal,
+} from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from './components/ui/popover';
 import { armTool, CURSOR_TOOL, type ActiveDrawingTool } from './lib/types/drawing-types';
 import { Button } from './components/ui/button';
 import { usePlaybackEngine, type PrefetchOptions } from './hooks/usePlaybackEngine';
@@ -81,6 +90,30 @@ export interface DepthProps {
     plugins: any[];
     features: FeaturesOptions;
     timePrecision: TimePrecision;
+}
+
+const NARROW_BOTTOM_BAR_PX = 640;
+
+function QuickSettingsCluster({
+    collapsed,
+    children,
+}: {
+    collapsed: boolean;
+    children: React.ReactNode;
+}) {
+    if (!collapsed) return <>{children}</>;
+    return (
+        <Popover>
+            <PopoverTrigger asChild>
+                <button className="h-5 w-5 flex items-center justify-center rounded text-foreground/50 hover:text-foreground/80 transition-colors shrink-0">
+                    <SlidersHorizontal size={11} />
+                </button>
+            </PopoverTrigger>
+            <PopoverContent side="top" align="start" className="w-auto p-1">
+                {children}
+            </PopoverContent>
+        </Popover>
+    );
 }
 
 // Helpers
@@ -203,6 +236,19 @@ export default function Depth({
     const gridRef = useRef<HTMLDivElement>(null);
 
     const [hasFixedPanels, setHasFixedPanels] = useState(false);
+
+    const [hasBottomBarItems, setHasBottomBarItems] = useState(false);
+    const [bottomBarEl, setBottomBarEl] = useState<HTMLDivElement | null>(null);
+    const [bottomBarNarrow, setBottomBarNarrow] = useState(false);
+    useEffect(() => {
+        if (!bottomBarEl) return;
+        const ro = new ResizeObserver(([entry]) =>
+            setBottomBarNarrow(entry.contentRect.width < NARROW_BOTTOM_BAR_PX),
+        );
+        ro.observe(bottomBarEl);
+        return () => ro.disconnect();
+    }, [bottomBarEl]);
+    const crampedBottomBar = bottomBarNarrow && hasBottomBarItems;
     const [showFixedWindowsSidebarOverride, setShowFixedWindowsSidebarOverride] = useState(true);
 
     const chartRefs = useRef<(ChartHandle | null)[]>(Array(MAX).fill(null));
@@ -1502,149 +1548,160 @@ export default function Depth({
                 {/* Bottom bar */}
                 {!_hideBottomToolbar && (
                     <TooltipProvider delayDuration={400}>
-                        <div className="flex items-center h-8 px-3 border-t border-border/50 bg-background shrink-0 select-none">
-                            {/* Scale mode: N / L / % */}
-                            <div className="flex items-center gap-0.5">
-                                {(['normal', 'percent'] as const).map((mode) => (
-                                    <Tooltip key={mode}>
+                        <div
+                            ref={setBottomBarEl}
+                            className="flex items-center h-8 px-3 border-t border-border/50 bg-background shrink-0 select-none"
+                        >
+                            <QuickSettingsCluster collapsed={crampedBottomBar}>
+                                <div className="flex items-center gap-0.5">
+                                    {(['normal', 'percent'] as const).map((mode) => (
+                                        <Tooltip key={mode}>
+                                            <TooltipTrigger asChild>
+                                                <button
+                                                    onClick={() => {
+                                                        const patch = { priceScaleMode: mode };
+                                                        setChartSettings((p) => ({ ...p, ...patch }));
+                                                        chartRefs.current[
+                                                            focusedRef.current
+                                                        ]?.applySettings(patch);
+                                                    }}
+                                                    className={cn(
+                                                        'h-5 px-1.5 text-xs font-semibold rounded leading-none transition-colors',
+                                                        chartSettings.priceScaleMode === mode
+                                                            ? 'text-foreground/75'
+                                                            : 'text-foreground/25 hover:text-foreground/55',
+                                                    )}
+                                                >
+                                                    {mode === 'normal' ? 'N' : '%'}
+                                                </button>
+                                            </TooltipTrigger>
+                                            <TooltipContent
+                                                side="top"
+                                                className="text-xs border border-border bg-background"
+                                            >
+                                                {mode === 'normal' ? 'Normal scale' : 'Percent scale'}
+                                            </TooltipContent>
+                                        </Tooltip>
+                                    ))}
+
+                                    <div className="w-px h-3 bg-border/50 mx-1 shrink-0" />
+
+                                    <Tooltip>
                                         <TooltipTrigger asChild>
                                             <button
                                                 onClick={() => {
-                                                    const patch = { priceScaleMode: mode };
+                                                    const patch = {
+                                                        autoScale: !chartSettings.autoScale,
+                                                    };
                                                     setChartSettings((p) => ({ ...p, ...patch }));
                                                     chartRefs.current[
                                                         focusedRef.current
                                                     ]?.applySettings(patch);
                                                 }}
                                                 className={cn(
-                                                    'h-5 px-1.5 text-xs font-semibold rounded leading-none transition-colors',
-                                                    chartSettings.priceScaleMode === mode
-                                                        ? 'text-foreground/75'
+                                                    'h-5 w-5 flex items-center justify-center rounded transition-colors',
+                                                    chartSettings.autoScale
+                                                        ? 'text-foreground/70 hover:text-foreground/90'
                                                         : 'text-foreground/25 hover:text-foreground/55',
                                                 )}
                                             >
-                                                {mode === 'normal' ? 'N' : '%'}
+                                                {chartSettings.autoScale ? (
+                                                    <LockOpen size={11} />
+                                                ) : (
+                                                    <Lock size={11} />
+                                                )}
                                             </button>
                                         </TooltipTrigger>
                                         <TooltipContent
                                             side="top"
                                             className="text-xs border border-border bg-background"
                                         >
-                                            {mode === 'normal' ? 'Normal scale' : 'Percent scale'}
+                                            {chartSettings.autoScale
+                                                ? 'Auto-scale on - click to lock'
+                                                : 'Scale locked - click to auto-fit'}
                                         </TooltipContent>
                                     </Tooltip>
-                                ))}
 
-                                <div className="w-px h-3 bg-border/50 mx-1 shrink-0" />
-
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <button
-                                            onClick={() => {
-                                                const patch = {
-                                                    autoScale: !chartSettings.autoScale,
-                                                };
-                                                setChartSettings((p) => ({ ...p, ...patch }));
-                                                chartRefs.current[
-                                                    focusedRef.current
-                                                ]?.applySettings(patch);
-                                            }}
-                                            className={cn(
-                                                'h-5 w-5 flex items-center justify-center rounded transition-colors',
-                                                chartSettings.autoScale
-                                                    ? 'text-foreground/70 hover:text-foreground/90'
-                                                    : 'text-foreground/25 hover:text-foreground/55',
-                                            )}
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <button
+                                                onClick={() => {
+                                                    const patch = { showGrid: !chartSettings.showGrid };
+                                                    setChartSettings((p) => ({ ...p, ...patch }));
+                                                    chartRefs.current[
+                                                        focusedRef.current
+                                                    ]?.applySettings(patch);
+                                                }}
+                                                className={cn(
+                                                    'h-5 w-5 flex items-center justify-center rounded transition-colors',
+                                                    chartSettings.showGrid
+                                                        ? 'text-foreground/70 hover:text-foreground/90'
+                                                        : 'text-foreground/25 hover:text-foreground/55',
+                                                )}
+                                            >
+                                                <Grid3X3 size={11} />
+                                            </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent
+                                            side="top"
+                                            className="text-xs border border-border bg-background"
                                         >
-                                            {chartSettings.autoScale ? (
-                                                <LockOpen size={11} />
-                                            ) : (
-                                                <Lock size={11} />
-                                            )}
-                                        </button>
-                                    </TooltipTrigger>
-                                    <TooltipContent
-                                        side="top"
-                                        className="text-xs border border-border bg-background"
-                                    >
-                                        {chartSettings.autoScale
-                                            ? 'Auto-scale on - click to lock'
-                                            : 'Scale locked - click to auto-fit'}
-                                    </TooltipContent>
-                                </Tooltip>
+                                            {chartSettings.showGrid ? 'Hide grid' : 'Show grid'}
+                                        </TooltipContent>
+                                    </Tooltip>
 
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <button
-                                            onClick={() => {
-                                                const patch = { showGrid: !chartSettings.showGrid };
-                                                setChartSettings((p) => ({ ...p, ...patch }));
-                                                chartRefs.current[
-                                                    focusedRef.current
-                                                ]?.applySettings(patch);
-                                            }}
-                                            className={cn(
-                                                'h-5 w-5 flex items-center justify-center rounded transition-colors',
-                                                chartSettings.showGrid
-                                                    ? 'text-foreground/70 hover:text-foreground/90'
-                                                    : 'text-foreground/25 hover:text-foreground/55',
-                                            )}
-                                        >
-                                            <Grid3X3 size={11} />
-                                        </button>
-                                    </TooltipTrigger>
-                                    <TooltipContent
-                                        side="top"
-                                        className="text-xs border border-border bg-background"
-                                    >
-                                        {chartSettings.showGrid ? 'Hide grid' : 'Show grid'}
-                                    </TooltipContent>
-                                </Tooltip>
-
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <button
-                                            onClick={() => {
-                                                const next =
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <button
+                                                onClick={() => {
+                                                    const next =
+                                                        chartSettings.crosshairMode === 'magnet'
+                                                            ? ('normal' as const)
+                                                            : ('magnet' as const);
+                                                    const patch = { crosshairMode: next };
+                                                    setChartSettings((p) => ({ ...p, ...patch }));
+                                                    chartRefs.current[
+                                                        focusedRef.current
+                                                    ]?.applySettings(patch);
+                                                }}
+                                                className={cn(
+                                                    'h-5 w-5 flex items-center justify-center rounded transition-colors',
                                                     chartSettings.crosshairMode === 'magnet'
-                                                        ? ('normal' as const)
-                                                        : ('magnet' as const);
-                                                const patch = { crosshairMode: next };
-                                                setChartSettings((p) => ({ ...p, ...patch }));
-                                                chartRefs.current[
-                                                    focusedRef.current
-                                                ]?.applySettings(patch);
-                                            }}
-                                            className={cn(
-                                                'h-5 w-5 flex items-center justify-center rounded transition-colors',
-                                                chartSettings.crosshairMode === 'magnet'
-                                                    ? 'text-foreground/70 hover:text-foreground/90'
-                                                    : 'text-foreground/25 hover:text-foreground/55',
-                                            )}
+                                                        ? 'text-foreground/70 hover:text-foreground/90'
+                                                        : 'text-foreground/25 hover:text-foreground/55',
+                                                )}
+                                            >
+                                                <Magnet size={11} />
+                                            </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent
+                                            side="top"
+                                            className="text-xs border border-border bg-background"
                                         >
-                                            <Magnet size={11} />
-                                        </button>
-                                    </TooltipTrigger>
-                                    <TooltipContent
-                                        side="top"
-                                        className="text-xs border border-border bg-background"
-                                    >
-                                        {chartSettings.crosshairMode === 'magnet'
-                                            ? 'Magnet on'
-                                            : 'Magnet off'}
-                                    </TooltipContent>
-                                </Tooltip>
-                            </div>
+                                            {chartSettings.crosshairMode === 'magnet'
+                                                ? 'Magnet on'
+                                                : 'Magnet off'}
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </div>
+                            </QuickSettingsCluster>
 
                             {/* Plugin / chart-type bottom bar content */}
-                            <BottomBarPluginHost eventBus={eventBus} chart={_chart} />
+                            <BottomBarPluginHost
+                                eventBus={eventBus}
+                                chart={_chart}
+                                onHasItemsChange={setHasBottomBarItems}
+                            />
 
                             {/* Timezone + timestamp */}
                             <div className="ml-auto flex items-center gap-2">
                                 {chartSettings.showTimezoneLabel && (
                                     <span
                                         ref={tzRef}
-                                        className="text-xs text-foreground/30 tabular-nums leading-none"
+                                        className={cn(
+                                            'text-xs text-foreground/30 tabular-nums leading-none',
+                                            crampedBottomBar && 'hidden',
+                                        )}
                                     />
                                 )}
                                 <span

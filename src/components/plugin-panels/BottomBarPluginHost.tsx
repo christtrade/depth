@@ -27,9 +27,11 @@ function BottomBarItemView({
 export function BottomBarPluginHost({
     eventBus,
     chart,
+    onHasItemsChange,
 }: {
     eventBus: TypedEventBus;
     chart: DepthChart;
+    onHasItemsChange: (hasItems: boolean) => void;
 }) {
     const [items, setItems] = useState<BottomBarItem[]>(() => [
         ...chart.getBottomBarRegistry().values(),
@@ -57,6 +59,10 @@ export function BottomBarPluginHost({
         ];
         return () => unsubs.forEach((fn) => fn());
     }, [eventBus, chart]);
+
+    useEffect(() => {
+        onHasItemsChange(items.length > 0);
+    }, [items.length > 0]);
 
     if (items.length === 0) return null;
 
