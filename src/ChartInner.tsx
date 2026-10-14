@@ -2152,6 +2152,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
                             y={contextMenu.y}
                             target={contextMenu.target}
                             priceAtClick={(() => {
+                                if (contextMenu.priceAtClick === null) return null;
                                 const tick = resolveTickSize(resolvedSymbolInfoRef.current);
                                 return Math.round(contextMenu.priceAtClick / tick) * tick;
                             })()}

@@ -2392,14 +2392,11 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
 
             const cssH = canvas.height / dpr;
             const y = e.clientY - rect.top;
-            const view = viewRef.current;
             const isXAxis = y > cssH - (p.hideTimeScale ? 0 : X_AXIS_HEIGHT);
+            const main = getLayouts()['main'];
             const priceAtClick =
-                view && !isXAxis
-                    ? view.pMin +
-                      ((cssH - (p.hideTimeScale ? 0 : X_AXIS_HEIGHT) - y) /
-                          (cssH - (p.hideTimeScale ? 0 : X_AXIS_HEIGHT))) *
-                          (view.pMax - view.pMin)
+                viewRef.current && main && !isXAxis && y >= main.y && y < main.y + main.h
+                    ? transformer.yToPrice(y - main.y, main.h)
                     : null;
             setContextMenu({
                 x: e.clientX,

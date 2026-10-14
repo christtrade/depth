@@ -228,7 +228,10 @@ export function ChartContextMenu({
         }
     }, []);
 
-    const orders = getOrderOptions(Math.round(priceAtClick*1e8)/1e8, Math.round(currentBid*1e8)/1e8, Math.round(currentAsk*1e8)/1e8, tickSize);
+    const orders =
+        priceAtClick === null
+            ? []
+            : getOrderOptions(Math.round(priceAtClick*1e8)/1e8, Math.round(currentBid*1e8)/1e8, Math.round(currentAsk*1e8)/1e8, tickSize);
 
     const width = menuRef.current?.clientWidth ?? 260;
     const height = menuRef.current?.clientHeight ?? 500;
@@ -269,8 +272,12 @@ export function ChartContextMenu({
                             Fit Y axis
                         </MenuItem>
 
-                        <MenuSep />
-                        <MenuLabel>Trade</MenuLabel>
+                        {orders.length > 0 && (
+                            <>
+                                <MenuSep />
+                                <MenuLabel>Trade</MenuLabel>
+                            </>
+                        )}
                         {orders.map((o, i) => (
                             <MenuItem
                                 key={i}

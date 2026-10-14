@@ -26,6 +26,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   tapped. Tap an indicator to show them now, they're bigger on touch screens too.
 - Zoom/pan menu at the bottom of the chart is gone on touch screens. It popped up on any tap
   near it, and its invisible buttons could be hit while panning.
+- Context menu price was off with indicator panes open. Used full chart height instead of main pane
+  height, and opening it on an indicator pane now drops the price and order items.
 
 ## [0.16.2] - 2026-10-14
 
