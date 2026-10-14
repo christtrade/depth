@@ -2015,6 +2015,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 }
                 if (openBarRef.current) rebuildOpenBarLevels(newIdx, barNs);
             }
+            syncOhlcvOpenBar(horizon);
             requestFootprintRebuild();
             updatePriceHistoryToRawIdx(findPriceHistoryIdx(horizon));
             const targetIdx = newIdx;
@@ -2054,7 +2055,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                     p.horizonRef.current,
                     dataLevelRef.current,
                 );
-            syncOhlcvOpenBar(horizon);
             if (triggerResample) scheduleResample();
             p.pushDrawParamsRef.current();
             p.renderEngineRef.current?.markDirty('base');
@@ -2068,6 +2068,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         if (barNs > 0n) {
             const barClosed = foldEventsIntoOpenBar(prevIdx, newIdx, barNs, horizon);
             if (barClosed) requestFootprintRebuild();
+            syncOhlcvOpenBar(horizon);
             mergeOpenBar();
         }
         updatePriceHistoryToRawIdx(findPriceHistoryIdx(horizon));
@@ -2142,7 +2143,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 }
             }
             runHorizonAdvance(horizon);
-            syncOhlcvOpenBar(horizon);
             p.pushDrawParamsRef.current();
             if (tradesRef.current.length > 0) p.doBaseRedrawRef.current();
             else p.renderEngineRef.current?.markDirty('base');
@@ -2155,7 +2155,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         lastHorizonForIndicatorsRef.current = horizon;
         runIndicatorWorker(slicedTrades, barNs);
         p.autofitIndicatorPanesRef.current();
-        syncOhlcvOpenBar(horizon);
         if (triggerResample) scheduleResample();
         p.pushDrawParamsRef.current();
         p.renderEngineRef.current?.markDirty('base');

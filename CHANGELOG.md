@@ -12,6 +12,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Buttom bar quick settings fold into a popover button, and the timezone label hides, when
   the width is too narrow and a plugin has registered items on it, so those items get some room.
 
+### Fixed
+- Auto scale used the previous step's forming bar, so a big move could push the current price
+  off screen until the next step.
+
 ## [0.16.2] - 2026-10-14
 
 ### Fix
