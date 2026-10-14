@@ -11,6 +11,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - Buttom bar quick settings fold into a popover button, and the timezone label hides, when
   the width is too narrow and a plugin has registered items on it, so those items get some room.
+- Legend hides the timeframe and exchange when narrow instead of truncating them. The symbol
+  truncates after that (if needed).
 
 ### Fixed
 - Auto scale used the previous step's forming bar, so a big move could push the current price

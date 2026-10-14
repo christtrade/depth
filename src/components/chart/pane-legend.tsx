@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import {
     ArrowDown,
     ArrowUp,
@@ -53,6 +53,48 @@ export function PaneLegend({
 }: PaneLegendProps) {
     const [nameHovered, setNameHovered] = useState<string | null>(null);
 
+    const rowRef = useRef<HTMLDivElement>(null);
+    const itemRef = useRef<HTMLDivElement>(null);
+    const nameRef = useRef<HTMLSpanElement>(null);
+    const tfExMeasureRef = useRef<HTMLSpanElement>(null);
+    const [tfExHidden, setTfExHidden] = useState(false);
+    useLayoutEffect(() => {
+        const row = rowRef.current;
+        if (!row) return;
+        const fit = () => {
+            const name = nameRef.current;
+            const item = itemRef.current;
+            const measure = tfExMeasureRef.current;
+            if (!name || !item || !measure) return;
+            const truncated = name.scrollWidth > name.clientWidth;
+            if (!tfExHidden) {
+                if (truncated) setTfExHidden(true);
+                return;
+            }
+            // +1 to avoid flicker
+            const fullWidth =
+                item.getBoundingClientRect().width + measure.getBoundingClientRect().width + 1;
+            if (!truncated && fullWidth <= row.clientWidth) setTfExHidden(false);
+        };
+        fit();
+        const ro = new ResizeObserver(fit);
+        ro.observe(row);
+        return () => ro.disconnect();
+    }, [tfExHidden, pane.isMain, pane.tf, pane.exchange, pane.symbol, symbolInfo?.longName]);
+
+    const tfEx = (
+        <>
+            <Dot className="text-muted-foreground w-2" />
+            <span className="text-[1rem] text-white/90 select-none cursor-default hover:bg-muted px-1.5 rounded-sm -mx-1" onClick={onOpenTfSelect}>
+                {pane.tf}
+            </span>
+            <Dot className="text-muted-foreground w-2 -ml-px" />
+            <span className="text-[1rem] text-white/90 select-none cursor-default ml-px">
+                {pane.exchange}
+            </span>
+        </>
+    );
+
     const paneIndicators = indicators.filter(
         (ind) => ind.paneId === pane.id || (ind.layout === 'overlay' && pane.isMain),
     );
@@ -64,9 +106,10 @@ export function PaneLegend({
         >
             <div className="flex gap-1 min-w-0 flex-col pt-1 h-full w-full">
                 {pane.isMain && (
-                    <div className="flex flex-row items-center flex-wrap gap-x-2 gap-y-0.5 min-w-0">
+                    <div ref={rowRef} className="flex flex-row items-center flex-wrap gap-x-2 gap-y-0.5 min-w-0">
                         <div
-                            className="flex items-center gap-0.5 min-w-0 max-w-full hover:bg-[#1a1d23] rounded-sm border border-transparent hover:border-border [&>*]:shrink-0"
+                            ref={itemRef}
+                            className="relative flex items-center gap-0.5 min-w-0 max-w-full hover:bg-[#1a1d23] rounded-sm border border-transparent hover:border-border [&>*]:shrink-0"
                             style={{ pointerEvents: 'auto' }}
                             onMouseEnter={() => setNameHovered(pane.id)}
                             onMouseLeave={() => setNameHovered(null)}
@@ -80,15 +123,15 @@ export function PaneLegend({
                                         <SymbolIcon icon={symbolInfo?.legendIcon ?? symbolInfo?.icon} size={18} />
                                     </span>
                                 )}
-                                <span className="truncate">{symbolInfo?.longName ?? pane.symbol}</span>
+                                <span ref={nameRef} className="truncate">{symbolInfo?.longName ?? pane.symbol}</span>
                             </span>
-                            <Dot className="text-muted-foreground w-2" />
-                            <span className="text-[1rem] text-white/90 select-none cursor-default hover:bg-muted px-1.5 rounded-sm -mx-1" onClick={onOpenTfSelect}>
-                                {pane.tf}
-                            </span>
-                            <Dot className="text-muted-foreground w-2 -ml-px" />
-                            <span className="text-[1rem] text-white/90 select-none cursor-default ml-px min-w-0 !shrink truncate">
-                                {pane.exchange}
+                            {!tfExHidden && tfEx}
+                            <span
+                                ref={tfExMeasureRef}
+                                aria-hidden
+                                className="absolute left-0 top-0 invisible pointer-events-none flex items-center gap-0.5 pl-0.5 whitespace-nowrap"
+                            >
+                                {tfEx}
                             </span>
                             {sessionStatus && (
                                 <SessionStatusBadge
