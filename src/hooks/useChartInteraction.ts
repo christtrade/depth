@@ -688,6 +688,8 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             };
         }
 
+        let scaleXStart: { x0: number; tMin0: bigint } | null = null;
+
         const handleMouseDown = (e: MouseEvent) => {
             // Trade line interaction
             {
@@ -1078,6 +1080,8 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                 draggingDividerRef.current = -1;
                 dragPaneIdRef.current = null;
                 dragMode.current = 'scaleX';
+                const chartW = cssW - priceScaleWidthRef.current;
+                scaleXStart = viewRef.current && chartW - x > 24 ? { x0: x, tMin0: viewRef.current.tMin } : null;
             } else {
                 draggingDividerRef.current = -1;
                 dragPaneIdRef.current = hitTestPane(y, panesRef.current, layouts)?.id ?? null;
@@ -1913,11 +1917,26 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                     updateSettingsBarPos(selectedDrawingIdRef.current);
                 } else if (dragMode.current === 'scaleX') {
                     const sm = transformer.getSessionMapper();
+                    const ord = transformer.getOrdinal();
                     const { min: MIN_SPAN, max: MAX_SPAN } = getZoomLimits();
-                    if (sm && sm.hasSession) {
+
+                    const start = scaleXStart;
+                    const tMin0 = start ? start.tMin0 : view.tMin;
+                    const factor = start
+                        ? (chartW - start.x0) / Math.max(1, chartW - x)
+                        : 1 + dx * 0.001;
+                    if (ord) {
+                        const idxMax = transformer.tsToFracIndex(view.tMax);
+                        const idxSpan = idxMax - transformer.tsToFracIndex(tMin0);
+                        const newSpan = Math.max(
+                            Number(MIN_SPAN),
+                            Math.min(Number(MAX_SPAN), idxSpan * factor),
+                        );
+                        view.tMin = transformer.indexToTs(idxMax - newSpan);
+                    } else if (sm && sm.hasSession) {
                         const mMax = sm.tsToMarket(view.tMax);
-                        const mSpan = Number(sm.tsToMarket(view.tMax) - sm.tsToMarket(view.tMin));
-                        const newMSpan = BigInt(Math.round(mSpan * (1 + dx * 0.001)));
+                        const mSpan = Number(mMax - sm.tsToMarket(tMin0));
+                        const newMSpan = BigInt(Math.round(mSpan * factor));
                         const clamped =
                             newMSpan < MIN_SPAN
                                 ? MIN_SPAN
@@ -1926,8 +1945,8 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                                   : newMSpan;
                         view.tMin = sm.marketToTs(mMax - clamped);
                     } else {
-                        const timeSpan = Number(view.tMax - view.tMin);
-                        const newSpan = BigInt(Math.round(timeSpan * (1 + dx * 0.001)));
+                        const timeSpan = Number(view.tMax - tMin0);
+                        const newSpan = BigInt(Math.round(timeSpan * factor));
                         const clamped =
                             newSpan < MIN_SPAN ? MIN_SPAN : newSpan > MAX_SPAN ? MAX_SPAN : newSpan;
                         view.tMin = view.tMax - clamped;

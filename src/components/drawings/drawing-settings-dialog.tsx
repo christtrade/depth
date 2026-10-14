@@ -54,6 +54,8 @@ import {
     DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import { Button } from '../ui/button';
+import { useNarrowViewport } from '../../hooks/useNarrowViewport';
+import { ScrollStrip } from '../ui/scroll-strip';
 
 export type StyleField =
     | { type: 'color'; key: string; label: string; disabledWhenFalse?: string }
@@ -666,7 +668,6 @@ export function DrawingSettingsDialog({
     onMouseLeave,
 }: DrawingSettingsDialogProps) {
     const [tab, setTab] = useState<Tab>('style');
-    const tabsRef = useRef<HTMLDivElement | null>(null);
     const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
     const [templates, setTemplates] = useState<DrawingStyleTemplate[]>(() =>
         loadTemplates().filter((t) => t.tool === drawing.tool),
@@ -679,10 +680,11 @@ export function DrawingSettingsDialog({
         _rememberedPos ?? (typeof window !== 'undefined' ? defaultPos() : { x: 80, y: 80 }),
     );
     const [, forceRender] = useState(0);
+    const fullscreen = useNarrowViewport(DIALOG_W + VIEWPORT_PADDING * 2);
 
     useLayoutEffect(() => {
         const el = dialogRef.current;
-        if (!el) return;
+        if (!el || fullscreen) return;
         const clamped = clampTop(posRef.current.y, el.offsetHeight);
         if (clamped !== posRef.current.y) {
             posRef.current = { ...posRef.current, y: clamped };
@@ -692,7 +694,7 @@ export function DrawingSettingsDialog({
     });
 
     const onHeaderMouseDown = useCallback((e: React.MouseEvent) => {
-        if ((e.target as HTMLElement).closest('button')) return;
+        if (fullscreen || (e.target as HTMLElement).closest('button')) return;
         e.preventDefault();
         e.stopPropagation();
         const sx = e.clientX,
@@ -714,7 +716,7 @@ export function DrawingSettingsDialog({
         };
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);
-    }, []);
+    }, [fullscreen]);
 
     const handleClose = useCallback(() => {
         onMouseLeave?.();
@@ -815,19 +817,29 @@ export function DrawingSettingsDialog({
 
             <div
                 ref={dialogRef}
-                className="dlg-enter fixed z-[200] flex flex-col rounded-xl border border-white/10  bg-[#14161b]/90 backdrop-blur-lg shadow-2xl overflow-hidden"
-                style={{
-                    left: posRef.current.x,
-                    top: posRef.current.y,
-                    width: DIALOG_W,
-                    maxHeight: `calc(100vh - ${posRef.current.y + VIEWPORT_PADDING}px)`,
-                }}
+                className={cn(
+                    'dlg-enter fixed z-[200] flex flex-col bg-[#14161b]/90 backdrop-blur-lg shadow-2xl overflow-hidden',
+                    fullscreen ? 'inset-0' : 'rounded-xl border border-white/10',
+                )}
+                style={
+                    fullscreen
+                        ? undefined
+                        : {
+                              left: posRef.current.x,
+                              top: posRef.current.y,
+                              width: DIALOG_W,
+                              maxHeight: `calc(100vh - ${posRef.current.y + VIEWPORT_PADDING}px)`,
+                          }
+                }
                 onMouseDown={(e) => e.stopPropagation()}
                 onMouseEnter={onMouseEnter}
                 onMouseLeave={onMouseLeave}
             >
                 <div
-                    className="flex items-center gap-2 px-4 pt-4 pb-3 border-b border-white/6 shrink-0 cursor-grab active:cursor-grabbing select-none"
+                    className={cn(
+                        'flex items-center gap-2 px-4 pt-4 pb-3 border-b border-white/6 shrink-0 select-none',
+                        !fullscreen && 'cursor-grab active:cursor-grabbing',
+                    )}
                     onMouseDown={onHeaderMouseDown}
                 >
                     <div className="flex-1 min-w-0">
@@ -844,9 +856,9 @@ export function DrawingSettingsDialog({
                     </button>
                 </div>
 
-                <div
-                    className="flex gap-0.5 px-4 pt-2 pb-0 shrink-0 border-b border-white/6 relative"
-                    ref={tabsRef}
+                <ScrollStrip
+                    className="shrink-0 border-b border-white/6"
+                    innerClassName="relative flex gap-0.5 px-4"
                 >
                     {tabs.map((t, i) => (
                         <button
@@ -855,7 +867,7 @@ export function DrawingSettingsDialog({
                             ref={(el) => (tabRefs.current[i] = el)}
                             onClick={() => setTab(t.id)}
                             className={cn(
-                                'flex items-center gap-1.5 px-3 py-2 text-[11px] font-medium rounded-t transition-colors border-b-2 -mb-px',
+                                'flex items-center gap-1.5 px-3 py-3 text-[11px] font-medium rounded-t transition-colors border-b-2 -mb-px',
                                 tab === t.id
                                     ? 'text-white bg-white/5'
                                     : 'text-white/40 border-transparent hover:text-white/70 hover:bg-white/5',
@@ -872,7 +884,7 @@ export function DrawingSettingsDialog({
                             transform: `translateX(${activeTabEl?.offsetLeft ?? 0}px)`,
                         }}
                     />
-                </div>
+                </ScrollStrip>
 
                 <div className="flex-1 overflow-y-auto px-5 py-4 min-h-0">
                     {tab === 'style' && (

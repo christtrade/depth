@@ -346,8 +346,8 @@ export function DrawingSettingsBar({
     const isDraggingRef = useRef(false);
     const [isDragging, setIsDragging] = useState(false);
 
-    const onGrabMouseDown = useCallback(
-        (e: React.MouseEvent) => {
+    const onGrabPointerDown = useCallback(
+        (e: React.PointerEvent) => {
             e.preventDefault();
             e.stopPropagation();
 
@@ -361,7 +361,7 @@ export function DrawingSettingsBar({
             isDraggingRef.current = true;
             setIsDragging(true);
 
-            const onMouseMove = (ev: MouseEvent) => {
+            const onPointerMove = (ev: PointerEvent) => {
                 const el = barRef.current;
                 if (!el) return;
 
@@ -389,15 +389,17 @@ export function DrawingSettingsBar({
                 el.style.top = `${ny}px`;
             };
 
-            const onMouseUp = () => {
+            const onPointerUp = () => {
                 isDraggingRef.current = false;
                 setIsDragging(false);
-                window.removeEventListener('mousemove', onMouseMove);
-                window.removeEventListener('mouseup', onMouseUp);
+                window.removeEventListener('pointermove', onPointerMove);
+                window.removeEventListener('pointerup', onPointerUp);
+                window.removeEventListener('pointercancel', onPointerUp);
             };
 
-            window.addEventListener('mousemove', onMouseMove);
-            window.addEventListener('mouseup', onMouseUp);
+            window.addEventListener('pointermove', onPointerMove);
+            window.addEventListener('pointerup', onPointerUp);
+            window.addEventListener('pointercancel', onPointerUp);
         },
         [containerRef],
     );
@@ -926,8 +928,8 @@ export function DrawingSettingsBar({
                 onMouseLeave={isDragging ? undefined : onMouseLeave}
             >
                 <div
-                    className="flex items-center justify-center h-full px-1 cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground transition-colors shrink-0 rounded-l-lg"
-                    onMouseDown={onGrabMouseDown}
+                    className="flex items-center justify-center h-full px-1 cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground transition-colors shrink-0 rounded-l-lg touch-none"
+                    onPointerDown={onGrabPointerDown}
                     title="Drag to move"
                 >
                     <GripVertical size={13} />

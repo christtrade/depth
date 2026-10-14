@@ -9,6 +9,7 @@ import { ColorPicker as ColorPickerReact } from '../ui/color-picker';
 import type { Indicator } from '../../lib/types/indicator-types';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../ui/dropdown-menu';
 import { Button } from '../ui/button';
+import { useNarrowViewport } from '../../hooks/useNarrowViewport';
 
 type FieldTab = 'params' | 'style';
 
@@ -207,6 +208,7 @@ export function IndicatorSettingsDialog({
         _rememberedPos ?? (typeof window !== 'undefined' ? defaultPos() : { x: 80, y: 80 }),
     );
     const [, forceRender] = useState(0);
+    const fullscreen = useNarrowViewport(DIALOG_W + VIEWPORT_PADDING * 2);
     const [tab, setTab] = useState<'params' | 'style'>('params');
     const tabsRef = useRef<HTMLDivElement | null>(null);
     const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -243,7 +245,7 @@ export function IndicatorSettingsDialog({
 
     useLayoutEffect(() => {
         const el = dialogRef.current;
-        if (!el) return;
+        if (!el || fullscreen) return;
         const clamped = clampTop(posRef.current.y, el.offsetHeight);
         if (clamped !== posRef.current.y) {
             posRef.current = { ...posRef.current, y: clamped };
@@ -253,7 +255,7 @@ export function IndicatorSettingsDialog({
     });
 
     const onHeaderMouseDown = useCallback((e: React.MouseEvent) => {
-        if ((e.target as HTMLElement).closest('button')) return;
+        if (fullscreen || (e.target as HTMLElement).closest('button')) return;
         e.preventDefault();
         e.stopPropagation();
         const sx = e.clientX,
@@ -275,7 +277,7 @@ export function IndicatorSettingsDialog({
         };
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);
-    }, []);
+    }, [fullscreen]);
 
     const handleClose = useCallback(() => {
         onMouseLeave?.();
@@ -306,19 +308,29 @@ export function IndicatorSettingsDialog({
 
             <div
                 ref={dialogRef}
-                className="dlg-enter fixed z-[200] flex flex-col rounded-xl border border-white/10 bg-[#14161b]/90 backdrop-blur-lg shadow-2xl overflow-hidden min-h-0"
-                style={{
-                    left: posRef.current.x,
-                    top: posRef.current.y,
-                    width: DIALOG_W,
-                    maxHeight: `calc(100vh - ${posRef.current.y + VIEWPORT_PADDING}px)`,
-                }}
+                className={cn(
+                    'dlg-enter fixed z-[200] flex flex-col bg-[#14161b]/90 backdrop-blur-lg shadow-2xl overflow-hidden min-h-0',
+                    fullscreen ? 'inset-0' : 'rounded-xl border border-white/10',
+                )}
+                style={
+                    fullscreen
+                        ? undefined
+                        : {
+                              left: posRef.current.x,
+                              top: posRef.current.y,
+                              width: DIALOG_W,
+                              maxHeight: `calc(100vh - ${posRef.current.y + VIEWPORT_PADDING}px)`,
+                          }
+                }
                 onMouseDown={(e) => e.stopPropagation()}
                 onMouseEnter={onMouseEnter}
                 onMouseLeave={onMouseLeave}
             >
                 <div
-                    className="flex items-center gap-2 px-4 pt-4 pb-3 border-b border-white/6 shrink-0 cursor-grab active:cursor-grabbing select-none"
+                    className={cn(
+                        'flex items-center gap-2 px-4 pt-4 pb-3 border-b border-white/6 shrink-0 select-none',
+                        !fullscreen && 'cursor-grab active:cursor-grabbing',
+                    )}
                     onMouseDown={onHeaderMouseDown}
                 >
                     <div className="flex-1 min-w-0">

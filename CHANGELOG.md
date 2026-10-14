@@ -8,6 +8,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-10-14
+
+### Changed
+- Settings dialogs go fullscreen when the screen is too narrow for them
+- Dragging the time axis keeps the time you pressed under the cursor, instead of scaling
+  from however far you've moved. Also scales by bar in gap-free mode now, like scrolling does
+
+### Fixed
+- Drawing settings tabs overflowing the dialog on narrow screens, they scroll now
+- Drawing settings bar couldn't be dragged on touch.
+
 ## [0.16.0] - 2026-10-13
 
 ### Added

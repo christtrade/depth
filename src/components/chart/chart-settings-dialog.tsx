@@ -35,6 +35,7 @@ import {
     importTradingViewSettings,
     readTradingViewChartSettings,
 } from '../../lib/tradingview-import';
+import { useNarrowViewport } from '../../hooks/useNarrowViewport';
 
 export type { ChartSettings } from '../../lib/types/chart-settings';
 export { DEFAULT_CHART_SETTINGS } from '../../lib/types/chart-settings';
@@ -108,10 +109,11 @@ export function ChartSettingsDialog({
         _rememberedPos ?? (typeof window !== 'undefined' ? defaultPos() : { x: 80, y: 80 }),
     );
     const [, forceRender] = useState(0);
+    const fullscreen = useNarrowViewport(DIALOG_W + VIEWPORT_PADDING * 2);
 
     useLayoutEffect(() => {
         const el = dialogRef.current;
-        if (!el) return;
+        if (!el || fullscreen) return;
         const clamped = clampTop(posRef.current.y, el.offsetHeight);
         if (clamped !== posRef.current.y) {
             posRef.current = { ...posRef.current, y: clamped };
@@ -121,7 +123,7 @@ export function ChartSettingsDialog({
     });
 
     const onHeaderMouseDown = useCallback((e: React.MouseEvent) => {
-        if ((e.target as HTMLElement).closest('button')) return;
+        if (fullscreen || (e.target as HTMLElement).closest('button')) return;
         e.preventDefault();
         e.stopPropagation();
         const sx = e.clientX,
@@ -143,7 +145,7 @@ export function ChartSettingsDialog({
         };
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);
-    }, []);
+    }, [fullscreen]);
 
     const handleClose = useCallback(() => {
         onMouseLeave?.();
@@ -201,19 +203,29 @@ export function ChartSettingsDialog({
 
             <div
                 ref={dialogRef}
-                className="dlg-enter fixed z-[200] flex flex-col bg-[#14161b]/90 backdrop-blur-lg rounded-xl border border-white/10 bg-[#14161b] shadow-2xl overflow-hidden min-h-0"
-                style={{
-                    left: posRef.current.x,
-                    top: posRef.current.y,
-                    width: DIALOG_W,
-                    maxHeight: `calc(100vh - ${posRef.current.y + VIEWPORT_PADDING}px)`,
-                }}
+                className={cn(
+                    'dlg-enter fixed z-[200] flex flex-col bg-[#14161b]/90 backdrop-blur-lg bg-[#14161b] shadow-2xl overflow-hidden min-h-0',
+                    fullscreen ? 'inset-0' : 'rounded-xl border border-white/10',
+                )}
+                style={
+                    fullscreen
+                        ? undefined
+                        : {
+                              left: posRef.current.x,
+                              top: posRef.current.y,
+                              width: DIALOG_W,
+                              maxHeight: `calc(100vh - ${posRef.current.y + VIEWPORT_PADDING}px)`,
+                          }
+                }
                 onMouseDown={(e) => e.stopPropagation()}
                 onMouseEnter={onMouseEnter}
                 onMouseLeave={onMouseLeave}
             >
                 <div
-                    className="flex items-center gap-2 px-4 pt-4 pb-3 border-b border-white/6 shrink-0 cursor-grab active:cursor-grabbing select-none"
+                    className={cn(
+                        'flex items-center gap-2 px-4 pt-4 pb-3 border-b border-white/6 shrink-0 select-none',
+                        !fullscreen && 'cursor-grab active:cursor-grabbing',
+                    )}
                     onMouseDown={onHeaderMouseDown}
                 >
                     <div className="flex-1 min-w-0">
@@ -1286,7 +1298,7 @@ export function ChartSettingsDialog({
                 </div>
                 <div className="px-5 py-1 border-t border-white/6 shrink-0 pt-0">
                     <a href="https://christtrade.com" className="text-[10px] text-white/20 select-none font-mono">
-                        ChristTrade Depth 0.12.23
+                        ChristTrade Depth 0.16.1
                     </a>
                 </div>
             </div>
