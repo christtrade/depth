@@ -52,6 +52,17 @@ export function PaneLegend({
     symbolInfo
 }: PaneLegendProps) {
     const [nameHovered, setNameHovered] = useState<string | null>(null);
+    const [tapOpened, setTapOpened] = useState<string | null>(null);
+    const pointerTypeRef = useRef('mouse');
+    useEffect(() => {
+        if (!tapOpened) return;
+        const close = (e: PointerEvent) => {
+            const row = (e.target as Element).closest?.('[data-indicator-row]');
+            if (row?.getAttribute('data-indicator-row') !== tapOpened) setTapOpened(null);
+        };
+        document.addEventListener('pointerdown', close, true);
+        return () => document.removeEventListener('pointerdown', close, true);
+    }, [tapOpened]);
 
     const rowRef = useRef<HTMLDivElement>(null);
     const itemRef = useRef<HTMLDivElement>(null);
@@ -85,7 +96,7 @@ export function PaneLegend({
     const tfEx = (
         <>
             <Dot className="text-muted-foreground w-2" />
-            <span className="text-[1rem] text-white/90 select-none cursor-default hover:bg-muted px-1.5 rounded-sm -mx-1" onClick={onOpenTfSelect}>
+            <span className="text-[1rem] text-white/90 select-none cursor-default [@media(hover:hover)]:hover:bg-muted px-1.5 rounded-sm -mx-1" onClick={onOpenTfSelect}>
                 {pane.tf}
             </span>
             <Dot className="text-muted-foreground w-2 -ml-px" />
@@ -109,15 +120,15 @@ export function PaneLegend({
                     <div ref={rowRef} className="flex flex-row items-center flex-wrap gap-x-2 gap-y-0.5 min-w-0">
                         <div
                             ref={itemRef}
-                            className="relative flex items-center gap-0.5 min-w-0 max-w-full hover:bg-[#1a1d23] rounded-sm border border-transparent hover:border-border [&>*]:shrink-0"
+                            className="relative flex items-center gap-0.5 min-w-0 max-w-full [@media(hover:hover)]:hover:bg-[#1a1d23] rounded-sm border border-transparent [@media(hover:hover)]:hover:border-border [&>*]:shrink-0"
                             style={{ pointerEvents: 'auto' }}
-                            onMouseEnter={() => setNameHovered(pane.id)}
-                            onMouseLeave={() => setNameHovered(null)}
+                            onPointerEnter={(e) => e.pointerType === 'mouse' && setNameHovered(pane.id)}
+                            onPointerLeave={(e) => e.pointerType === 'mouse' && setNameHovered(null)}
                             onMouseDown={(e) => {
                                 if (e.button === 1) onRemoveIndicator(pane.id);
                             }}
                         >
-                            <span className="text-[1rem] text-white/90 flex items-center gap-0.5 select-none cursor-default hover:bg-muted px-1.5 rounded-sm -mr-1 min-w-0 !shrink" onClick={() => eventBus.emit('chart:open-symbol-select', ({}))}>
+                            <span className="text-[1rem] text-white/90 flex items-center gap-0.5 select-none cursor-default [@media(hover:hover)]:hover:bg-muted px-1.5 rounded-sm -mr-1 min-w-0 !shrink" onClick={() => eventBus.emit('chart:open-symbol-select', ({}))}>
                                 {(symbolInfo?.legendIcon ?? symbolInfo?.icon) && (
                                     <span className='pr-1 shrink-0'>
                                         <SymbolIcon icon={symbolInfo?.legendIcon ?? symbolInfo?.icon} size={18} />
@@ -150,10 +161,24 @@ export function PaneLegend({
                     {paneIndicators.map((ind) => (
                         <div
                             key={ind.id}
-                            className="flex items-center gap-0.5 self-start max-w-full min-w-0 py-0.5 hover:bg-[#1a1d23] rounded-sm px-1 duration-100 hover:duration-0 border border-transparent hover:border-border"
+                            // :hover sticks after a tap, so touch gets its highlight from tapOpened instead
+                            className={cn(
+                                'flex items-center gap-0.5 self-start max-w-full min-w-0 py-0.5 rounded-sm px-1 duration-100 border border-transparent [@media(hover:hover)]:hover:bg-[#1a1d23] [@media(hover:hover)]:hover:duration-0 [@media(hover:hover)]:hover:border-border',
+                                tapOpened === ind.id && 'bg-[#1a1d23] border-border',
+                            )}
                             style={{ pointerEvents: 'auto' }}
-                            onMouseEnter={() => setNameHovered(ind.id)}
-                            onMouseLeave={() => setNameHovered(null)}
+                            data-indicator-row={ind.id}
+                            // pointer instead of mouse (tap fakes a mouseenter that never leaves)
+                            onPointerEnter={(e) => e.pointerType === 'mouse' && setNameHovered(ind.id)}
+                            onPointerLeave={(e) => e.pointerType === 'mouse' && setNameHovered(null)}
+                            onPointerDown={(e) => {
+                                pointerTypeRef.current = e.pointerType;
+                            }}
+                            onClick={(e) => {
+                                if (pointerTypeRef.current === 'mouse') return;
+                                if ((e.target as Element).closest('button')) return;
+                                setTapOpened((open) => (open === ind.id ? null : ind.id));
+                            }}
                             onMouseDown={(e) => {
                                 if (e.button === 1) onRemoveIndicator(ind.id);
                             }}
@@ -170,13 +195,15 @@ export function PaneLegend({
                             <div
                                 className={cn(
                                     'flex items-center gap-0.5 shrink-0 transition-opacity duration-100',
-                                    nameHovered === ind.id ? 'opacity-100' : 'opacity-0',
+                                    nameHovered === ind.id || tapOpened === ind.id
+                                        ? 'opacity-100'
+                                        : 'opacity-0 pointer-events-none',
                                 )}
                             >
                                 <Tooltip delayDuration={700}>
                                     <TooltipTrigger asChild>
                                         <button
-                                            className="p-0.5 px-1 rounded hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
+                                            className="p-0.5 px-1 [@media(pointer:coarse)]:p-1.5 rounded [@media(hover:hover)]:hover:bg-white/10 text-muted-foreground [@media(hover:hover)]:hover:text-foreground transition-colors"
                                             onClick={() => onToggleIndicator(ind.id)}
                                         >
                                             {ind.visible ? <Eye size={13} /> : <EyeOff size={13} />}
@@ -189,7 +216,7 @@ export function PaneLegend({
                                 <Tooltip delayDuration={700}>
                                     <TooltipTrigger asChild>
                                         <button
-                                            className="p-0.5 px-1 rounded hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
+                                            className="p-0.5 px-1 [@media(pointer:coarse)]:p-1.5 rounded [@media(hover:hover)]:hover:bg-white/10 text-muted-foreground [@media(hover:hover)]:hover:text-foreground transition-colors"
                                             onClick={() => onOpenSettings(ind.id)}
                                         >
                                             <Settings2 size={13} />
@@ -202,7 +229,7 @@ export function PaneLegend({
                                 <Tooltip delayDuration={700}>
                                     <TooltipTrigger asChild>
                                         <button
-                                            className="p-0.5 px-1 rounded hover:bg-white/10 text-muted-foreground hover:text-red-400 transition-colors"
+                                            className="p-0.5 px-1 [@media(pointer:coarse)]:p-1.5 rounded [@media(hover:hover)]:hover:bg-white/10 text-muted-foreground [@media(hover:hover)]:hover:text-red-400 transition-colors"
                                             onClick={() => onRemoveIndicator(ind.id)}
                                         >
                                             <Trash2 size={13} />

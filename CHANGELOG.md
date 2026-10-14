@@ -17,6 +17,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - Auto scale used the previous step's forming bar, so a big move could push the current price
   off screen until the next step.
+- Indicator buttons in the legend couldn't be reached on touch, and hidden ones could still be
+  tapped. Tap an indicator to show them now, they're bigger on touch screens too.
 
 ## [0.16.2] - 2026-10-14
 
