@@ -406,6 +406,13 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
         return { min: minSpan, max: maxSpan };
     }
 
+    function lastBarTs(): bigint | null {
+        const dataEnd = datasetEndRef.current;
+        if (dataEnd === 0n) return null;
+        const horizon = horizonRef.current;
+        return horizon > 0n && horizon < dataEnd ? horizon : dataEnd;
+    }
+
     function clampPan(view: ViewBounds): void {
         // Ordinal mode: clamp the visible column range to [0, lastColumn + pad].
         const ord = transformer.getOrdinal();
@@ -430,14 +437,10 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             return;
         }
         const start = datasetStartRef.current + activeTimeframeRef.current.barNs / 2n;
-        const dataEnd = datasetEndRef.current;
-        if (start === 0n || dataEnd === 0n) return;
+        const last = lastBarTs();
+        if (start === 0n || last === null) return;
+        const end = last - (activeTimeframeRef.current.barNs * 3n) / 2n;
         const span = view.tMax - view.tMin;
-        const horizon = horizonRef.current;
-        const end =
-            horizon > 0n && horizon < dataEnd
-                ? horizon - (activeTimeframeRef.current.barNs * 3n) / 2n
-                : dataEnd - (activeTimeframeRef.current.barNs * 3n) / 2n;
         if (view.tMin + span < start) {
             view.tMin = start - span;
             view.tMax = start;
@@ -688,7 +691,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             };
         }
 
-        let scaleXStart: { x0: number; tMin0: bigint } | null = null;
+        let scaleXStart: { x0: number; tMin0: bigint; tMax0: bigint } | null = null;
 
         const handleMouseDown = (e: MouseEvent) => {
             // Trade line interaction
@@ -1081,7 +1084,8 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                 dragPaneIdRef.current = null;
                 dragMode.current = 'scaleX';
                 const chartW = cssW - priceScaleWidthRef.current;
-                scaleXStart = viewRef.current && chartW - x > 24 ? { x0: x, tMin0: viewRef.current.tMin } : null;
+                const v = viewRef.current;
+                scaleXStart = v && chartW - x > 24 ? { x0: x, tMin0: v.tMin, tMax0: v.tMax } : null;
             } else {
                 draggingDividerRef.current = -1;
                 dragPaneIdRef.current = hitTestPane(y, panesRef.current, layouts)?.id ?? null;
@@ -1922,19 +1926,33 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
 
                     const start = scaleXStart;
                     const tMin0 = start ? start.tMin0 : view.tMin;
+                    const tMax0 = start ? start.tMax0 : view.tMax;
                     const factor = start
                         ? (chartW - start.x0) / Math.max(1, chartW - x)
                         : 1 + dx * 0.001;
+                    // scales from the right edge until it uses the left to not push out the last bar
+                    const last = lastBarTs();
+                    const end =
+                        last === null ? null : last - (activeTimeframeRef.current.barNs * 3n) / 2n;
+                    let capped = false;
                     if (ord) {
-                        const idxMax = transformer.tsToFracIndex(view.tMax);
+                        const idxMax = transformer.tsToFracIndex(tMax0);
                         const idxSpan = idxMax - transformer.tsToFracIndex(tMin0);
                         const newSpan = Math.max(
                             Number(MIN_SPAN),
                             Math.min(Number(MAX_SPAN), idxSpan * factor),
                         );
-                        view.tMin = transformer.indexToTs(idxMax - newSpan);
+                        const idxEnd = last === null ? null : transformer.tsToFracIndex(last) - 1.5;
+                        if (idxEnd !== null && idxMax - newSpan > idxEnd) {
+                            capped = true;
+                            view.tMin = transformer.indexToTs(idxEnd);
+                            view.tMax = transformer.indexToTs(idxEnd + newSpan);
+                        } else {
+                            view.tMin = transformer.indexToTs(idxMax - newSpan);
+                            view.tMax = tMax0;
+                        }
                     } else if (sm && sm.hasSession) {
-                        const mMax = sm.tsToMarket(view.tMax);
+                        const mMax = sm.tsToMarket(tMax0);
                         const mSpan = Number(mMax - sm.tsToMarket(tMin0));
                         const newMSpan = BigInt(Math.round(mSpan * factor));
                         const clamped =
@@ -1943,13 +1961,29 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                                 : newMSpan > MAX_SPAN
                                   ? MAX_SPAN
                                   : newMSpan;
-                        view.tMin = sm.marketToTs(mMax - clamped);
+                        const mEnd = end === null ? null : sm.tsToMarket(end);
+                        if (mEnd !== null && mMax - clamped > mEnd) {
+                            capped = true;
+                            view.tMin = sm.marketToTs(mEnd);
+                            view.tMax = sm.marketToTs(mEnd + clamped);
+                        } else {
+                            view.tMin = sm.marketToTs(mMax - clamped);
+                            view.tMax = tMax0;
+                        }
                     } else {
-                        const timeSpan = Number(view.tMax - tMin0);
+                        const timeSpan = Number(tMax0 - tMin0);
                         const newSpan = BigInt(Math.round(timeSpan * factor));
                         const clamped =
                             newSpan < MIN_SPAN ? MIN_SPAN : newSpan > MAX_SPAN ? MAX_SPAN : newSpan;
-                        view.tMin = view.tMax - clamped;
+                        capped = end !== null && tMax0 - clamped > end;
+                        const tMin = capped ? end! : tMax0 - clamped;
+                        view.tMin = tMin;
+                        view.tMax = tMin + clamped;
+                    }
+                    // update the drag start to stick to current value once not capped
+                    if (capped) {
+                        scaleXStart =
+                            chartW - x > 24 ? { x0: x, tMin0: view.tMin, tMax0: view.tMax } : null;
                     }
                     autoFitPriceAxis(
                         view,
