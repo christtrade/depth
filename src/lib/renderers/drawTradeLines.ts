@@ -312,7 +312,7 @@ export function drawTradeLines(
         const red = shade('#e8146c');
         const blue = shade('#008aff');
 
-        const rightOffset = 70;
+        const rightOffset = Math.min(70, w * 0.1);
 
         // Working orders (limit / stop / stop-limit) render exactly like an entry -
         // filled qty segment, same blue pill - but the middle segment shows the

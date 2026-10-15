@@ -20,6 +20,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   truncates after that (if needed).
 - Double-clicking the time axis threw on ohlcv data. Now it does the same reset as in the
   context menu instead of the super old fixed 800s window.
+- Trade line pills' right padding scales with chart width (capped at 70px).
 
 ### Fixed
 - Auto scale used the previous step's forming bar, so a big move could push the current price
