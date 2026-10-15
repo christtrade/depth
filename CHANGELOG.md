@@ -10,6 +10,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 - Touch now doesn't move drawings when trying to pan. Select first, then drag to move them
+- On touch, trade lines need a tap to arm first, in order to move or drag, so pans that start
+  on an order no longer move it.
 
 ## [0.17.0] - 2026-10-15
 

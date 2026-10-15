@@ -384,10 +384,11 @@ export function drawTradeLines(
         // Deliberately not done with alpha: a translucent pill lets the line
         // show through its own label, and washes out the axis tag.
         const accent = baseAccent;
+        const armed = tradeLineInteraction.getArmedLineId() === line.id;
 
         ctx.save();
         ctx.setLineDash([]);
-        ctx.lineWidth = 1;
+        ctx.lineWidth = armed ? 2 : 1;
 
         // horizontal line across chart
         ctx.beginPath();
@@ -411,6 +412,7 @@ export function drawTradeLines(
         ctx.fill();
         ctx.strokeStyle = accent;
         ctx.stroke();
+        ctx.lineWidth = 1;
 
         // amount segment (accent fill)
         if (isEntryLike) {

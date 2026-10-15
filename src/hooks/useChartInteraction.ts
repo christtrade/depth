@@ -281,6 +281,7 @@ export interface UseChartInteractionParams {
     hideTimeScale: boolean;
     activeTool: ActiveDrawingTool;
     touchPlusRef: RefObject<HTMLButtonElement>;
+    lastInputTouchRef: MutableRefObject<boolean>;
 }
 
 export function useChartInteraction(p: UseChartInteractionParams): void {
@@ -380,9 +381,9 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
         buildChartTypeActiveCtx,
         activeTool,
         touchPlusRef,
+        lastInputTouchRef,
     } = p;
 
-    const lastInputTouchRef = useRef(false);
     const touchCrosshairRef = useRef<{ x: number; y: number } | null>(null);
     const touchCrosshairApiRef = useRef<{
         show: (x: number, y: number) => void;

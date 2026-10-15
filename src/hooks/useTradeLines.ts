@@ -66,6 +66,7 @@ interface UseTradeLines {
      * price   - final price (snapped to tickSize)
      */
     onGhostMove?: (lineId: string, kind: 'tp' | 'sl', index: number, price: number) => void;
+    isTouchRef?: React.MutableRefObject<boolean>;
 }
 
 interface UseTradeLinesReturn {
@@ -91,6 +92,7 @@ interface UseTradeLinesReturn {
      * always up-to-date without needing React state.
      */
     getGhostState: () => GhostInteractionState;
+    getArmedLineId: () => string | null;
     onMouseMove: (e: React.MouseEvent<HTMLCanvasElement>) => void;
     onMouseDown: (e: React.MouseEvent<HTMLCanvasElement>) => void;
     onMouseUp: (e: React.MouseEvent<HTMLCanvasElement>) => void;
@@ -162,6 +164,7 @@ export function useTradeLines({
     resolveLine,
     draggingLineIdRef,
     transformer,
+    isTouchRef,
 }: UseTradeLines): UseTradeLinesReturn {
     const [hoveredLineId, setHoveredLineId] = useState<string | null>(null);
     const [draggingLineId, setDraggingLineId] = useState<string | null>(null);
@@ -186,6 +189,9 @@ export function useTradeLines({
 
     /** Stable accessor for drawTradeLines - call this inside your render loop. */
     const getGhostState = useCallback(() => ghostStateRef.current, []);
+
+    const armedLineIdRef = useRef<string | null>(null);
+    const getArmedLineId = useCallback(() => armedLineIdRef.current, []);
 
     // Drag state
     const dragRef = useRef<{
@@ -439,6 +445,15 @@ export function useTradeLines({
             const [mx, my] = getCanvasXY(e);
             const hit = hitTestTradeLines(mx, my, hitMapRef.current);
 
+            if (isTouchRef?.current) {
+                const id = hit.ghostHit?.lineId ?? hit.lineId;
+                if (!id || id !== armedLineIdRef.current) return;
+                if (!hit.ghostHit && hit.part === 'line') return;
+            } else if (armedLineIdRef.current) {
+                armedLineIdRef.current = null;
+                redraw();
+            }
+
             if (hit.ghostHit) {
                 const { lineId, ghostId, kind, index } = hit.ghostHit;
                 e.stopPropagation();
@@ -479,7 +494,7 @@ export function useTradeLines({
                 setCursor('ns-resize');
             }
         },
-        [findLine, hitMapRef],
+        [findLine, hitMapRef, redraw],
     );
 
     // onMouseUp
@@ -601,6 +616,19 @@ export function useTradeLines({
             const [mx, my] = getCanvasXY(e);
             const hit = hitTestTradeLines(mx, my, hitMapRef.current);
 
+            if (isTouchRef?.current) {
+                const id = hit.ghostHit?.lineId ?? hit.lineId;
+                const target = id ? findLine(id) : undefined;
+                const next =
+                    target && !target.locked && hit.part !== 'close' && hit.part !== 'reverse'
+                        ? id
+                        : null;
+                if (next !== armedLineIdRef.current) {
+                    armedLineIdRef.current = next;
+                    redraw();
+                }
+            }
+
             if (hit.ghostHit) return;
 
             if (!hit.lineId) return;
@@ -622,7 +650,7 @@ export function useTradeLines({
                 return;
             }
         },
-        [findLine, hitMapRef, onLineDelete],
+        [findLine, hitMapRef, onLineDelete, redraw],
     );
 
     // onDoubleClick
@@ -647,6 +675,7 @@ export function useTradeLines({
         cursor,
         cursorRef,
         getGhostState,
+        getArmedLineId,
         onMouseMove,
         onMouseDown,
         onMouseUp,

@@ -962,6 +962,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
     const chartAreaRef = useRef<HTMLDivElement>(null);
     const menuRef = useRef<HTMLDivElement>(null);
     const touchPlusRef = useRef<HTMLButtonElement>(null);
+    const lastInputTouchRef = useRef(false);
     const viewAnimRef = useRef<number | null>(null);
     // Always-current symbol for this pane, readable from the stable closures
     // below (the drawingsRef proxy, the store subscription). The prop is the
@@ -1281,6 +1282,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         linesRef,
         draggingLineIdRef,
         transformer,
+        isTouchRef: lastInputTouchRef,
     });
 
     // Stable ref so native event listeners (which close over this ref once)
@@ -1548,6 +1550,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         hideTimeScale,
         activeTool,
         touchPlusRef,
+        lastInputTouchRef,
     });
 
     // Tell the DataEngine what this pane needs fetched. Shared state only knows
