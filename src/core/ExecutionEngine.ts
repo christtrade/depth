@@ -264,6 +264,20 @@ export class ExecutionEngine {
     }
 
     placeOrder(req: PlaceOrderRequest): string | Promise<string> | undefined {
+        if (req.side !== 'long' && req.side !== 'short') {
+            this.eventBus?.emit('trading:order-blocked', {
+                req,
+                reason: `Unknown side '${req.side}', use 'long' or 'short'`,
+            });
+            return undefined;
+        }
+        if (!['market', 'limit', 'stop', 'stop_limit'].includes(req.type)) {
+            this.eventBus?.emit('trading:order-blocked', {
+                req,
+                reason: `Unknown order type '${req.type}'`,
+            });
+            return undefined;
+        }
         const refusal = this.guard?.(req) ?? null;
         if (refusal !== null) {
             this.eventBus?.emit('trading:order-blocked', { req, reason: refusal });

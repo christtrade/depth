@@ -2374,8 +2374,8 @@ export function createL3MatchingEngine(
 
         // the forming bar. the bar containing tNs is deliberately not replayed
         // above, so its price action comes from finer sub-bars instead - only the
-        // part that has actually happened, meaning sub-bars at or before the
-        // horizon. thats what makes a level fill the second it is touched rather
+        // part that has actually happened, meaning sub-bars that start before the
+        // horizon (one starting on it hasnt happened yet, and the chart agrees). thats what makes a level fill the second it is touched rather
         // than at the containing bar's open, and what gives fills a sub-bar
         // timestamp instead of snapping to the bar boundary.
         //
@@ -2389,7 +2389,7 @@ export function createL3MatchingEngine(
 
             while (
                 _nonL3SuppCursor < data.suppBars.length &&
-                data.suppBars[_nonL3SuppCursor].tsNs <= tNs
+                data.suppBars[_nonL3SuppCursor].tsNs < tNs
             ) {
                 const supp = data.suppBars[_nonL3SuppCursor];
                 _nonL3SuppCursor++;

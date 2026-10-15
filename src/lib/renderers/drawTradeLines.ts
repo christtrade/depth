@@ -329,11 +329,7 @@ export function drawTradeLines(
         if(y >= pH){
             return;
         }
-        if(isEntry){
-            if(!line?.pnl){
-                return;
-            }
-        }
+        if (isEntry && line.pnl == null) return;
 
         // geometry
         const pillH = 18;

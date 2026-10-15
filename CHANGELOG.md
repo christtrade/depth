@@ -34,6 +34,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Remove the auto price axis fitting when dragging the time axis.
 - Dragging or double-clicking the time axis during playback fought the follow-scroll.
 - Horizontal wheel scroll during playback drifted the view and dropped the scroll easing.
+- Market entries didn't show their line or fill arrow until playback moved - a 0 pnl hid the line,
+  and the engine filled off the next candle's first sub-bar when stopped on a bar boundary.
 
 ## [0.16.2] - 2026-10-14
 
