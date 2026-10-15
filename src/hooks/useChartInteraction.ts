@@ -706,6 +706,15 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
         }
 
         let scaleXStart: { x0: number; tMin0: bigint; tMax0: bigint } | null = null;
+        let touchTapSelect: string | null = null;
+
+        const clearDrawingHover = () => {
+            if (!hoveredDrawingIdRef.current) return;
+            hoveredDrawingIdRef.current = null;
+            hotAnchorRef.current = null;
+            pushDrawParams();
+            renderEngineRef.current?.markDirty('drawings');
+        };
         // panning shouldnt drag crosshair along with it
         let hideTouchPointer = false;
         let touchCrosshairMoving = false;
@@ -980,7 +989,11 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
 
                 const d = hit ? drawingsRef.current.find((d) => d.id === hit.drawingId) : undefined;
                 const isFvpBodyHit = d?.tool === 'fvp' && hit?.anchor === 'body';
-                if (hit) {
+
+                const tapFirst =
+                    lastInputTouchRef.current && selectedDrawingIdRef.current !== hit?.drawingId;
+                if (hit && tapFirst) touchTapSelect = hit.drawingId;
+                if (hit && !tapFirst) {
                     if (d) {
                         // Selection only. The active tool stays on the cursor -
                         // arming it here would turn the next click into a second
@@ -2012,6 +2025,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             crosshairRef.current = null;
             eventBus.emit('pane:hovered', null);
             hoveredDividerIdxRef.current = -1;
+            clearDrawingHover();
             if (!isDragging.current) {
                 pushDrawParams();
                 renderEngineRef.current?.markDirty('ui');
@@ -2648,6 +2662,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                 touchStart = { x: t.clientX, y: t.clientY, t: performance.now() };
                 touchLast = { clientX: t.clientX, clientY: t.clientY };
                 touchMoved = false;
+                touchTapSelect = null;
                 clearPressTimer();
 
                 // axes keep scaling even with the crosshair up
@@ -2667,6 +2682,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                 const m = touchAsMouse(t, 1);
                 handleMouseMove(m);
                 handleMouseDown(m);
+                if (touchTapSelect) clearDrawingHover();
                 if (onAxis(t.clientX, t.clientY)) return;
                 pressTimer = setTimeout(() => {
                     pressTimer = null;
@@ -2730,6 +2746,14 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             const m = touchAsMouse(t, 0);
             handleMouseUp(m);
             hideTouchPointer = false;
+            if (touchTapSelect && !hasDragged.current) {
+                selectedDrawingIdRef.current = touchTapSelect;
+                setSelectedDrawingId(touchTapSelect);
+                updateSettingsBarPos(touchTapSelect);
+                pushDrawParams();
+                renderEngineRef.current?.markDirty('drawings');
+            }
+            touchTapSelect = null;
             const ch = touchCrosshairRef.current;
             if (ch) {
                 showTouchCrosshair(ch.x, ch.y);
