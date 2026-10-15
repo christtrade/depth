@@ -776,7 +776,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
     const viewRef = useRef<ViewBounds | null>(null);
     const isYAxisAutoRef = useRef(true);
     const isDragging = useRef(false);
-    const dragMode = useRef<'pan' | 'scaleY' | 'scaleX' | 'none'>('none');
+    const dragMode = useRef<'pan' | 'scaleY' | 'scaleX' | 'pinch' | 'none'>('none');
     const selectedDrawingIdRef = useRef<string | null>(null);
 
     // Late-bound refs - filled in after hook call to break circular deps

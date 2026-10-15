@@ -1872,6 +1872,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                     p.isDragging.current &&
                     (p.dragMode.current === 'pan' || p.dragMode.current === 'scaleX')
                 ) &&
+                p.dragMode.current !== 'pinch' &&
                 fwd &&
                 inChart
             ) {

@@ -2596,6 +2596,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                 from,
             };
             horizonScrollAnimRef.current = null;
+            dragMode.current = 'pinch';
             crosshairRef.current = null;
         };
 
@@ -2739,6 +2740,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             if (pinch) {
                 if (e.touches.length < 2) {
                     pinch = null;
+                    dragMode.current = 'none';
                     gestureDead = true;
                     autofitIndicatorPanes();
                     const ch = touchCrosshairRef.current;
@@ -2795,6 +2797,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
 
         const handleTouchCancel = () => {
             clearPressTimer();
+            if (pinch) dragMode.current = 'none';
             pinch = null;
             if (touchId !== null) endSingleTouch();
             hideTouchPointer = false;
