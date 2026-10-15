@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-15
+
 ### Changed
 - Improved touch to be more familiar. Panning has no crosshair, long press brings it up, and
   while it's up drags move it around instead of panning the chart.
@@ -449,7 +451,8 @@ Not user-visible, but this is what the split out of the monorepo turned up:
 - 30 unused UI components were removed, taking `depth.css` from 147 KB to
   124 KB.
 
-[unreleased]: https://github.com/christtrade/depth/compare/v0.16.2...HEAD
+[unreleased]: https://github.com/christtrade/depth/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/christtrade/depth/compare/v0.16.2...v0.17.0
 [0.16.2]: https://github.com/christtrade/depth/compare/v0.16.1...v0.16.2
 [0.16.1]: https://github.com/christtrade/depth/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/christtrade/depth/compare/v0.15.1...v0.16.0
