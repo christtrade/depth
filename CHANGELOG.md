@@ -19,6 +19,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Slow pans counted as clicks, selecting drawings, trade lines and trade dots on release.
 - Clicking a tp/sl ghost pill without dragging could add a tp/sl at an old price, or right
   next to the entry on the slightest finger move.
+- Taps with a little finger wobble didn't register as taps.
 
 ## [0.17.0] - 2026-10-15
 

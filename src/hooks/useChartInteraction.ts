@@ -1466,9 +1466,10 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             isHoldingCtrlRef.current = e.ctrlKey;
             isHoldingShiftRef.current = e.shiftKey;
 
+            const slop = lastInputTouchRef.current ? 8 : 3;
             if (
                 pressAt &&
-                (Math.abs(e.clientX - pressAt.x) > 3 || Math.abs(e.clientY - pressAt.y) > 3)
+                (Math.abs(e.clientX - pressAt.x) > slop || Math.abs(e.clientY - pressAt.y) > slop)
             ) {
                 hasDragged.current = true;
             }

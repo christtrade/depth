@@ -264,7 +264,8 @@ export function useTradeLines({
                 // instead of repositioning the existing one.
                 if (ghostHitPendingRef.current) {
                     const { pressX, pressY } = ghostDragRef.current;
-                    if (Math.abs(mx - pressX) <= 3 && Math.abs(my - pressY) <= 3) return;
+                    const slop = isTouchRef?.current ? 8 : 3;
+                    if (Math.abs(mx - pressX) <= slop && Math.abs(my - pressY) <= slop) return;
                     ghostHitPendingRef.current = false;
 
                     const gs = getOrCreateSlot(ghostStateRef.current, lineId);
