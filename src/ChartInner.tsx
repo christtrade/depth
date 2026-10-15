@@ -1221,6 +1221,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
             openBarRef,
             chartSettingsRef,
             horizonRef,
+            horizonScrollAnimRef,
             dataLevelRef,
             activeTimeframeRef,
             scheduleResample,

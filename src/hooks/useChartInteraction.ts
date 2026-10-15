@@ -1100,6 +1100,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                 draggingDividerRef.current = -1;
                 dragPaneIdRef.current = null;
                 dragMode.current = 'scaleX';
+                horizonScrollAnimRef.current = null;
                 const chartW = cssW - priceScaleWidthRef.current;
                 const v = viewRef.current;
                 scaleXStart = v && chartW - x > 24 ? { x0: x, tMin0: v.tMin, tMax0: v.tMax } : null;
@@ -2148,6 +2149,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
 
                 autofitPanesSilent();
                 const chartW = cssW - priceScaleWidthRef.current;
+                const prevTMin = view.tMin;
                 {
                     const timeSpan = Number(view.tMax - view.tMin);
                     const sm = transformer.getSessionMapper();
@@ -2177,16 +2179,28 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                 }
                 clampPan(view);
 
-                if (horizonScrollAnimRef.current) {
-                    const anim = horizonScrollAnimRef.current;
-                    const barShift = (anim.targetTMin - anim.startTMin) as unknown as bigint;
-                    horizonScrollAnimRef.current = {
-                        startTMin: view.tMin,
-                        startTMax: view.tMax,
-                        targetTMin: view.tMin + barShift,
-                        targetTMax: view.tMax + barShift,
-                        startTime: performance.now(),
-                    };
+                const anim = horizonScrollAnimRef.current;
+                if (anim) {
+                    if (anim.startMMin !== undefined) {
+                        const sm = sessionMapperRef.current;
+                        const dm = sm.tsToMarket(view.tMin) - sm.tsToMarket(prevTMin);
+                        horizonScrollAnimRef.current = {
+                            ...anim,
+                            startMMin: anim.startMMin + dm,
+                            startMMax: anim.startMMax + dm,
+                            targetMMin: anim.targetMMin + dm,
+                            targetMMax: anim.targetMMax + dm,
+                        };
+                    } else {
+                        const dt = view.tMin - prevTMin;
+                        horizonScrollAnimRef.current = {
+                            ...anim,
+                            startTMin: anim.startTMin + dt,
+                            startTMax: anim.startTMax + dt,
+                            targetTMin: anim.targetTMin + dt,
+                            targetTMax: anim.targetTMax + dt,
+                        };
+                    }
                 }
 
                 scheduleResample();

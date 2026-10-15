@@ -1868,7 +1868,10 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 p.viewRef.current!.tMax > newHorizonBar && p.viewRef.current!.tMin < newHorizonBar;
             if (
                 p.viewRef.current &&
-                !(p.isDragging.current && p.dragMode.current === 'pan') &&
+                !(
+                    p.isDragging.current &&
+                    (p.dragMode.current === 'pan' || p.dragMode.current === 'scaleX')
+                ) &&
                 fwd &&
                 inChart
             ) {

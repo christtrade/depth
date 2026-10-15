@@ -19,6 +19,7 @@ export interface UseChartViewParams {
     openBarRef: MutableRefObject<FootprintBar>;
     chartSettingsRef: MutableRefObject<ChartSettings>;
     horizonRef: MutableRefObject<bigint>;
+    horizonScrollAnimRef: MutableRefObject<any>;
     dataLevelRef: MutableRefObject<DataLevel | null>;
     activeTimeframeRef: MutableRefObject<{ barNs: bigint; label?: string }>;
     scheduleResample: () => void;
@@ -54,6 +55,7 @@ export function useChartView(p: UseChartViewParams): UseChartViewResult {
         openBarRef,
         chartSettingsRef,
         horizonRef,
+        horizonScrollAnimRef,
         dataLevelRef,
         activeTimeframeRef,
         scheduleResample,
@@ -132,6 +134,8 @@ export function useChartView(p: UseChartViewParams): UseChartViewResult {
     const resetXAxis = useCallback(() => {
         const view = viewRef.current;
         if (!view) return;
+        // an in-flight follow-scroll would overwrite the reset next frame
+        horizonScrollAnimRef.current = null;
         // Ordinal (column) charts: show the last ~N columns instead of a time span.
         const ord = transformer.getOrdinal();
         if (ord) {

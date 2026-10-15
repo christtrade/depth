@@ -20,7 +20,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   truncates after that (if needed).
 - Double-clicking the time axis threw on ohlcv data. Now it does the same reset as in the
   context menu instead of the super old fixed 800s window.
-- Remove the auto price axis fitting when dragging the time axis.
 
 ### Fixed
 - Auto scale used the previous step's forming bar, so a big move could push the current price
@@ -31,6 +30,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   near it, and its invisible buttons could be hit while panning.
 - Context menu price was off with indicator panes open. Used full chart height instead of main pane
   height, and opening it on an indicator pane now drops the price and order items.
+- Remove the auto price axis fitting when dragging the time axis.
+- Dragging or double-clicking the time axis during playback fought the follow-scroll.
+- Horizontal wheel scroll during playback drifted the view and dropped the scroll easing.
 
 ## [0.16.2] - 2026-10-14
 
