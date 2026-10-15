@@ -1982,19 +1982,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                         scaleXStart =
                             chartW - x > 24 ? { x0: x, tMin0: view.tMin, tMax0: view.tMax } : null;
                     }
-                    autoFitPriceAxis(
-                        view,
-                        priceHistoryRef.current,
-                        tradesRef.current,
-                        dataLevelRef.current === 'ohlcv'
-                            ? ohlcvBarsRef.current.display
-                            : previewBarsRef.current,
-                        openBarRef.current,
-                        chartSettingsRef.current,
-                        horizonRef.current,
-                        dataLevelRef.current,
-                    );
-                    autofitPanesSilent();
+
                     scheduleResample();
                     renderEngineRef.current?.markDirty('base');
                     renderEngineRef.current?.markDirty('drawings');

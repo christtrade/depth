@@ -20,6 +20,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   truncates after that (if needed).
 - Double-clicking the time axis threw on ohlcv data. Now it does the same reset as in the
   context menu instead of the super old fixed 800s window.
+- Remove the auto price axis fitting when dragging the time axis.
 
 ### Fixed
 - Auto scale used the previous step's forming bar, so a big move could push the current price
