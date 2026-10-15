@@ -270,6 +270,7 @@ export interface UseChartInteractionParams {
     handleDeleteDrawing: (id: string) => void;
     autofitPanesSilent: () => void;
     autofitIndicatorPanes: () => void;
+    resetXAxis: () => void;
     getPanel: () => DomPanelHandle | null;
     getLayouts: () => Record<string, Rect>;
     recomputeLayouts: () => void;
@@ -371,6 +372,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
         handleDeleteDrawing,
         autofitPanesSilent,
         autofitIndicatorPanes,
+        resetXAxis,
         getPanel,
         getLayouts,
         recomputeLayouts,
@@ -1394,25 +1396,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                 pushDrawParams();
                 renderEngineRef.current?.markAllDirty();
             } else if (y > cssH - (p.hideTimeScale ? 0 : X_AXIS_HEIGHT)) {
-                const view = viewRef.current;
-                const ord = transformer.getOrdinal();
-                if (ord) {
-                    const n = ord.length;
-                    const N = Math.min(n, 200);
-                    view.tMin = transformer.indexToTs(n - N);
-                    view.tMax = transformer.indexToTs(n - 1 + Math.min(N * 0.1, 10));
-                } else {
-                    const timeSpan = 800_000_000_000n;
-                    const offset = 100_000_000_000n;
-                    const last =
-                        allPriceHistoryRef.current[allPriceHistoryRef.current.length - 1].ts;
-                    view.tMin = last - timeSpan + offset;
-                    view.tMax = last + offset;
-                }
-                scheduleResample();
-                pushDrawParams();
-                updateSettingsBarPos(selectedDrawingIdRef.current);
-                renderEngineRef.current?.markAllDirty();
+                resetXAxis();
             }
         };
 

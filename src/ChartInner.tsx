@@ -1537,6 +1537,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         handleDeleteDrawing,
         autofitPanesSilent,
         autofitIndicatorPanes,
+        resetXAxis,
         getPanel,
         getLayouts,
         recomputeLayouts,

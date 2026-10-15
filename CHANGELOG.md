@@ -18,6 +18,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the width is too narrow and a plugin has registered items on it, so those items get some room.
 - Legend hides the timeframe and exchange when narrow instead of truncating them. The symbol
   truncates after that (if needed).
+- Double-clicking the time axis threw on ohlcv data. Now it does the same reset as in the
+  context menu instead of the super old fixed 800s window.
 
 ### Fixed
 - Auto scale used the previous step's forming bar, so a big move could push the current price
