@@ -206,6 +206,8 @@ export function useTradeLines({
         ghostId: string;
         kind: 'tp' | 'sl';
         index: number;
+        pressX: number;
+        pressY: number;
     } | null>(null);
 
     // Set to true when a ghost pill is clicked but the mouse hasn't moved yet.
@@ -261,6 +263,8 @@ export function useTradeLines({
                 // First movement after clicking a ghost -> spawn a NEW slot
                 // instead of repositioning the existing one.
                 if (ghostHitPendingRef.current) {
+                    const { pressX, pressY } = ghostDragRef.current;
+                    if (Math.abs(mx - pressX) <= 3 && Math.abs(my - pressY) <= 3) return;
                     ghostHitPendingRef.current = false;
 
                     const gs = getOrCreateSlot(ghostStateRef.current, lineId);
@@ -269,7 +273,11 @@ export function useTradeLines({
                     const newGhostId = `${lineId}-${kind}-${newIndex}`;
 
                     // Point the drag ref at the brand-new slot
-                    ghostDragRef.current = { lineId, ghostId: newGhostId, kind, index: newIndex };
+                    ghostDragRef.current = {
+                        ...ghostDragRef.current,
+                        ghostId: newGhostId,
+                        index: newIndex,
+                    };
                 }
 
                 const { index, ghostId } = ghostDragRef.current;
@@ -458,7 +466,7 @@ export function useTradeLines({
                 const { lineId, ghostId, kind, index } = hit.ghostHit;
                 e.stopPropagation();
                 e.preventDefault();
-                ghostDragRef.current = { lineId, ghostId, kind, index };
+                ghostDragRef.current = { lineId, ghostId, kind, index, pressX: mx, pressY: my };
                 ghostHitPendingRef.current = true;
 
                 const gs = getOrCreateSlot(ghostStateRef.current, lineId);
@@ -503,6 +511,7 @@ export function useTradeLines({
             // Ghost drag end
             if (ghostDragRef.current) {
                 const { lineId, kind, index } = ghostDragRef.current;
+                const pending = ghostHitPendingRef.current;
                 ghostDragRef.current = null;
                 ghostHitPendingRef.current = false;
 
@@ -510,8 +519,9 @@ export function useTradeLines({
                 if (gs) {
                     const price = kind === 'tp' ? gs.tpPrices?.[index] : gs.slPrices?.[index];
 
-                    // Commit: notify consumer (this triggers the real TradeLine to be created)
-                    if (price != null) {
+                    // notify consumer on commit, still pending = it never moved and `price` is left
+                    // over from an older drag
+                    if (price != null && !pending) {
                         onGhostMoveRef.current?.(lineId, kind, index, price);
                     }
 
