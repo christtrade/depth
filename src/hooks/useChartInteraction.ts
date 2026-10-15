@@ -708,6 +708,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
 
         let scaleXStart: { x0: number; tMin0: bigint; tMax0: bigint } | null = null;
         let touchTapSelect: string | null = null;
+        let pressAt: { x: number; y: number } | null = null;
 
         const clearDrawingHover = () => {
             if (!hoveredDrawingIdRef.current) return;
@@ -721,6 +722,10 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
         let touchCrosshairMoving = false;
 
         const handleMouseDown = (e: MouseEvent) => {
+            if (e.button === 0) {
+                pressAt = { x: e.clientX, y: e.clientY };
+                hasDragged.current = false;
+            }
             // Trade line interaction
             {
                 const tl = tradeLineInteractionRef.current;
@@ -1133,6 +1138,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
         };
 
         const handleMouseUp = (e: MouseEvent) => {
+            pressAt = null;
             // Trade line drag end
             {
                 const tl = tradeLineInteractionRef.current;
@@ -1457,6 +1463,13 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             isHoldingCtrlRef.current = e.ctrlKey;
             isHoldingShiftRef.current = e.shiftKey;
 
+            if (
+                pressAt &&
+                (Math.abs(e.clientX - pressAt.x) > 3 || Math.abs(e.clientY - pressAt.y) > 3)
+            ) {
+                hasDragged.current = true;
+            }
+
             const dpr = getEffectiveDpr();
             const cssW = canvas.width / dpr;
             const cssH = canvas.height / dpr;
@@ -1721,9 +1734,6 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                     : hoverPane;
 
             if (isDragging.current) {
-                const dx = Math.abs(e.clientX - lastMouse.current.x);
-                const dy = Math.abs(e.clientY - lastMouse.current.y);
-                if (dx > 3 || dy > 3) hasDragged.current = true;
                 if (longPressTimer.current) {
                     clearTimeout(longPressTimer.current);
                     longPressTimer.current = null;

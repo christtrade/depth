@@ -13,6 +13,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - On touch, trade lines need a tap to arm first, in order to move or drag, so pans that start
   on an order no longer move it.
 
+### Fixed
+- Slow pans counted as clicks, selecting drawings, trade lines and trade dots on release.
+
 ## [0.17.0] - 2026-10-15
 
 ### Changed
