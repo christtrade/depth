@@ -14,6 +14,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   on an order no longer move it.
 - Touch: panning keeps the selected drawing selected, tap elsewhere to deselect it
 - `TradeLine.afterMove` isn't called when a drag ends at the price it started from.
+- Bigger tap targets on touch in the drawing settings bar and color picker.
 
 ### Fixed
 - Slow pans counted as clicks, selecting drawings, trade lines and trade dots on release.

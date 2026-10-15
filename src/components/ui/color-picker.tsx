@@ -169,7 +169,7 @@ const ColorPicker = forwardRef<
                     <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-widest">
                         {label}
                     </span>
-                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    <div className="flex flex-wrap gap-1.5 [@media(pointer:coarse)]:gap-2.5 mt-1.5">
                         {colors.map((c) => {
                             const css = hex8ToCssRgba(toHex8(c));
                             return (
@@ -180,7 +180,7 @@ const ColorPicker = forwardRef<
                                                 onMouseDown={() => {
                                                     onChange(toHex8(c));
                                                 }}
-                                                className="w-6 h-6 px-1 rounded border border-white/10 transition-all cursor-pointer"
+                                                className="w-6 h-6 [@media(pointer:coarse)]:w-8 [@media(pointer:coarse)]:h-8 px-1 rounded border border-white/10 transition-all cursor-pointer"
                                                 style={{
                                                     backgroundImage: `
                                                     linear-gradient(${css}, ${css}),
@@ -201,7 +201,7 @@ const ColorPicker = forwardRef<
                                                 e.stopPropagation();
                                                 removeSaved(c);
                                             }}
-                                            className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-background border border-white/20 text-muted-foreground hover:text-foreground items-center justify-center hidden group-hover:flex"
+                                            className="absolute -top-1 -right-1 w-3.5 h-3.5 [@media(pointer:coarse)]:w-5 [@media(pointer:coarse)]:h-5 [@media(pointer:coarse)]:-top-2 [@media(pointer:coarse)]:-right-2 [@media(pointer:coarse)]:flex rounded-full bg-background border border-white/20 text-muted-foreground hover:text-foreground items-center justify-center hidden group-hover:flex"
                                         >
                                             <X className="w-2 h-2" />
                                         </button>
@@ -279,7 +279,7 @@ const ColorPicker = forwardRef<
                                 step={1}
                                 value={alphaPct}
                                 onChange={handleAlphaSlider}
-                                className="relative w-full h-3 appearance-none bg-transparent cursor-pointer opacity-slider"
+                                className="relative w-full h-3 [@media(pointer:coarse)]:h-8 appearance-none bg-transparent cursor-pointer opacity-slider"
                             />
                         </div>
                     </div>

@@ -51,6 +51,10 @@ const DASH_PRESETS: { label: string; dash: number[] }[] = [
 
 const LINE_WIDTHS = [1, 2, 3, 4];
 
+const TAP =
+    'justify-center [@media(pointer:coarse)]:min-h-6 [@media(pointer:coarse)]:min-w-7';
+const TAP_ROW = '[@media(pointer:coarse)]:py-1.5';
+
 const DEFAULT_POS = { x: 16, y: 16 };
 const VIEWPORT_PADDING = 12;
 
@@ -452,7 +456,7 @@ export function DrawingSettingsBar({
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <button
-                                    className="flex items-center gap-1 px-1.5 py-1 rounded hover:bg-white/10 transition-colors"
+                                    className={cn('flex items-center gap-1 px-1.5 py-1 rounded hover:bg-white/10 transition-colors', TAP)}
                                     onClick={() => toggleField(key)}
                                 >
                                     <span className="flex flex-col items-center gap-0.5">
@@ -495,7 +499,7 @@ export function DrawingSettingsBar({
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <button
-                                    className="flex items-center gap-1 px-1.5 py-1 rounded hover:bg-white/10 transition-colors"
+                                    className={cn('flex items-center gap-1 px-1.5 py-1 rounded hover:bg-white/10 transition-colors', TAP)}
                                     onMouseDown={(e) => {
                                         e.preventDefault();
                                         toggleField(key);
@@ -541,7 +545,7 @@ export function DrawingSettingsBar({
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <button
-                                    className="flex items-center gap-1 px-1.5 py-1 rounded hover:bg-white/10 transition-colors"
+                                    className={cn('flex items-center gap-1 px-1.5 py-1 rounded hover:bg-white/10 transition-colors', TAP)}
                                     onClick={() => toggleField(key)}
                                 >
                                     <span className="flex flex-col items-center gap-0.5">
@@ -582,7 +586,7 @@ export function DrawingSettingsBar({
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <button
-                                    className="flex items-center gap-1 px-1.5 py-1 rounded hover:bg-white/10 transition-colors text-muted-foreground text-[11px] font-mono"
+                                    className={cn('flex items-center gap-1 px-1.5 py-1 rounded hover:bg-white/10 transition-colors text-muted-foreground text-[11px] font-mono', TAP)}
                                     onClick={() => toggleField(key)}
                                 >
                                     - {value}px
@@ -606,6 +610,7 @@ export function DrawingSettingsBar({
                                         key={w}
                                         className={cn(
                                             'flex items-center gap-2 px-2 py-1 rounded text-[11px] font-mono hover:bg-white/10 transition-colors',
+                                            TAP_ROW,
                                             value === w ? 'text-white' : 'text-muted-foreground',
                                         )}
                                         onClick={() => {
@@ -635,7 +640,7 @@ export function DrawingSettingsBar({
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <button
-                                    className="flex items-center gap-1 px-1.5 py-1 rounded hover:bg-white/10 transition-colors"
+                                    className={cn('flex items-center gap-1 px-1.5 py-1 rounded hover:bg-white/10 transition-colors', TAP)}
                                     onClick={() => toggleField(key)}
                                 >
                                     <DashIcon dash={value} color={colorValue} />
@@ -659,6 +664,7 @@ export function DrawingSettingsBar({
                                         key={preset.label}
                                         className={cn(
                                             'flex items-center gap-2 px-2 py-1 rounded text-[11px] font-mono hover:bg-white/10 transition-colors',
+                                            TAP_ROW,
                                             JSON.stringify(value) === JSON.stringify(preset.dash)
                                                 ? 'text-white'
                                                 : 'text-muted-foreground',
@@ -684,7 +690,7 @@ export function DrawingSettingsBar({
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <button
-                                    className="flex items-center gap-1 px-1.5 py-1 rounded hover:bg-white/10 transition-colors"
+                                    className={cn('flex items-center gap-1 px-1.5 py-1 rounded hover:bg-white/10 transition-colors', TAP)}
                                     onClick={() => {
                                         toggleField(key);
                                     }}
@@ -742,6 +748,7 @@ export function DrawingSettingsBar({
                             <button
                                 className={cn(
                                     'flex items-center gap-1 px-1.5 py-1 rounded transition-colors',
+                                    TAP,
                                     enabled
                                         ? 'text-blue-400 hover:bg-white/10'
                                         : 'text-muted-foreground/40 hover:bg-white/10 hover:text-muted-foreground',
@@ -785,7 +792,7 @@ export function DrawingSettingsBar({
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <button
-                                    className="flex items-center gap-1 px-1.5 py-1 rounded hover:bg-white/10 transition-colors"
+                                    className={cn('flex items-center gap-1 px-1.5 py-1 rounded hover:bg-white/10 transition-colors', TAP)}
                                     onClick={() => toggleField(key)}
                                 >
                                     <span className="flex flex-col items-center gap-0.5">
@@ -843,7 +850,7 @@ export function DrawingSettingsBar({
                             <button
                                 key={m.value}
                                 className={cn(
-                                    'px-2.5 h-7 rounded text-[11px] font-medium transition-colors',
+                                    'px-2.5 h-7 rounded text-[11px] font-medium transition-colors [@media(pointer:coarse)]:h-10',
                                     mode === m.value
                                         ? 'bg-blue-500/25 text-blue-300 border border-blue-500/40'
                                         : 'text-white/40 hover:text-white/70 hover:bg-white/8 border border-transparent',
@@ -866,7 +873,7 @@ export function DrawingSettingsBar({
                     <Tooltip key="button">
                         <TooltipTrigger asChild>
                             <button
-                                className="p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-white transition-colors"
+                                className={cn('inline-flex items-center p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-white transition-colors', TAP)}
                                 onClick={() =>
                                     field.onClick(drawing, {
                                         requestOrderTicket: onRequestOrderTicket,
@@ -917,7 +924,7 @@ export function DrawingSettingsBar({
 
             <div
                 ref={barRef}
-                className="dsb-enter fixed z-[150] flex items-center gap-0.5 h-9 rounded-lg border border-border bg-[#1c1e24] shadow-xl w-fit"
+                className="dsb-enter fixed z-[150] flex items-center gap-0.5 h-9 [@media(pointer:coarse)]:h-11 rounded-lg border border-border bg-[#1c1e24] shadow-xl w-fit"
                 style={{
                     left: posRef.current!.x,
                     top: posRef.current!.y,
@@ -928,7 +935,7 @@ export function DrawingSettingsBar({
                 onMouseLeave={isDragging ? undefined : onMouseLeave}
             >
                 <div
-                    className="flex items-center justify-center h-full px-1 cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground transition-colors shrink-0 rounded-l-lg touch-none"
+                    className="flex items-center justify-center h-full px-1 [@media(pointer:coarse)]:px-2.5 cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground transition-colors shrink-0 rounded-l-lg touch-none"
                     onPointerDown={onGrabPointerDown}
                     title="Drag to move"
                 >
@@ -939,7 +946,7 @@ export function DrawingSettingsBar({
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <DropdownMenuTrigger asChild>
-                                <button className="flex items-center rounded-sm p-1 text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground">
+                                <button className={cn('flex items-center rounded-sm p-1 text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground', TAP)}>
                                     <Grid2x2Plus size={18} />
                                 </button>
                             </DropdownMenuTrigger>
@@ -961,9 +968,11 @@ export function DrawingSettingsBar({
                                         !isApplied(template) && 'invisible',
                                     )}
                                 />
-                                <div className="py-1 min-w-0 flex-1 truncate">{template.name}</div>
+                                <div className={cn('py-1 min-w-0 flex-1 truncate', TAP_ROW)}>
+                                    {template.name}
+                                </div>
                                 <button
-                                    className="p-1 rounded-sm text-transparent group-hover:text-muted-foreground group-focus:text-muted-foreground hover:!text-red-500 hover:bg-red-500/20 transition-colors"
+                                    className="p-1 [@media(pointer:coarse)]:p-2 [@media(pointer:coarse)]:text-muted-foreground rounded-sm text-transparent group-hover:text-muted-foreground group-focus:text-muted-foreground hover:!text-red-500 hover:bg-red-500/20 transition-colors"
                                     title="Delete template"
                                     onClick={(e) => {
                                         e.stopPropagation();
@@ -982,7 +991,7 @@ export function DrawingSettingsBar({
                             <div className="flex gap-1 p-0.5">
                                 <Input
                                     autoFocus
-                                    className="w-full h-8"
+                                    className="w-full h-8 [@media(pointer:coarse)]:h-10"
                                     placeholder="Template name"
                                     value={newTplName}
                                     onChange={(e) => setNewTplName(e.target.value)}
@@ -997,7 +1006,7 @@ export function DrawingSettingsBar({
                                 />
                                 <Button
                                     variant="outline"
-                                    className="w-8 h-8 shrink-0"
+                                    className="w-8 h-8 shrink-0 [@media(pointer:coarse)]:w-10 [@media(pointer:coarse)]:h-10"
                                     disabled={!newTplName.trim()}
                                     title={
                                         templates.some((t) => t.name === newTplName.trim())
@@ -1010,7 +1019,7 @@ export function DrawingSettingsBar({
                                 </Button>
                                 <Button
                                     variant="outline"
-                                    className="w-8 h-8 shrink-0"
+                                    className="w-8 h-8 shrink-0 [@media(pointer:coarse)]:w-10 [@media(pointer:coarse)]:h-10"
                                     onClick={() => {
                                         setSavingTemplate(false);
                                         setNewTplName('');
@@ -1021,7 +1030,7 @@ export function DrawingSettingsBar({
                             </div>
                         ) : (
                             <DropdownMenuItem
-                                className="py-1 cursor-pointer"
+                                className={cn('py-1 cursor-pointer', TAP_ROW)}
                                 onSelect={(e) => {
                                     e.preventDefault();
                                     setSavingTemplate(true);
@@ -1030,7 +1039,7 @@ export function DrawingSettingsBar({
                                 Save current as…
                             </DropdownMenuItem>
                         )}
-                        <DropdownMenuItem className="py-1 cursor-pointer" onClick={handleResetStyle}>
+                        <DropdownMenuItem className={cn('py-1 cursor-pointer', TAP_ROW)} onClick={handleResetStyle}>
                             Reset to default
                         </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -1038,12 +1047,12 @@ export function DrawingSettingsBar({
 
                 {fields.map((field, idx) => renderField(field, idx))}
 
-                <div className="flex-1 w-4" />
+                <div className="flex-1 w-4 [@media(pointer:coarse)]:w-0" />
 
                 <Tooltip>
                     <TooltipTrigger asChild>
                         <button
-                            className="p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
+                            className={cn('inline-flex items-center p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors', TAP)}
                             onClick={() => setShowDialog(true)}
                         >
                             <Settings size={13} />
@@ -1058,7 +1067,8 @@ export function DrawingSettingsBar({
                     <TooltipTrigger asChild>
                         <button
                             className={cn(
-                                'p-1 rounded hover:bg-white/10 transition-colors',
+                                'inline-flex items-center p-1 rounded hover:bg-white/10 transition-colors',
+                                TAP,
                                 locked ? 'text-yellow-400' : 'text-muted-foreground',
                             )}
                             onClick={() => handleUpdate({ locked: !locked } as any)}
@@ -1074,7 +1084,7 @@ export function DrawingSettingsBar({
                 <Tooltip>
                     <TooltipTrigger asChild>
                         <button
-                            className="p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-red-400 transition-colors"
+                            className={cn('inline-flex items-center p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-red-400 transition-colors', TAP)}
                             onClick={onDelete}
                         >
                             <Trash2 size={13} />
@@ -1089,7 +1099,7 @@ export function DrawingSettingsBar({
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <DropdownMenuTrigger asChild>
-                                <button className="p-1 mr-1 rounded hover:bg-white/10 text-muted-foreground transition-colors">
+                                <button className={cn('inline-flex items-center p-1 mr-1 rounded hover:bg-white/10 text-muted-foreground transition-colors', TAP)}>
                                     <MoreHorizontal size={13} />
                                 </button>
                             </DropdownMenuTrigger>
@@ -1104,13 +1114,13 @@ export function DrawingSettingsBar({
                     <DropdownMenuContent align="end" className="bg-[#1c1e24] border-border">
                         <DropdownMenuItem
                             onClick={onDuplicate}
-                            className="gap-2 cursor-pointer text-xs"
+                            className={cn('gap-2 cursor-pointer text-xs', TAP_ROW)}
                         >
                             <Copy size={12} /> Duplicate
                         </DropdownMenuItem>
                         <DropdownMenuItem
                             onClick={onDelete}
-                            className="gap-2 cursor-pointer text-red-400 focus:text-red-400 text-xs"
+                            className={cn('gap-2 cursor-pointer text-red-400 focus:text-red-400 text-xs', TAP_ROW)}
                         >
                             <Trash2 size={12} /> Delete
                         </DropdownMenuItem>
