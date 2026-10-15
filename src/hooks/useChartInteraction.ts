@@ -708,6 +708,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
 
         let scaleXStart: { x0: number; tMin0: bigint; tMax0: bigint } | null = null;
         let touchTapSelect: string | null = null;
+        let touchTapDeselect = false;
         let pressAt: { x: number; y: number } | null = null;
 
         const clearDrawingHover = () => {
@@ -1034,7 +1035,9 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                     }
                 }
 
-                if (!isFvpBodyHit && selectedDrawingIdRef.current) {
+                if (!isFvpBodyHit && selectedDrawingIdRef.current && lastInputTouchRef.current) {
+                    touchTapDeselect = true;
+                } else if (!isFvpBodyHit && selectedDrawingIdRef.current) {
                     selectedDrawingIdRef.current = null;
                     setSelectedDrawingId(null);
                     setSettingsBarPos(null);
@@ -2674,6 +2677,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                 touchLast = { clientX: t.clientX, clientY: t.clientY };
                 touchMoved = false;
                 touchTapSelect = null;
+                touchTapDeselect = false;
                 clearPressTimer();
 
                 // axes keep scaling even with the crosshair up
@@ -2757,14 +2761,16 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             const m = touchAsMouse(t, 0);
             handleMouseUp(m);
             hideTouchPointer = false;
-            if (touchTapSelect && !hasDragged.current) {
+            if ((touchTapSelect || touchTapDeselect) && !hasDragged.current) {
                 selectedDrawingIdRef.current = touchTapSelect;
                 setSelectedDrawingId(touchTapSelect);
-                updateSettingsBarPos(touchTapSelect);
+                if (touchTapSelect) updateSettingsBarPos(touchTapSelect);
+                else setSettingsBarPos(null);
                 pushDrawParams();
                 renderEngineRef.current?.markDirty('drawings');
             }
             touchTapSelect = null;
+            touchTapDeselect = false;
             const ch = touchCrosshairRef.current;
             if (ch) {
                 showTouchCrosshair(ch.x, ch.y);
