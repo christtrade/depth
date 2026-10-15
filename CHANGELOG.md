@@ -13,6 +13,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Touch: trade lines need a tap to arm first, in order to move or drag, so pans that start
   on an order no longer move it.
 - Touch: panning keeps the selected drawing selected, tap elsewhere to deselect it
+- `TradeLine.afterMove` isn't called when a drag ends at the price it started from.
 
 ### Fixed
 - Slow pans counted as clicks, selecting drawings, trade lines and trade dots on release.

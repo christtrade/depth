@@ -156,8 +156,9 @@ export type TradeLine = {
     // Interactions
     movable?: boolean; // can be dragged vertically
     locked?: boolean; // overrides movable - prevents all interaction
-    /** Called when user finishes dragging (mouseup). New price passed in. */
+    /** Called on every move while dragging, with the price under the pointer. */
     onMove?: (newPrice: number) => void;
+    /** Called when the drag ends, with the final price. Skipped if it ended where it started. */
     afterMove?: (newPrice: number) => void;
     /** Called when user clicks the x button */
     onClose?: () => void;

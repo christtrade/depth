@@ -535,7 +535,7 @@ export function useTradeLines({
 
             // Regular line drag end
             if (!dragRef.current) return;
-            const { lineId } = dragRef.current;
+            const { lineId, originalPrice } = dragRef.current;
             // Unpin before committing so the rebuild triggered by afterMove uses
             // the engine's canonical (amended) price.
             if (draggingLineIdRef) draggingLineIdRef.current = null;
@@ -549,7 +549,7 @@ export function useTradeLines({
                 // fall back to the stale React snapshot value.
                 const canonical = linesRef?.current?.get(lineId);
                 const finalPrice = canonical?.price ?? line.price;
-                if (line?.afterMove) {
+                if (line.afterMove && finalPrice !== originalPrice) {
                     line.afterMove(finalPrice);
                 }
                 // Sync React state with the final position
