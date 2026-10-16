@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-10-16
+
 ### Added
 - Momentum panning on touch. Flinging the chart during a pan keeps it gliding on release.
   With a toggle in settings.
