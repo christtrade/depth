@@ -94,6 +94,8 @@ export type ChartSettings = {
     // Horizon scroll animation
     horizonScrollEasing: 'none' | 'linear' | 'easeOut' | 'easeInOut';
     horizonScrollDuration: number; // ms
+    // Touch
+    touchMomentum: boolean;
     // Timezone
     timezone: string;
     use24HourClock: boolean;
@@ -178,6 +180,7 @@ export const DEFAULT_CHART_SETTINGS: ChartSettings = {
     sessionHighlightColor: '#ffffff08',
     horizonScrollEasing: 'easeOut',
     horizonScrollDuration: 80,
+    touchMomentum: true,
     timezone: 'America/New_York',
     use24HourClock: true,
     showTimezoneLabel: true,

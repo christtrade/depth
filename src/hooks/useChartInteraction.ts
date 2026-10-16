@@ -718,11 +718,167 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             pushDrawParams();
             renderEngineRef.current?.markDirty('drawings');
         };
+        const panBy = (
+            view: ViewBounds,
+            dx: number,
+            dy: number,
+            chartW: number,
+            cssH: number,
+            activePane: { id: string; isMain?: boolean } | null | undefined,
+        ) => {
+            const sm = transformer.getSessionMapper();
+            const ord = transformer.getOrdinal();
+            if (ord) {
+                const colW = transformer.getBarPx(chartW);
+                if (colW > 0) {
+                    const dIdx = dx / colW;
+                    const idxMin = transformer.tsToFracIndex(view.tMin);
+                    const idxMax = transformer.tsToFracIndex(view.tMax);
+                    view.tMin = transformer.indexToTs(idxMin - dIdx);
+                    view.tMax = transformer.indexToTs(idxMax - dIdx);
+                }
+            } else if (sm && sm.hasSession) {
+                const mMin = sm.tsToMarket(view.tMin);
+                const mMax = sm.tsToMarket(view.tMax);
+                const mSpan = Number(mMax - mMin);
+                if (mSpan > 0) {
+                    const dm = BigInt(Math.round(dx * (mSpan / chartW)));
+                    view.tMin = sm.marketToTs(mMin - dm);
+                    view.tMax = sm.marketToTs(mMax - dm);
+                }
+            } else {
+                const timeSpan = Number(view.tMax - view.tMin);
+                view.tMin -= BigInt(Math.round(dx * (timeSpan / chartW)));
+                view.tMax -= BigInt(Math.round(dx * (timeSpan / chartW)));
+            }
+            clampPan(view);
+
+            const layouts = getLayouts();
+
+            if (activePane && !activePane.isMain) {
+                const paneRect = layouts[activePane.id];
+                if (paneRect) {
+                    const updated = panesRef.current.map((p) => {
+                        if (p.id !== activePane.id) return p;
+                        if (!p.yAxisAuto) {
+                            const span = p.yMax - p.yMin;
+                            const shift = dy * (span / paneRect.h);
+                            return {
+                                ...p,
+                                yMin: p.yMin + shift,
+                                yMax: p.yMax + shift,
+                            };
+                        } else {
+                            const ind = indicatorsRef.current.find((i) => i.paneId === p.id);
+                            if (!ind?.getAutoYBounds) return p;
+                            const b = ind.getAutoYBounds(
+                                viewRef.current.tMin,
+                                viewRef.current.tMax,
+                                horizonRef.current,
+                            );
+                            if (!b) return p;
+                            return { ...p, yMin: b.min, yMax: b.max };
+                        }
+                    });
+                    panesRef.current = updated;
+                    setPanes(updated);
+                }
+            } else {
+                if (!isYAxisAutoRef.current) {
+                    const mainH =
+                        layouts['main']?.h ?? cssH - (p.hideTimeScale ? 0 : X_AXIS_HEIGHT);
+                    shiftPriceBounds(view, dy, mainH, transformer.getScaleMode() === 'log');
+                } else {
+                    autoFitPriceAxis(
+                        view,
+                        priceHistoryRef.current,
+                        tradesRef.current,
+                        dataLevelRef.current === 'ohlcv'
+                            ? ohlcvBarsRef.current.display
+                            : previewBarsRef.current,
+                        openBarRef.current,
+                        chartSettingsRef.current,
+                        horizonRef.current,
+                        dataLevelRef.current,
+                    );
+                }
+                autofitPanesSilent();
+            }
+            transformer.update(view);
+            transformer.setSessionMapper(sessionMapperRef.current);
+            transformer.setSession(resolvedSessionRef.current);
+            scheduleResample();
+            renderEngineRef.current?.markDirty('base');
+            renderEngineRef.current?.markDirty('drawings');
+            updateSettingsBarPos(selectedDrawingIdRef.current);
+        };
+
+        // touch pan velocity, px/ms, from the last ~100ms of moves
+        let panSamples: { t: number; x: number; y: number }[] = [];
+        let glideRaf: number | null = null;
+        let touchStoppedGlide = false;
+
+        const stopGlide = () => {
+            if (glideRaf === null) return;
+            cancelAnimationFrame(glideRaf);
+            glideRaf = null;
+            if (dragMode.current === 'glide') dragMode.current = 'none';
+        };
+
+        const startGlide = (paneId: string | null) => {
+            const now = performance.now();
+            const recent = panSamples.filter((s) => now - s.t < 100);
+            panSamples = [];
+            if (recent.length < 2) return;
+            const first = recent[0];
+            const last = recent[recent.length - 1];
+            const dt = last.t - first.t;
+
+            if (dt <= 0 || now - last.t > 40) return;
+            let vx = (last.x - first.x) / dt;
+            let vy = isYAxisAutoRef.current ? 0 : (last.y - first.y) / dt;
+            if (Math.hypot(vx, vy) < 0.3) return;
+
+            // stop playback follow scroll while gliding
+            dragMode.current = 'glide';
+            horizonScrollAnimRef.current = null;
+            let prev = now;
+            const step = (t: number) => {
+                const view = viewRef.current;
+                if (!view) return stopGlide();
+                const elapsed = Math.min(t - prev, 50);
+                prev = t;
+                // ios scroll views use ca 325ms time constant
+                const decay = Math.exp(-elapsed / 325);
+                vx *= decay;
+                vy *= decay;
+                if (Math.hypot(vx, vy) < 0.02) return stopGlide();
+
+                const dpr = getEffectiveDpr();
+                const cssW = canvas.width / dpr;
+                const cssH = canvas.height / dpr;
+                const pane = paneId ? panesRef.current.find((p) => p.id === paneId) : null;
+                panBy(view, vx * elapsed, vy * elapsed, cssW - priceScaleWidthRef.current, cssH, pane);
+                pushDrawParams();
+                publishTimeRangeSync();
+                renderEngineRef.current?.markDirty('ui');
+                if (view.tMin < datasetStartRef.current) {
+                    eventBus.emit('data:request-backward', {
+                        viewMin: view.tMin,
+                        symbol: symbolInfoRef.current?.symbol,
+                    });
+                }
+                glideRaf = requestAnimationFrame(step);
+            };
+            glideRaf = requestAnimationFrame(step);
+        };
+
         // panning shouldnt drag crosshair along with it
         let hideTouchPointer = false;
         let touchCrosshairMoving = false;
 
         const handleMouseDown = (e: MouseEvent) => {
+            stopGlide();
             if (e.button === 0) {
                 pressAt = { x: e.clientX, y: e.clientY };
                 hasDragged.current = false;
@@ -1818,93 +1974,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                     updateSettingsBarPos(selectedDrawingIdRef.current);
                     renderEngineRef.current?.markDirty('ui');
                 } else if (dragMode.current === 'pan') {
-                    const sm = transformer.getSessionMapper();
-                    const ord = transformer.getOrdinal();
-                    if (ord) {
-                        const colW = transformer.getBarPx(chartW);
-                        if (colW > 0) {
-                            const dIdx = dx / colW;
-                            const idxMin = transformer.tsToFracIndex(view.tMin);
-                            const idxMax = transformer.tsToFracIndex(view.tMax);
-                            view.tMin = transformer.indexToTs(idxMin - dIdx);
-                            view.tMax = transformer.indexToTs(idxMax - dIdx);
-                        }
-                    } else if (sm && sm.hasSession) {
-                        const mMin = sm.tsToMarket(view.tMin);
-                        const mMax = sm.tsToMarket(view.tMax);
-                        const mSpan = Number(mMax - mMin);
-                        if (mSpan > 0) {
-                            const dm = BigInt(Math.round(dx * (mSpan / chartW)));
-                            view.tMin = sm.marketToTs(mMin - dm);
-                            view.tMax = sm.marketToTs(mMax - dm);
-                        }
-                    } else {
-                        const timeSpan = Number(view.tMax - view.tMin);
-                        view.tMin -= BigInt(Math.round(dx * (timeSpan / chartW)));
-                        view.tMax -= BigInt(Math.round(dx * (timeSpan / chartW)));
-                    }
-                    clampPan(view);
-
-                    const layouts = getLayouts();
-
-                    if (activePane && !activePane.isMain) {
-                        const paneRect = layouts[activePane.id];
-                        if (paneRect) {
-                            const updated = panesRef.current.map((p) => {
-                                if (p.id !== activePane.id) return p;
-                                if (!p.yAxisAuto) {
-                                    const span = p.yMax - p.yMin;
-                                    const shift = dy * (span / paneRect.h);
-                                    return {
-                                        ...p,
-                                        yMin: p.yMin + shift,
-                                        yMax: p.yMax + shift,
-                                    };
-                                } else {
-                                    const ind = indicatorsRef.current.find(
-                                        (i) => i.paneId === p.id,
-                                    );
-                                    if (!ind?.getAutoYBounds) return p;
-                                    const b = ind.getAutoYBounds(
-                                        viewRef.current.tMin,
-                                        viewRef.current.tMax,
-                                        horizonRef.current,
-                                    );
-                                    if (!b) return p;
-                                    return { ...p, yMin: b.min, yMax: b.max };
-                                }
-                            });
-                            panesRef.current = updated;
-                            setPanes(updated);
-                        }
-                    } else {
-                        if (!isYAxisAutoRef.current) {
-                            const mainH =
-                                layouts['main']?.h ?? cssH - (p.hideTimeScale ? 0 : X_AXIS_HEIGHT);
-                            shiftPriceBounds(view, dy, mainH, transformer.getScaleMode() === 'log');
-                        } else {
-                            autoFitPriceAxis(
-                                view,
-                                priceHistoryRef.current,
-                                tradesRef.current,
-                                dataLevelRef.current === 'ohlcv'
-                                    ? ohlcvBarsRef.current.display
-                                    : previewBarsRef.current,
-                                openBarRef.current,
-                                chartSettingsRef.current,
-                                horizonRef.current,
-                                dataLevelRef.current,
-                            );
-                        }
-                        autofitPanesSilent();
-                    }
-                    transformer.update(view);
-                    transformer.setSessionMapper(sessionMapperRef.current);
-                    transformer.setSession(resolvedSessionRef.current);
-                    scheduleResample();
-                    renderEngineRef.current?.markDirty('base');
-                    renderEngineRef.current?.markDirty('drawings');
-                    updateSettingsBarPos(selectedDrawingIdRef.current);
+                    panBy(view, dx, dy, chartW, cssH, activePane);
                 } else if (dragMode.current === 'scaleY') {
                     if (activePane && !activePane.isMain) {
                         const updated = panesRef.current.map((p) => {
@@ -2049,6 +2119,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
 
         const handleWheel = (e: WheelEvent) => {
             e.preventDefault();
+            stopGlide();
             if (!viewRef.current) return;
             const view = viewRef.current;
             const rect = canvas.getBoundingClientRect();
@@ -2667,6 +2738,8 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
         const handleTouchStart = (e: TouchEvent) => {
             // also stops the browsers emulated mouse events which would double every tap
             e.preventDefault();
+            if (e.touches.length === 1) touchStoppedGlide = glideRaf !== null;
+            stopGlide();
             lastInputTouchRef.current = true;
             setContextMenu(null);
             if (e.touches.length === e.changedTouches.length) gestureDead = false;
@@ -2696,6 +2769,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                 touchMode = 'direct';
                 hideTouchPointer = true;
                 placePlus();
+                panSamples = [{ t: performance.now(), x: t.clientX, y: t.clientY }];
                 const m = touchAsMouse(t, 1);
                 handleMouseMove(m);
                 handleMouseDown(m);
@@ -2730,8 +2804,14 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                 touchMoved = true;
                 clearPressTimer();
             }
-            if (touchMode === 'crosshair') showTouchCrosshair(crossStart.x + dx, crossStart.y + dy);
-            else handleMouseMove(touchAsMouse(t, 1));
+            if (touchMode === 'crosshair') {
+                showTouchCrosshair(crossStart.x + dx, crossStart.y + dy);
+                return;
+            }
+            const now = performance.now();
+            panSamples.push({ t: now, x: t.clientX, y: t.clientY });
+            while (panSamples.length > 2 && now - panSamples[0].t > 100) panSamples.shift();
+            handleMouseMove(touchAsMouse(t, 1));
         };
 
         const handleTouchEnd = (e: TouchEvent) => {
@@ -2762,7 +2842,15 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             }
 
             const m = touchAsMouse(t, 0);
+            const fling =
+                chartSettingsRef.current.touchMomentum &&
+                isDragging.current &&
+                dragMode.current === 'pan';
+            const flingPane = dragPaneIdRef.current;
+            // the tap that stops a glide isnt a tap
+            if (touchStoppedGlide) hasDragged.current = true;
             handleMouseUp(m);
+            if (fling && hasDragged.current) startGlide(flingPane);
             hideTouchPointer = false;
             if ((touchTapSelect || touchTapDeselect) && !hasDragged.current) {
                 selectedDrawingIdRef.current = touchTapSelect;
@@ -2870,6 +2958,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             window.removeEventListener('pointermove', dropTouchCrosshairFor, true);
             plusBtn?.removeEventListener('click', handlePlusClick);
             touchCrosshairApiRef.current = null;
+            stopGlide();
             canvas.removeEventListener('mousedown', handleMouseDown);
             canvas.removeEventListener('dblclick', handleDoubleClick);
             window.removeEventListener('mousemove', handleMouseMove);

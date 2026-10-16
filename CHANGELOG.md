@@ -8,6 +8,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Momentum panning on touch. Flinging the chart during a pan keeps it gliding on release.
+  With a toggle in settings.
+
 ### Changed
 - Touch now doesn't move drawings when trying to pan. Select first, then drag to move them
 - Touch: trade lines need a tap to arm first, in order to move or drag, so pans that start

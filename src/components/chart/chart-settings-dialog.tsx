@@ -1196,6 +1196,14 @@ export function ChartSettingsDialog({
                                 )}
                             </Section>
 
+                            <Section label="Touch">
+                                <InlineToggleRow
+                                    label="Momentum scrolling"
+                                    active={s.touchMomentum}
+                                    onToggle={() => onUpdate({ touchMomentum: !s.touchMomentum })}
+                                />
+                            </Section>
+
                             <TradingViewImportSection onUpdate={onUpdate} />
 
                             <SavedDataSection active={tab === 'chart'} />
@@ -1228,6 +1236,7 @@ export function ChartSettingsDialog({
                                             DEFAULT_CHART_SETTINGS.horizonScrollEasing,
                                         horizonScrollDuration:
                                             DEFAULT_CHART_SETTINGS.horizonScrollDuration,
+                                        touchMomentum: DEFAULT_CHART_SETTINGS.touchMomentum,
                                     })
                                 }
                             />
