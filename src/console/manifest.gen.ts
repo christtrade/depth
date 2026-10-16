@@ -229,7 +229,7 @@ export const CVARS: CvarSpec[] = [
     {"name":"sessionHighlightColor","type":{"kind":"color"},"group":"Session"},
     {"name":"horizonScrollEasing","type":{"kind":"enum","values":["none","linear","easeOut","easeInOut"]},"group":"Horizon scroll animation"},
     {"name":"horizonScrollDuration","type":{"kind":"number"},"group":"Horizon scroll animation","doc":"ms"},
-    {"name":"touchMomentum","type":{"kind":"boolean"},"group":"Touch","doc":"a flung pan keeps gliding after the finger lifts"},
+    {"name":"touchMomentum","type":{"kind":"boolean"},"group":"Touch"},
     {"name":"timezone","type":{"kind":"string"},"group":"Timezone"},
     {"name":"use24HourClock","type":{"kind":"boolean"},"group":"Timezone"},
     {"name":"showTimezoneLabel","type":{"kind":"boolean"},"group":"Timezone"},
