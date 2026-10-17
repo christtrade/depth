@@ -78,7 +78,6 @@ import {
 } from '../lib/storage';
 import { importTradingViewSettings } from '../lib/tradingview-import';
 import {
-    ptrace,
     readPluginStartup,
     writePluginStartup,
     type PluginCatalogEntry,
@@ -330,6 +329,7 @@ export class DepthChart {
     private registeredPlugins = new Map();
     private _pluginStateListeners = new Set<() => void>();
     private _pluginCatalog: (() => PluginCatalogEntry[]) | null = null;
+    private _panesRestored = false;
     private playbackController: PlaybackController;
     private readonly playbackStateRegistry: PlaybackStateRegistry;
     private readonly pluginSchedules = new Map<string, PluginScheduleImpl>();
@@ -731,6 +731,7 @@ export class DepthChart {
                 timeframe: this.state.get('timeframe'),
                 fpOptions: this.state.get('fpOptions'),
             });
+            model.onPluginsRemoved((ids) => this._deactivateRemoved(ids));
             this._panes.set(index, model);
         }
         return model;
@@ -963,6 +964,7 @@ export class DepthChart {
         if (s.drawings) this.drawingStore.restore(s.drawings);
 
         s.charts?.forEach((paneState, i) => this.getChart(i).restore(paneState));
+        if (s.charts?.length) this._panesRestored = true;
 
         // panes own their timeframe, but shared state is what DataEngine sizes
         // fetches with and what setTimeframe dedupes against. leaving it on the
@@ -1024,7 +1026,6 @@ export class DepthChart {
     // Plugins
 
     use(plugin: ChartPlugin): this {
-        ptrace('use', plugin.id, plugin.type, new Error().stack?.split('\n')[2]?.trim());
         this.pluginRegistry.register(plugin, this._buildPluginContext(plugin.id));
         return this;
     }
@@ -1154,6 +1155,18 @@ export class DepthChart {
         return this;
     }
 
+    // last instance gone means the user doesn't want it placed on new charts
+    // either. autostart stays - the plugin is still installed
+    private _deactivateRemoved(ids: readonly string[]): void {
+        const startup = readPluginStartup();
+        const { active } = this.getPluginState();
+        for (const id of new Set(ids)) {
+            if (startup[id]?.activate && !active.has(id)) {
+                this.setPluginStartup(id, { activate: false });
+            }
+        }
+    }
+
     /**
      * Install what this session should open with: every plugin a restored pane
      * references, plus every plugin marked autostart. Idempotent - already-loaded
@@ -1161,11 +1174,9 @@ export class DepthChart {
      */
     applyStartupPlugins(): this {
         const catalog = new Map(this.getPluginCatalog().map((e) => [e.id, e]));
-        ptrace('applyStartupPlugins: catalog', [...catalog.keys()]);
         if (catalog.size === 0) return this;
 
         const startup = this.getPluginStartup();
-        ptrace('applyStartupPlugins: record', JSON.stringify(startup));
 
         // ids the restored panes hold indicator refs for. those panes rebuild
         // their own instances once the def lands, so these must not be activated
@@ -1192,17 +1203,8 @@ export class DepthChart {
         }
         for (const [id, entry] of Object.entries(startup)) {
             if (!entry.autostart || targets.has(id)) continue;
-            targets.set(id, !!entry.activate);
+            targets.set(id, !!entry.activate && !this._panesRestored);
         }
-
-        ptrace(
-            'applyStartupPlugins: referenced',
-            [...referenced],
-            'targets',
-            [...targets.entries()],
-            'adopt',
-            adopt,
-        );
 
         for (const [id, activate] of targets) {
             if (this.pluginRegistry.has(id)) continue;

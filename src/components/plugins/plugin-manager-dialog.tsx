@@ -345,7 +345,7 @@ export function PluginManagerDialog({
                 className="z-50 flex flex-col w-[30rem] rounded-lg border border-[#1e2128] bg-[#16181d] shadow-2xl overflow-hidden"
             >
                     <div className="px-4 pt-4 pb-3 shrink-0">
-                        <div className="text-sm font-medium">Plugins</div>
+                        <div className="text-sm font-medium">Plugin Manager</div>
                         <div className="text-xs">
                             {loadedCount} of {rows.length} loaded. Anything switched on here comes
                             back the next time you open the chart.

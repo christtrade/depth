@@ -65,6 +65,7 @@ export interface UseChartSubscriptionsParams {
     autofitIndicatorPanes: () => void;
     handleAddIndicator: (id: string) => void;
     handleRemoveIndicator: (id: string) => void;
+    userRemoveIndicator: (id: string) => void;
     onSymbolChange: (symbol: string) => void;
 
     // Sync in layout
@@ -113,6 +114,7 @@ export function useChartSubscriptions(p: UseChartSubscriptionsParams): void {
         autofitIndicatorPanes,
         handleAddIndicator,
         handleRemoveIndicator,
+        userRemoveIndicator,
         onSymbolChange,
         syncInLayoutRef,
         applyCrosshairSync,
@@ -124,11 +126,11 @@ export function useChartSubscriptions(p: UseChartSubscriptionsParams): void {
         // register their indicators as `${pluginId}:${index}`, so the plugin id
         // alone never matches an instance - match the prefix too. Routed through
         // handleRemoveIndicator so the indicator's sub-pane goes with it.
-        const removePluginInstances = (pluginId: string) => {
+        const removePluginInstances = (pluginId: string, remove: (id: string) => void) => {
             const doomed = indicatorsRef.current.filter(
                 (i) => i.id === pluginId || i.id.startsWith(`${pluginId}:`),
             );
-            for (const ind of doomed) handleRemoveIndicator(ind.id);
+            for (const ind of doomed) remove(ind.id);
         };
 
         // The account snapshot the fill arrows are drawn from.
@@ -178,13 +180,15 @@ export function useChartSubscriptions(p: UseChartSubscriptionsParams): void {
                 }
             }),
             eventBus.on('chart:add-indicator', ({ id }) => handleAddIndicator(id)),
-            eventBus.on('chart:remove-indicator', ({ id }) => handleRemoveIndicator(id)),
+            eventBus.on('chart:remove-indicator', ({ id }) => userRemoveIndicator(id)),
             eventBus.on('chart:remove-plugin-indicator', ({ pluginId }) =>
-                removePluginInstances(pluginId),
+                removePluginInstances(pluginId, userRemoveIndicator),
             ),
             // An uninstalled plugin's worker is gone - its indicators would sit
             // there frozen, so they come off with it.
-            eventBus.on('plugin:uninstalled', ({ id }) => removePluginInstances(id)),
+            eventBus.on('plugin:uninstalled', ({ id }) =>
+                removePluginInstances(id, handleRemoveIndicator),
+            ),
             eventBus.on('chart:set-type', ({ old, new: _new }) => {
                 const prevChartType = old;
                 const nextChartType = _new;

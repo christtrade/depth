@@ -742,12 +742,13 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         indicatorsRef.current = indicators;
     }, [indicators]);
 
-    // Mirror this pane's active indicators into its model as plugin references -
-    // the persisted representation for serialize/restore. The plugin code lives
-    // once in the shared pool (referenced by `id`); each ref carries only the
-    // instance + its config. Both built-in and plugin indicators land in this
-    // list, so this captures everything the pane has activated.
+    // pool plugin ids the user took off since the last mirror. the chart drops
+    // indicators on its own too (data level, uninstall) and those don't count
+    const userRemovedRef = useRef(new Set<string>());
+
     useEffect(() => {
+        const removed = [...userRemovedRef.current];
+        userRemovedRef.current.clear();
         model.setPlugins(
             indicators.map((ind) => ({
                 id: ind.id.replace(/:(\d+)$/, ''),
@@ -759,8 +760,13 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
                     paneId: ind.paneId,
                 },
             })),
+            removed,
         );
     }, [indicators, model]);
+
+    const markUserRemoved = (instanceIds: string[]) => {
+        for (const id of instanceIds) userRemovedRef.current.add(id.replace(/:(\d+)$/, ''));
+    };
 
     const draggingDividerRef = useRef<number>(-1);
     const dragPaneIdRef = useRef<string | null>(null);
@@ -1394,6 +1400,16 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         priceScaleWidthRef,
     });
 
+    const userRemoveIndicator = useCallback((id: string) => {
+        markUserRemoved([id]);
+        handleRemoveIndicator(id);
+    }, []);
+
+    const userRemoveIndicators = useCallback(() => {
+        markUserRemoved(indicatorsRef.current.map((ind) => ind.id));
+        handleRemoveIndicators();
+    }, []);
+
     useChartSubscriptions({
         eventBus,
         chartId: _id,
@@ -1432,6 +1448,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         autofitIndicatorPanes,
         handleAddIndicator,
         handleRemoveIndicator,
+        userRemoveIndicator,
         onSymbolChange: (symbol) => {
             // Whatever is drawn belongs to the old symbol, so this pane has
             // nothing valid to show until the new symbol lands - let its loading
@@ -2112,7 +2129,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
                                                     pane={pane}
                                                     indicators={indicators}
                                                     onToggleIndicator={handleToggleIndicator}
-                                                    onRemoveIndicator={handleRemoveIndicator}
+                                                    onRemoveIndicator={userRemoveIndicator}
                                                     onOpenSettings={handleOpenIndicatorSettings}
                                                     onOpenTfSelect={() => {
                                                         setTimeframeWindowInput('');
@@ -2200,7 +2217,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
                             onResetView={resetView}
                             onFitYAxis={resetYAxis}
                             onResetXAxis={resetXAxis}
-                            onRemoveIndicators={handleRemoveIndicators}
+                            onRemoveIndicators={userRemoveIndicators}
                             onRemoveDrawings={handleDeleteDrawings}
                             onScreenshot={() => {
                                 const base = baseCanvasRef.current;

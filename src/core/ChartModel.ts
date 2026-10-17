@@ -80,6 +80,7 @@ export class ChartModel {
     private _restoredPlugins: ChartPluginRef[] = [];
 
     private listeners = new Set<Listener>();
+    private removedListeners = new Set<(pluginIds: readonly string[]) => void>();
 
     constructor(init: ChartModelInit) {
         this.id = init.id ?? `pane:${nanoid(6)}`;
@@ -157,10 +158,18 @@ export class ChartModel {
         this._plugins = next;
         this._notify();
     }
-    /** Replace the whole set of refs, e.g. mirrored from a pane's live list. */
-    setPlugins(refs: ChartPluginRef[]): void {
+
+    setPlugins(refs: ChartPluginRef[], removedByUser: readonly string[] = []): void {
         this._plugins = [...refs];
         this._notify();
+        if (removedByUser.length) {
+            for (const fn of this.removedListeners) fn(removedByUser);
+        }
+    }
+
+    onPluginsRemoved(fn: (pluginIds: readonly string[]) => void): () => void {
+        this.removedListeners.add(fn);
+        return () => this.removedListeners.delete(fn);
     }
 
     /** Plugin refs from a restore awaiting reconstruction into live indicators. */

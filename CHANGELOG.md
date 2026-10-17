@@ -8,6 +8,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- `ChartModel.onPluginsRemoved(fn)`, and `setPlugins` takes the ids you removed as an optional second arg.
+
+### Changed
+- "Plugins" title becomes "Plugin Manager" in the plugin manager dropdown.
+
+### Fixed
+- Indicators removed from a saved chart came back on every reload if their plugin was set
+  to active in the plugin manager. A restored chart's panes win now, and removing a plugin's
+  last instance turns `activate` off so new charts don't get it either. Autostart stays on.
+
 ## [0.18.0] - 2026-10-16
 
 ### Added

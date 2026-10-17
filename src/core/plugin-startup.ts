@@ -26,19 +26,14 @@ export interface PluginCatalogEntry {
 export interface PluginStartupEntry {
     /** Install the plugin when the chart opens. */
     autostart: boolean;
-    /** Indicators only: also put an instance on a pane. */
+    /**
+     * Indicators only: also put an instance on a pane. Ignored when the chart was
+     * restored with pane state - the save decides what's on its panes.
+     */
     activate?: boolean;
 }
 
 export type PluginStartupRecord = Record<string, PluginStartupEntry>;
-
-// TEMPORARY: tracing for the "plugins come back after a reload" hunt. enable with
-// ?plugintrace in the url. remove once that's settled
-export function ptrace(...args: unknown[]): void {
-    if (typeof window === 'undefined') return;
-    if (!window.location.search.includes('plugintrace')) return;
-    console.log('[plugins]', ...args);
-}
 
 export function readPluginStartup(): PluginStartupRecord {
     const raw = readJSON<PluginStartupRecord>(StorageKey.pluginStartup, {});
@@ -54,6 +49,5 @@ export function writePluginStartup(
     if (patch === null) delete all[id];
     else all[id] = { autostart: false, ...all[id], ...patch };
     writeJSON(StorageKey.pluginStartup, all);
-    ptrace('record write', id, patch, '->', JSON.stringify(all[id]));
     return all;
 }
