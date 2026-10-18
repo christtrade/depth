@@ -2220,27 +2220,12 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
                             onRemoveIndicators={userRemoveIndicators}
                             onRemoveDrawings={handleDeleteDrawings}
                             onScreenshot={() => {
-                                const base = baseCanvasRef.current;
-                                const ui = uiCanvasRef.current;
-                                const drawings = drawingsCanvasRef.current;
-                                if (!base || !ui || !drawings) return;
+                                const engine = renderEngineRef.current;
+                                if (!engine) return;
 
-                                // Create a temporary canvas to merge everything
-                                const tempCanvas = document.createElement('canvas');
-                                tempCanvas.width = base.width;
-                                tempCanvas.height = base.height;
-                                const ctx = tempCanvas.getContext('2d');
-                                if (!ctx) return;
-
-                                // Draw in order: base -> drawings -> ui
-                                ctx.drawImage(base, 0, 0);
-                                ctx.drawImage(drawings, 0, 0);
-                                ctx.drawImage(ui, 0, 0);
-
-                                // Save as image
                                 const a = document.createElement('a');
                                 a.download = 'chart.png';
-                                a.href = tempCanvas.toDataURL();
+                                a.href = engine.captureComposite().toDataURL();
                                 a.click();
 
                                 setContextMenu(null);

@@ -106,17 +106,25 @@ Phases:
 
 | phase | where |
 |---|---|
-| `before-base` | before the base layer paints - the background covers it, so mostly useless for drawing |
-| `after-background` | over the background, under grid and candles. ctx is in css pixels. chart backgrounds go here |
+| `before-base` | before the base layer paints - the base layer clears itself, so mostly useless for drawing |
+| `after-background` | on the background layer, over the fill. ctx is in css pixels. chart backgrounds go here |
 | `after-base` | over candles, under drawings and UI |
 | `after-ui` | on top of everything, crosshair included |
+
+Layers, bottom to top: `background`, `base` (grid, candles, indicators, axes), `drawings`, `ui`.
+`base` is transparent where nothing is drawn, so `after-base` reads candles without the background
+under them.
+
+The background layer only repaints when marked dirty, on resize, or when the background color
+changes - not on pan or zoom. Animate it with `markDirty('background')` and the candles don't
+repaint with it. A background that follows the view has to mark itself dirty on `view:change`.
 
 Adding or removing an overlay repaints the chart, and overlays still registered at hot reload or
 uninstall get removed for you - forgetting `remove()` no longer leaves the old hook painting.
 
 To repaint after a state change, call:
 ```ts
-ctx.renderEngine.markDirty('base')  // or 'ui', 'drawings'
+ctx.renderEngine.markDirty('base')  // or 'background', 'drawings', 'ui'
 ```
 
 The hook's third argument `transformer` always belongs to the chart currently being drawn -

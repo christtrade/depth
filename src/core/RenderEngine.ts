@@ -1,6 +1,6 @@
 
 import { TypedEventBus } from './TypedEventBus';
-import { drawBaseLayer, drawUILayer, X_AXIS_HEIGHT } from '../lib/renderers/renderer';
+import { drawBackground, drawBaseLayer, drawUILayer, X_AXIS_HEIGHT } from '../lib/renderers/renderer';
 import { drawDrawingsLayer } from '../lib/renderers/drawings-renderer';
 import type { ChartPane, Rect } from '../lib/types/indicator-types';
 import type { Indicator } from '../lib/types/indicator-types';
@@ -122,7 +122,9 @@ export interface DrawParams {
 }
 
 export class RenderEngine {
-    // three stacked canvases, the caller positions them
+    // three stacked canvases, the caller positions them. the background one goes
+    // under them and is made here, so the constructor stays the same
+    private readonly backgroundCanvas: HTMLCanvasElement;
     private readonly baseCanvas: HTMLCanvasElement; // grid + data
     private readonly drawingsCanvas: HTMLCanvasElement; // drawings
     private readonly uiCanvas: HTMLCanvasElement; // crosshair + interactive
@@ -156,7 +158,8 @@ export class RenderEngine {
 
     /** Frames that painted something n what they cost. Read by the consoles `top` */
     readonly paintStats = { frames: 0, totalMs: 0, lastMs: 0, maxMs: 0 };
-    private dirty = { base: true, drawings: true, ui: true };
+    private dirty = { background: true, base: true, drawings: true, ui: true };
+    private paintedBackgroundColor: string | undefined;
 
     // called inside the raf loop, around the data layer
     private beforeBaseDraw: Set<DrawHook> = new Set();
@@ -184,6 +187,11 @@ export class RenderEngine {
         this.baseCanvas = baseCanvas;
         this.drawingsCanvas = drawingsCanvas;
         this.uiCanvas = uiCanvas;
+
+        this.backgroundCanvas = document.createElement('canvas');
+        this.backgroundCanvas.className = baseCanvas.className;
+        this.backgroundCanvas.style.pointerEvents = 'none';
+        baseCanvas.before(this.backgroundCanvas);
         this.eventBus = eventBus;
         this.chartId = chartId;
 
@@ -227,7 +235,13 @@ export class RenderEngine {
         const tick = () => {
             if (this.destroyed) return;
             const started = performance.now();
-            const painting = this.dirty.base || this.dirty.drawings || this.dirty.ui;
+            const painting =
+                this.dirty.background || this.dirty.base || this.dirty.drawings || this.dirty.ui;
+
+            if (this.dirty.background) {
+                this.doBackgroundRedraw();
+                this.dirty.background = false;
+            }
 
             if (this.dirty.base) {
                 const ctx = this.baseCanvas.getContext('2d');
@@ -284,12 +298,13 @@ export class RenderEngine {
     }
 
     // the only external API for triggering a redraw
-    markDirty(layer: 'base' | 'drawings' | 'ui'): void {
+    markDirty(layer: 'background' | 'base' | 'drawings' | 'ui'): void {
         this.dirty[layer] = true;
     }
 
     // for stuff like a theme change
     markAllDirty(): void {
+        this.dirty.background = true;
         this.dirty.base = true;
         this.dirty.drawings = true;
         this.dirty.ui = true;
@@ -298,6 +313,8 @@ export class RenderEngine {
     // called before marking dirty
     setDrawParams(params: DrawParams): void {
         this.drawParams = params;
+        if (params.chartSettings.backgroundColor !== this.paintedBackgroundColor)
+            this.dirty.background = true;
     }
 
     setView(v: ViewBounds): void {
@@ -309,6 +326,27 @@ export class RenderEngine {
     }
 
     // Draw functions
+
+    private doBackgroundRedraw(): void {
+        const p = this.drawParams;
+        const ctx = this.backgroundCanvas.getContext('2d');
+        if (!p || !this.view || !ctx) return;
+
+        const dpr = getEffectiveDpr();
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        drawBackground(
+            ctx,
+            this.backgroundCanvas.width / dpr,
+            this.backgroundCanvas.height / dpr,
+            p.chartSettings,
+        );
+        for (const hook of this.afterBackgroundDraw) {
+            ctx.save();
+            hook(ctx, this.view, p.transformer);
+            ctx.restore();
+        }
+        this.paintedBackgroundColor = p.chartSettings.backgroundColor;
+    }
 
     private doBaseRedraw(): void {
         const p = this.drawParams;
@@ -365,12 +403,6 @@ export class RenderEngine {
             p.hideTimeScale,
             p.symbolInfo,
             p.priceScaleWidth,
-            this.afterBackgroundDraw.size
-                ? (ctx) => {
-                      for (const hook of this.afterBackgroundDraw)
-                          hook(ctx, view, this.drawParams.transformer);
-                  }
-                : undefined,
         );
 
         if (p.isPluginChartType && p.chartPlugin) {
@@ -581,7 +613,7 @@ export class RenderEngine {
 
         if (physW <= 0 || physH <= 0) return;
 
-        for (const c of [this.baseCanvas, this.drawingsCanvas, this.uiCanvas]) {
+        for (const c of [this.backgroundCanvas, this.baseCanvas, this.drawingsCanvas, this.uiCanvas]) {
             if (c.width !== physW || c.height !== physH) {
                 c.width = physW;
                 c.height = physH;
@@ -606,9 +638,11 @@ export class RenderEngine {
             this.markAllDirty();
             return;
         }
+        this.doBackgroundRedraw();
         this.doBaseRedraw();
         this.doDrawingsRedraw();
         this.doUIRedraw();
+        this.dirty.background = false;
         this.dirty.base = false;
         this.dirty.drawings = false;
         this.dirty.ui = false;
@@ -616,15 +650,24 @@ export class RenderEngine {
 
     // Snapshot export
     toDataURL(type = 'image/png'): string {
-        return this.baseCanvas.toDataURL(type);
+        return this.flatten([this.backgroundCanvas, this.baseCanvas]).toDataURL(type);
     }
 
     /**
-     * All three layers flattened onto a fresh canvas, in paint order. Use this
+     * Every layer flattened onto a fresh canvas, in paint order. Use this
      * rather than `toDataURL` when the snapshot should include the drawings and
      * the crosshair/UI layer.
      */
     captureComposite(): HTMLCanvasElement {
+        return this.flatten([
+            this.backgroundCanvas,
+            this.baseCanvas,
+            this.drawingsCanvas,
+            this.uiCanvas,
+        ]);
+    }
+
+    private flatten(layers: HTMLCanvasElement[]): HTMLCanvasElement {
         const out = document.createElement('canvas');
         out.width = this.baseCanvas.width;
         out.height = this.baseCanvas.height;
@@ -632,10 +675,7 @@ export class RenderEngine {
         const ctx = out.getContext('2d');
         if (!ctx) throw new Error('[RenderEngine] Could not get a 2D context for the snapshot.');
 
-        ctx.drawImage(this.baseCanvas, 0, 0);
-        ctx.drawImage(this.drawingsCanvas, 0, 0);
-        ctx.drawImage(this.uiCanvas, 0, 0);
-
+        for (const layer of layers) ctx.drawImage(layer, 0, 0);
         return out;
     }
 
@@ -645,5 +685,6 @@ export class RenderEngine {
         this.resizeObserver.disconnect();
         this.dprQuery?.removeEventListener('change', this.onDprChange);
         cancelAnimationFrame(this.rafId);
+        this.backgroundCanvas.remove();
     }
 }

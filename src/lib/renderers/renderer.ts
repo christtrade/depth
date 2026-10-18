@@ -229,7 +229,6 @@ export function drawBaseLayer(
     hideTimeScale?: boolean,
     symbolInfo?: SymbolInfo,
     rightScaleWidth?: number,
-    afterBackground?: (ctx: CanvasRenderingContext2D) => void,
 ) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -249,12 +248,8 @@ export function drawBaseLayer(
     // of the chart area out of step with everyone else's
     const xAxisHeight = hideTimeScale ? 0 : X_AXIS_HEIGHT;
 
-    drawBackground(ctx, cssW, cssH, chartSettings);
-    if (afterBackground) {
-        ctx.save();
-        afterBackground(ctx);
-        ctx.restore();
-    }
+    // the background has its own canvas underneath
+    ctx.clearRect(0, 0, cssW, cssH);
 
     const rsWidth =
         rightScaleWidth ??
@@ -363,9 +358,6 @@ export function drawBaseLayer(
                 ctx.restore();
             }
         } else {
-            // Sub-pane: dark background + time-aligned vertical grid lines
-            ctx.fillStyle = COLORS.background;
-            ctx.fillRect(0, 0, chartW, rect.h);
             drawPaneGrid(
                 ctx,
                 bounds,
@@ -2130,7 +2122,7 @@ function drawDividerHighlight(
     ctx.stroke();
 }
 
-function drawBackground(
+export function drawBackground(
     ctx: CanvasRenderingContext2D,
     cssW: number,
     cssH: number,

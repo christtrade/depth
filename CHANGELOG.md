@@ -13,15 +13,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `after-background` overlay phase: over the background, under grid and candles. `before-base` got
   painted over by the background fill, so chart backgrounds had nowhere to go
 - Top toolbar buttons active color
+- Background canvas layer under base, made by the engine so the `RenderEngine` constructor
+  doesn't change. `markDirty('background')` repaints it alone, so an animated background
+  doesn't redraw every candle with it.
 
 ### Changed
 - "Plugins" title becomes "Plugin Manager" in the plugin manager dropdown.
 - Adding or removing an overlay repaints the chart.
+- `after-background` hooks draw on the background layer, and only repaint when it's dirty, on
+  resize or on a background color change. Not on pan or zoom.
+- The base layer is transparent where nothing's drawn. An `after-base` hook reading it gets the
+  candles without the background.
+- `toDataURL` and `captureComposite` include the background layer.
 
 ### Fixed
 - Hot reloading an extension left its old overlays painting unless the teardown removed them.
   Overlays still registered at teardown get removed for you now.
 - Editor typings had overlay hooks taking a `RenderContext`. They get `(ctx, view, transformer)`.
+- Sub-panes painted the default background over a custom `backgroundColor`.
 - Indicators removed from a saved chart came back on every reload if their plugin was set
   to active in the plugin manager. A restored chart's panes win now, and removing a plugin's
   last instance turns `activate` off so new charts don't get it either. Autostart stays on.
