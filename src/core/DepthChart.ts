@@ -61,6 +61,8 @@ import { globalChartBus } from './GlobalChartBus';
 import { DataSourceRegistry, type PluginDataSource } from './DataSourceRegistry';
 import { PlaybackStateRegistry } from './PlaybackStateRegistry';
 import { PluginScheduleImpl } from './PluginSchedule';
+import { CellEngines } from './CellEngines';
+import type { StyleField } from '../components/drawings/drawing-settings-dialog';
 import { toast } from 'sonner';
 import type { NotifyOptions, PluginExecutionSurface, PluginStateSnapshot } from './PluginRegistry';
 import { PlaybackMode, type PrefetchOptions } from '../hooks/usePlaybackEngine';
@@ -312,7 +314,8 @@ export class DepthChart {
     readonly transformer: LiveTransformer;
     private features: FeaturesOptions;
     private readonly pluginRegistry: PluginRegistry;
-    private _renderEngine: RenderEngine | null = null;
+    private readonly _engines = new CellEngines();
+    private _pluginRenderEngine: RenderEngine | null = null;
     private _panelRegistry = new Map<
         string,
         { element: React.ReactNode; title: string; visible: boolean }
@@ -333,6 +336,10 @@ export class DepthChart {
     private playbackController: PlaybackController;
     private readonly playbackStateRegistry: PlaybackStateRegistry;
     private readonly pluginSchedules = new Map<string, PluginScheduleImpl>();
+    private readonly extensionParams = new Map<
+        string,
+        Map<string, { schema: StyleField[]; defaults: Record<string, unknown> }>
+    >();
 
     readonly state: ChartState;
 
@@ -418,6 +425,8 @@ export class DepthChart {
         this.eventBus.on('render-engine:ready', ({ engine }) => {
             this.attachRenderEngine(engine);
         });
+        this.eventBus.on('render-engine:destroyed', ({ engine }) => this._engines.detach(engine));
+        this.eventBus.on('chart:focused', ({ id }) => this._engines.focus(id));
 
         this.eventBus.on('data:open-bar-provider', ({ cellId, get }) => {
             if (get) this._openBarProviders.set(cellId, get);
@@ -437,6 +446,14 @@ export class DepthChart {
                 this.dataEngine.setLookback(this.getMaxLookbackBars());
             },
         );
+
+        this.eventBus.on('plugin:extension-params', ({ id, entry, schema, defaults }) => {
+            const entries = this.extensionParams.get(id) ?? new Map();
+            if (schema) entries.set(entry, { schema, defaults });
+            else entries.delete(entry);
+            if (entries.size) this.extensionParams.set(id, entries);
+            else this.extensionParams.delete(id);
+        });
 
         // a torn-down plugin's capability defs must not outlive it or the
         // indicators dropdown keeps offering one whose worker is gone
@@ -674,9 +691,9 @@ export class DepthChart {
         return this.dataEngine.getSnapshot();
     }
 
-    /** The paint loop, once a pane has mounted one. */
+    /** The focused cell's paint loop, once a cell has mounted one. Every cell's: `getRenderEngines()`. */
     get renderEngine(): RenderEngine | null {
-        return this._renderEngine;
+        return this._engines.focused;
     }
 
     getMaxLookbackBars(): number {
@@ -1266,6 +1283,36 @@ export class DepthChart {
      * set of ids actually changes - pane models notify on unrelated churn (axis
      * drags rewrite settings every frame) that callers shouldn't re-render on.
      */
+    /**
+     * The settings a loaded extension declared with `params`, and their current
+     * values. Null when it declared none. A script holding several extensions
+     * gets one combined set.
+     */
+    getExtensionParams(id: string): {
+        schema: StyleField[];
+        defaults: Record<string, unknown>;
+        values: Record<string, unknown>;
+    } | null {
+        const entries = this.extensionParams.get(id);
+        if (!entries) return null;
+        const schema: StyleField[] = [];
+        const defaults: Record<string, unknown> = {};
+        for (const e of entries.values()) {
+            schema.push(...e.schema);
+            Object.assign(defaults, e.defaults);
+        }
+        const stored = readJSON<Record<string, unknown>>(pluginSettingsKey(id), {});
+        return { schema, defaults, values: { ...defaults, ...stored } };
+    }
+
+    /** Save some of an extension's params, and hand the new values to the extension. */
+    setExtensionParams(id: string, patch: Record<string, unknown>): void {
+        const key = pluginSettingsKey(id);
+        writeJSON(key, { ...readJSON<Record<string, unknown>>(key, {}), ...patch });
+        const values = this.getExtensionParams(id)?.values;
+        if (values) this.eventBus.emit('plugin:extension-params-change', { id, values });
+    }
+
     onPluginStateChange(
         cb: (state: { installed: Set<string>; active: Set<string> }) => void,
     ): () => void {
@@ -1321,16 +1368,53 @@ export class DepthChart {
     }
 
     attachRenderEngine(engine: RenderEngine): void {
-        this._renderEngine = engine;
+        this._engines.attach(engine);
         this.pluginRegistry.notifyRenderEngineReady(engine);
     }
 
+    /** Every cell's paint loop, by cell id. */
+    getRenderEngines(): ReadonlyMap<number, RenderEngine> {
+        return this._engines.all;
+    }
+
     /**
-     * Snapshot of the chart with every layer composited (base, drawings, UI).
-     * Returns null until the render engine has attached.
+     * Draw on every cell, including cells that mount later - a layout switch
+     * keeps the overlay on all of them. Returns the remove.
+     */
+    addOverlay(phase: DrawPhase, hook: DrawHook): () => void {
+        return this._engines.addOverlay(phase, hook);
+    }
+
+    // what ctx.renderEngine is. markDirty and addDrawHook reach every cell, the
+    // rest reads the focused one
+    private get pluginRenderEngine(): RenderEngine {
+        this._pluginRenderEngine ??= new Proxy({} as RenderEngine, {
+            get: (_target, prop) => {
+                if (prop === 'markDirty')
+                    return (layer: Parameters<RenderEngine['markDirty']>[0]) => {
+                        for (const engine of this._engines.all.values()) engine.markDirty(layer);
+                    };
+                if (prop === 'markAllDirty')
+                    return () => {
+                        for (const engine of this._engines.all.values()) engine.markAllDirty();
+                    };
+                if (prop === 'addDrawHook')
+                    return (phase: DrawPhase, hook: DrawHook) => this.addOverlay(phase, hook);
+                const focused = this.renderEngine;
+                if (!focused) return undefined;
+                const v = Reflect.get(focused, prop);
+                return typeof v === 'function' ? v.bind(focused) : v;
+            },
+        });
+        return this._pluginRenderEngine;
+    }
+
+    /**
+     * Snapshot of the focused cell with every layer composited (base, drawings, UI).
+     * Returns null until a render engine has attached.
      */
     screenshot(): HTMLCanvasElement | null {
-        return this._renderEngine?.captureComposite() ?? null;
+        return this.renderEngine?.captureComposite() ?? null;
     }
 
     // cell whose symbol state.symbol tracks
@@ -1373,7 +1457,9 @@ export class DepthChart {
     private _buildPluginContext(pluginId: string): PluginContext {
         const chart = this;
 
-        const scheduleImpl = new PluginScheduleImpl(() => chart._renderEngine?.container);
+        const scheduleImpl = new PluginScheduleImpl(() =>
+            [...chart._engines.all.values()].flatMap((e) => (e.container ? [e.container] : [])),
+        );
         this.pluginSchedules.set(pluginId, scheduleImpl);
 
         // always built - the permission gates live in buildRestrictedContext
@@ -1435,16 +1521,14 @@ export class DepthChart {
             },
 
             get renderEngine(): RenderEngine {
-                if (!chart._renderEngine) {
-                    throw new Error(
-                        `[Plugin "${pluginId}"] renderEngine accessed before RenderEngine was ready.`,
-                    );
-                }
-                return chart._renderEngine;
+                return chart.pluginRenderEngine;
             },
 
             executionEngine: chart.executionEngine,
-            transformer: chart.transformer,
+            // chart.transformer is never updated by any cell, the focused one's is live
+            get transformer(): LiveTransformer {
+                return chart.renderEngine?.transformer ?? chart.transformer;
+            },
             getData: () => chart.dataEngine.getSnapshot(),
             fetchRange: (opts) =>
                 chart.dataEngine.fetchRangeBars({
@@ -1555,17 +1639,8 @@ export class DepthChart {
                 return this.drawingRegistry.register(def as any);
             },
 
-            addOverlay(
-                phase: DrawPhase,
-                hook: DrawHook,
-            ): () => void {
-                if (!chart._renderEngine) {
-                    console.warn(
-                        `[Plugin "${pluginId}"] addOverlay called before renderEngine ready`,
-                    );
-                    return () => {};
-                }
-                return chart._renderEngine.addDrawHook(phase, hook);
+            addOverlay(phase: DrawPhase, hook: DrawHook): () => void {
+                return chart.addOverlay(phase, hook);
             },
 
             fetch(url: string, init?: RequestInit): Promise<Response> {

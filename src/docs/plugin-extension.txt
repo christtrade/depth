@@ -114,8 +114,10 @@ into the chart. A hook that throws gets logged once and skipped - the chart keep
 | `panes` | every pane's box by id, `main` included |
 | `background` | the resolved background color, to tell a light chart from a dark one |
 | `time` | `performance.now()` at the start of the frame |
+| `cell` | the layout cell being painted |
+| `focused` | whether that cell is the focused one |
 
-All in css px.
+Sizes in css px.
 
 Phases:
 
@@ -142,8 +144,56 @@ To repaint after a state change, call:
 ctx.renderEngine.markDirty('base')  // or 'background', 'drawings', 'ui'
 ```
 
-The hook's third argument `transformer` always belongs to the chart currently being drawn -
-safe in multi-chart layouts.
+#### Multi-chart layouts
+
+An extension is installed once per layout, but every chart in it has its own canvases. So:
+
+- an overlay runs on every chart, including charts added later by a layout switch. The hook's
+  `view`, `transformer` and `info` belong to the chart being painted
+- `markDirty` / `markAllDirty` repaint every chart
+- `plotSize`, `getView` and `toDataURL` read the focused chart
+- `ctx.schedule.frames` keeps running while any chart is on screen
+
+To draw on one chart only, return early in the hook - `if (!info.focused) return`, or compare
+`info.cell` against a setting. The focused chart changing repaints every chart with an overlay,
+so a focus-only hook moves along with it.
+
+`ctx.transformer` is the focused chart's - right for pointer maths, since clicking a chart
+focuses it. Inside a hook use the hook's own, it's the chart being painted.
+
+---
+
+### Settings - `params`
+
+Declare `params` like an indicator does, and a gear on the extension's row in the Plugin Manager
+opens them. Same field types. Values are saved per plugin and come back on the next load.
+
+```ts
+const bg = plugin({
+    name: 'Background',
+    type: Plugin.extension,
+    permissions: ['render:overlay'],
+    params: {
+        url: { label: 'Image or video URL', type: 'text', default: '' },
+        opacity: { label: 'Opacity', type: 'slider', min: 0, max: 1, step: 0.05, default: 0.35 },
+    },
+})
+
+bg.onInstall = function (ctx) {
+    let { url, opacity } = ctx.params
+    ctx.onParamsChange((p) => {
+        opacity = p.opacity
+        ctx.renderEngine.markDirty('background')
+    })
+}
+```
+
+`ctx.params` is a copy - read it again after a change. With no `onParamsChange` listener, a
+change reinstalls the extension instead: teardown, then `onInstall` again with the new values,
+300ms after the last change so typing in a text field doesn't reload it per key. Listen when a
+reinstall is expensive or would lose state, let it reinstall when it isn't.
+
+Shares storage with `ctx.getSettings` / `ctx.saveSettings`.
 
 ---
 

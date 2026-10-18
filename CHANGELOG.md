@@ -24,6 +24,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Skips frames while the chart is off screen, and the first call back gets one interval as `dt`
   so motion doesn't jump. `raf` only ever ran once, so a loop meant a hand-rolled
   `requestAnimationFrame` and cleaning it up yourself.
+- Extension `params`, edited from a gear on the extension's row in the Plugin Manager. Same field
+  types as indicators. `ctx.params` reads them, `ctx.onParamsChange(fn)` hears changes, and an
+  extension with no listener gets reinstalled instead, debounced 300ms so typing doesn't reload
+  it per key. Values persist per plugin, in the `getSettings` store.
+- `DepthChart.getExtensionParams(id)` and `setExtensionParams(id, patch)`, for hosts with their
+  own settings UI.
+- `DrawInfo.cell` and `DrawInfo.focused`, so a hook can draw on one chart of a layout only.
+- `DepthChart.getRenderEngines()`, every cell's engine by cell id, and `DepthChart.addOverlay`.
+- `RenderEngine.cellId`, `RenderEngine.transformer`, and a `render-engine:destroyed` event.
 
 ### Changed
 - "Plugins" title becomes "Plugin Manager" in the plugin manager dropdown.
@@ -35,6 +44,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `toDataURL` and `captureComposite` include the background layer.
 - Every draw phase runs inside save/restore with the ctx. Before, only `after-background` did,
   and the rest got whatever transform the renderer left behind.
+- `DepthChart.renderEngine` is the focused cell's. It used to be whichever cell mounted last.
+- Dropdown panels open over 200ms with an ease-out curve and a 3% zoom instead of 5%, and close in 150ms
 
 ### Deprecated
 - `TransformedDrawHook`, use `DrawHook`. It was typed `(ctx, transformer)`, which no hook was
@@ -49,6 +60,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Sub-panes painted the default background over a custom `backgroundColor`.
 - A draw hook that threw stopped the render loop causing the chart to freeze. It's logged once and
   skipped now.
+- Extension overlays in multi-chart layouts. The chart kept one render engine, whichever cell
+  mounted last, so going from one chart to two left the overlay on chart 1 while
+  `markDirty` went to chart 2 - an animated background froze, and reinstalling moved it to
+  chart 2 for good. Overlays now go on every cell, cells added later and remounted ones
+  included, and `markDirty` repaints all of them.
+- `ctx.schedule.frames` watched the first chart container it saw, forever. A layout switch
+  that remounted it left frames paused for good, since a detached element never counts as on
+  screen. It follows the current cells now, and runs while any is on screen.
+- The plugin manager flashed its empty state for a frame on open, then jumped to full height
+  mid-animation.
+- `ctx.transformer` was never updated by any chart, so pointer maths with it - like the Price
+  Alerts example's click to place - landed on the wrong price. It's the focused chart's now.
 - Indicators removed from a saved chart came back on every reload if their plugin was set
   to active in the plugin manager. A restored chart's panes win now, and removing a plugin's
   last instance turns `activate` off so new charts don't get it either. Autostart stays on.

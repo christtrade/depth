@@ -119,13 +119,16 @@ export function AnimatedPanel({
                     }}
                     style={{ ...style, position: 'fixed' }}
                     className={cn(
-                        'depth-root duration-150 fill-mode-forwards',
+                        'depth-root fill-mode-forwards motion-reduce:animate-none',
                         below
                             ? align === 'left' ? 'origin-top-left' : 'origin-top-right'
                             : align === 'left' ? 'origin-bottom-left' : 'origin-bottom-right',
+                        // 95% on a big panel is a 24px pop. fast start and a soft landing in,
+                        // quicker out so closing never feels like waiting. an arbitrary ease value is
+                        // ambiguous with tailwindcss-animate and silently generates nothing
                         open
-                            ? ['animate-in fade-in-0 zoom-in-95', below ? 'slide-in-from-top-2' : 'slide-in-from-bottom-2']
-                            : ['animate-out fade-out-0 zoom-out-95 pointer-events-none', below ? 'slide-out-to-top-2' : 'slide-out-to-bottom-2'],
+                            ? ['animate-in fade-in-0 zoom-in-[0.97] duration-200 [animation-timing-function:cubic-bezier(0.16,1,0.3,1)]', below ? 'slide-in-from-top-1' : 'slide-in-from-bottom-1']
+                            : ['animate-out fade-out-0 zoom-out-[0.97] duration-150 [animation-timing-function:cubic-bezier(0.4,0,1,1)] pointer-events-none', below ? 'slide-out-to-top-1' : 'slide-out-to-bottom-1'],
                         className,
                     )}
                 />,

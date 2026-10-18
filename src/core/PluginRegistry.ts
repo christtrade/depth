@@ -307,6 +307,10 @@ export class PluginRegistry {
             get renderEngine() {
                 return has('render:overlay') ? ctx.renderEngine : (null as any);
             },
+            // the spread above would freeze it at install time
+            get transformer() {
+                return ctx.transformer;
+            },
 
             getData: gate('data:read', ctx.getData) as typeof ctx.getData,
             openBar: gate('data:read', ctx.openBar) as typeof ctx.openBar,

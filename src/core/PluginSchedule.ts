@@ -17,9 +17,15 @@ export class PluginScheduleImpl implements PluginSchedule {
     private destroyed = false;
 
     private observer: IntersectionObserver | null = null;
-    private onScreen = true;
+    private readonly observed = new Set<Element>();
+    private readonly visible = new Set<Element>();
 
-    constructor(private readonly getElement: () => Element | null | undefined = () => null) {}
+    /** `getElements` - every cell the plugin draws on. Frames run while any is on screen */
+    constructor(private readonly getElements: () => readonly Element[] = () => []) {}
+
+    private get onScreen(): boolean {
+        return this.observed.size === 0 || this.visible.size > 0;
+    }
 
     interval(ms: number, fn: () => void): () => void {
         if (this.destroyed) return () => {};
@@ -112,14 +118,31 @@ export class PluginScheduleImpl implements PluginSchedule {
         return stop;
     }
 
+    // synced every tick - cells mount and unmount with the layout, and a detached
+    // element never intersects, so watching a stale one pauses frames for good
     private watchVisibility(): void {
-        if (this.observer || typeof IntersectionObserver === 'undefined') return;
-        const el = this.getElement();
-        if (!el) return;
-        this.observer = new IntersectionObserver((entries) => {
-            this.onScreen = entries[entries.length - 1].isIntersecting;
+        if (typeof IntersectionObserver === 'undefined') return;
+        const els = this.getElements();
+        this.observer ??= new IntersectionObserver((entries) => {
+            for (const e of entries) {
+                if (!this.observed.has(e.target)) continue;
+                if (e.isIntersecting) this.visible.add(e.target);
+                else this.visible.delete(e.target);
+            }
         });
-        this.observer.observe(el);
+        for (const el of els) {
+            if (this.observed.has(el)) continue;
+            this.observed.add(el);
+            // counts as visible until the observer says otherwise, its first report is async
+            this.visible.add(el);
+            this.observer.observe(el);
+        }
+        for (const el of this.observed) {
+            if (els.includes(el)) continue;
+            this.observer.unobserve(el);
+            this.observed.delete(el);
+            this.visible.delete(el);
+        }
     }
 
     destroy(): void {
@@ -127,6 +150,8 @@ export class PluginScheduleImpl implements PluginSchedule {
         this.frameLoops.forEach((stop) => stop());
         this.observer?.disconnect();
         this.observer = null;
+        this.observed.clear();
+        this.visible.clear();
         this.intervals.forEach((id) => clearInterval(id));
         this.timeouts.forEach((id) => clearTimeout(id));
         this.rafIds.forEach((id) => cancelAnimationFrame(id));

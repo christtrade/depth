@@ -20,6 +20,7 @@ import { IExecutionAdapter } from '../interfaces/IExecutionAdapter';
 import { ActiveDrawingTool, Anchor, Drawing } from '../lib/types/drawing-types';
 import { TradeLineHitMap } from '../lib/renderers/drawTradeLines';
 import type { TradeLine } from '../lib/types';
+import type { StyleField } from '../components/drawings/drawing-settings-dialog';
 import { FootprintBar } from '../lib/types/footprint';
 import { ChartPane, Indicator } from '../lib/types/indicator-types';
 import { SerialTrade } from '../lib/types';
@@ -326,6 +327,7 @@ export interface ChartEvents {
     };
 
     'render-engine:ready': { engine: RenderEngine };
+    'render-engine:destroyed': { engine: RenderEngine };
 
     /**
      * A cell handing over its forming-bar getter. The bar mutates in place, so
@@ -497,6 +499,15 @@ export interface ChartEvents {
     };
 
     'plugin:apply-params': { id: string; params: Record<string, unknown> };
+
+    // an extension's declared params. entry is the plugin entry, id the plugin
+    'plugin:extension-params': {
+        id: string;
+        entry: string;
+        schema: StyleField[] | null;
+        defaults: Record<string, unknown>;
+    };
+    'plugin:extension-params-change': { id: string; values: Record<string, unknown> };
 
     /** @console command */
     'plugin:strategy-range': {

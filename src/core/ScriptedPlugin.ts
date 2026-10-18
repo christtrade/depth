@@ -1781,10 +1781,13 @@ const chartTypeCapability: CapabilityHandler = (
     };
 };
 
+// typing in a url field would otherwise reload the extension on every key
+const PARAMS_REINSTALL_DEBOUNCE_MS = 300;
+
 const extensionCapability: CapabilityHandler = (
     _worker,
     pluginMsg,
-    _entryId,
+    entryId,
     _pluginIndex,
     ctx,
     _onWorkerUpdate,
@@ -1794,6 +1797,14 @@ const extensionCapability: CapabilityHandler = (
     const onInstallSrc: string | null = (pluginMsg as any).onInstallSrc ?? null;
     const drawSrc: string | null = (pluginMsg as any).extensionDrawSrc ?? null;
     if (!onInstallSrc) return () => {};
+
+    const decl = pluginMsg.decl as ScriptDeclaration;
+    const pluginId = entryId.slice(0, entryId.lastIndexOf(':'));
+    const paramDefs = (decl.params ?? {}) as Record<string, ParamDef>;
+    const hasParams = Object.keys(paramDefs).length > 0;
+    const paramDefaults = buildParamDefaults(paramDefs);
+    let params: Record<string, unknown> = hasParams ? ctx.getSettings(paramDefaults) : {};
+    const paramListeners = new Set<(params: Record<string, unknown>) => void>();
 
     // React and h ride on top of the script scope, so a panel can use the jsx
     // helpers and the stdlib in one expression
@@ -1854,6 +1865,8 @@ const extensionCapability: CapabilityHandler = (
                 return (phase: DrawPhase, hook: DrawHook) => track(target.addOverlay(phase, hook));
             if (prop === 'renderEngine') {
                 const engine = target.renderEngine;
+                // null without render:overlay
+                if (!engine) return engine;
                 return new Proxy(engine, {
                     get(e, p) {
                         if (p === 'addDrawHook')
@@ -1874,29 +1887,83 @@ const extensionCapability: CapabilityHandler = (
                     frames: tracked(s.frames.bind(s)),
                 } satisfies typeof s;
             }
+            if (prop === 'params') return { ...params };
+            if (prop === 'onParamsChange')
+                return (fn: (params: Record<string, unknown>) => void) => {
+                    paramListeners.add(fn);
+                    return track(() => paramListeners.delete(fn));
+                };
             return Reflect.get(target, prop);
         },
     });
 
-    let cleanup: (() => void) | void;
-    try {
-        const onInstall = compile<
-            (
-                ctx: PluginContext,
-                rerender: (state: unknown) => React.ReactElement,
-            ) => (() => void) | void
-        >(onInstallSrc);
-        cleanup = onInstall?.(scopedCtx, rerender);
-    } catch (err) {
-        emitError(`extension onInstall error: ${err}`);
-    }
+    const onInstall = compile<
+        (
+            ctx: PluginContext,
+            rerender: (state: unknown) => React.ReactElement,
+        ) => (() => void) | void
+    >(onInstallSrc);
 
-    return (_opts) => {
+    let cleanup: (() => void) | void;
+    const install = () => {
+        try {
+            cleanup = onInstall?.(scopedCtx, rerender);
+        } catch (err) {
+            emitError(`extension onInstall error: ${err}`);
+        }
+    };
+    const uninstall = () => {
         try {
             if (typeof cleanup === 'function') cleanup();
         } catch {}
+        cleanup = undefined;
         overlayOffs.forEach((off) => off());
         overlayOffs.clear();
+    };
+    install();
+
+    let reinstallTimer: ReturnType<typeof setTimeout> | undefined;
+    let offParams = () => {};
+    if (hasParams) {
+        ctx.eventBus.emit('plugin:extension-params', {
+            id: pluginId,
+            entry: entryId,
+            schema: buildStyleSchema(paramDefs),
+            defaults: paramDefaults,
+        });
+        // a script that doesnt listen gets reinstalled instead, so a change always shows
+        offParams = ctx.eventBus.on('plugin:extension-params-change', ({ id, values }) => {
+            if (id !== pluginId) return;
+            params = { ...paramDefaults, ...values };
+            if (paramListeners.size) {
+                for (const fn of [...paramListeners]) {
+                    try {
+                        fn({ ...params });
+                    } catch (err) {
+                        emitError(`extension onParamsChange error: ${err}`);
+                    }
+                }
+                return;
+            }
+            clearTimeout(reinstallTimer);
+            reinstallTimer = setTimeout(() => {
+                uninstall();
+                install();
+            }, PARAMS_REINSTALL_DEBOUNCE_MS);
+        });
+    }
+
+    return (_opts) => {
+        clearTimeout(reinstallTimer);
+        offParams();
+        if (hasParams)
+            ctx.eventBus.emit('plugin:extension-params', {
+                id: pluginId,
+                entry: entryId,
+                schema: null,
+                defaults: {},
+            });
+        uninstall();
     };
 };
 

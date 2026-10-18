@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
     AlertTriangle,
     BadgeCheck,
@@ -11,8 +11,11 @@ import {
     DraftingCompass,
     LineChart,
     Plug,
+    RotateCcw,
     Search,
+    Settings2,
     TrendingUp,
+    X,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { AnimatedPanel, containsWithPanels } from '../ui/animated-panel';
@@ -30,6 +33,8 @@ import type { DepthChart } from '../../core';
 import type { PluginType } from '../../interfaces/plugins/IChartPlugin';
 import { DropdownMenuCheckboxItem } from '../ui/dropdown-menu';
 import { Checkbox } from '../ui/checkbox'
+import { StyleFieldControl, fieldKey } from '../drawings/drawing-settings-dialog';
+import { Collapse } from '../ui/collapse';
 
 type Kind = PluginType | 'unknown';
 
@@ -47,6 +52,8 @@ interface Row {
     autostart: boolean;
     /** the host has code for it, so it can be loaded from here */
     available: boolean;
+    /** a loaded extension that declared params */
+    hasSettings: boolean;
 }
 
 const KIND_META: Record<Kind, { label: string; Icon: typeof LineChart }> = {
@@ -85,6 +92,7 @@ function buildRows(chart: DepthChart): Row[] {
             active: active.has(entry.id),
             autostart: startup[entry.id]?.autostart === true,
             available: true,
+            hasSettings: chart.getExtensionParams(entry.id) !== null,
         });
     }
 
@@ -102,24 +110,58 @@ function buildRows(chart: DepthChart): Row[] {
             active: active.has(p.id),
             autostart: startup[p.id]?.autostart === true,
             available: false,
+            hasSettings: chart.getExtensionParams(p.id) !== null,
         });
     }
 
     return [...rows.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function ExtensionSettings({ chart, id }: { chart: DepthChart; id: string }) {
+    const [params, setParams] = useState(() => chart.getExtensionParams(id));
+    if (!params) return null;
+
+    const update = (patch: Record<string, unknown>) => {
+        chart.setExtensionParams(id, patch);
+        setParams(chart.getExtensionParams(id));
+    };
+
+    return (
+        <div className="flex flex-col gap-5 mx-3 mb-2 px-4 py-4 rounded-lg bg-muted/20 border border-border mt-2">
+            {params.schema.map((field, i) => (
+                <StyleFieldControl
+                    key={fieldKey(field, i)}
+                    field={field}
+                    drawing={params.values}
+                    onUpdate={update}
+                />
+            ))}
+            <button
+                className="flex items-center gap-2 text-[11px] text-white/30 hover:text-white/60 transition-colors"
+                onClick={() => update(params.defaults)}
+            >
+                <RotateCcw size={11} /> Reset to defaults
+            </button>
+        </div>
+    );
+}
+
 function PluginRow({
     row,
     problem,
+    settingsOpen,
     onToggleLoaded,
     onToggleActive,
     onToggleAutostart,
+    onToggleSettings,
 }: {
     row: Row;
     problem?: string;
+    settingsOpen: boolean;
     onToggleLoaded: (on: boolean) => void;
     onToggleActive: (on: boolean) => void;
     onToggleAutostart: (on: boolean) => void;
+    onToggleSettings: () => void;
 }) {
     const { Icon } = KIND_META[row.kind];
 
@@ -185,6 +227,42 @@ function PluginRow({
                 </Tooltip>
             )}
 
+            {row.loaded && row.hasSettings && (
+                <Tooltip delayDuration={500}>
+                    <TooltipTrigger asChild>
+                        <button
+                            onClick={onToggleSettings}
+                            aria-label={settingsOpen ? 'Close settings' : 'Settings'}
+                            aria-expanded={settingsOpen}
+                            className={cn(
+                                'shrink-0 flex items-center justify-center w-6 h-6 rounded-md transition-colors relative',
+                                settingsOpen
+                                    ? 'bg-muted text-foreground'
+                                    : 'text-muted-foreground hover:text-foreground hover:bg-muted',
+                            )}
+                        >
+                            <Settings2
+                                size={13}
+                                className={cn(
+                                    'transition-all duration-200 ease-out motion-reduce:transition-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2',
+                                    settingsOpen && 'opacity-0 rotate-90 scale-50',
+                                )}
+                            />
+                            <X
+                                size={13}
+                                className={cn(
+                                    'transition-all duration-200 ease-out motion-reduce:transition-none opacity-0 scale-50 absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2',
+                                    settingsOpen && 'opacity-100 rotate-90 scale-1',
+                                )}
+                            />
+                        </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="bg-background border border-border">
+                        {settingsOpen ? 'Close settings' : 'Settings'}
+                    </TooltipContent>
+                </Tooltip>
+            )}
+
             <Tooltip delayDuration={500}>
                 <TooltipTrigger asChild>
                     <div className="shrink-0 flex items-center justify-center w-10">
@@ -223,10 +301,13 @@ export function PluginManagerDialog({
     const [rows, setRows] = useState<Row[]>([]);
     const [problems, setProblems] = useState<Record<string, string>>({});
     const [query, setQuery] = useState('');
+    const [settingsFor, setSettingsFor] = useState<string | null>(null);
 
     const refresh = useCallback(() => setRows(buildRows(chart)), [chart]);
 
-    useEffect(() => {
+    // layout effect, so the first frame of the open animation already has the rows -
+    // after paint it flashed the empty state and the panel jumped to full height mid-open
+    useLayoutEffect(() => {
         if (!open) return;
         refresh();
         return chart.onPluginStateChange(refresh);
@@ -253,9 +334,11 @@ export function PluginManagerDialog({
                     return next;
                 }),
             ),
+            // a hot reload can add or drop params without the plugin state changing
+            eventBus.on('plugin:extension-params', refresh),
         ];
         return () => unsubs.forEach((fn) => fn());
-    }, [eventBus]);
+    }, [eventBus, refresh]);
 
     const filtered = useMemo(() => {
         const q = query.trim().toLowerCase();
@@ -386,16 +469,28 @@ export function PluginManagerDialog({
                                         {KIND_META[kind].label}
                                     </p>
                                     <div className="px-1">
-                                        {items.map((row) => (
-                                            <PluginRow
-                                                key={row.id}
-                                                row={row}
-                                                problem={problems[row.id]}
-                                                onToggleLoaded={(on) => toggleLoaded(row, on)}
-                                                onToggleActive={(on) => toggleActive(row, on)}
-                                                onToggleAutostart={(on) => toggleAutostart(row, on)}
-                                            />
-                                        ))}
+                                        {items.map((row) => {
+                                            const showSettings =
+                                                settingsFor === row.id && row.loaded && row.hasSettings;
+                                            return (
+                                                <React.Fragment key={row.id}>
+                                                    <PluginRow
+                                                        row={row}
+                                                        problem={problems[row.id]}
+                                                        settingsOpen={showSettings}
+                                                        onToggleLoaded={(on) => toggleLoaded(row, on)}
+                                                        onToggleActive={(on) => toggleActive(row, on)}
+                                                        onToggleAutostart={(on) => toggleAutostart(row, on)}
+                                                        onToggleSettings={() =>
+                                                            setSettingsFor(showSettings ? null : row.id)
+                                                        }
+                                                    />
+                                                    <Collapse open={showSettings}>
+                                                        <ExtensionSettings chart={chart} id={row.id} />
+                                                    </Collapse>
+                                                </React.Fragment>
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             ))

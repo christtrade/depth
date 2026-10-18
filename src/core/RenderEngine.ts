@@ -37,6 +37,10 @@ export interface DrawInfo {
     background: string;
     /** `performance.now()` at the start of the frame */
     time: number;
+    /** The layout cell being painted - a hook runs once per cell */
+    cell: number;
+    /** Whether that cell is the focused one */
+    focused: boolean;
 }
 
 export type DrawHook = (
@@ -156,6 +160,25 @@ export class RenderEngine {
     // which cell this engine paints. stamped on the events it puts on the
     // layout-wide bus so other cells can ignore them.
     private readonly chartId: number;
+
+    /** The layout cell this engine paints */
+    get cellId(): number {
+        return this.chartId;
+    }
+
+    private focused = false;
+
+    /** Set by the chart. Repaints if there are hooks, they might draw differently on the focused cell */
+    setFocused(focused: boolean): void {
+        if (focused === this.focused) return;
+        this.focused = focused;
+        const hasHooks =
+            this.beforeBaseDraw.size ||
+            this.afterBackgroundDraw.size ||
+            this.afterBaseDraw.size ||
+            this.afterUIDraw.size;
+        if (hasHooks) this.markAllDirty();
+    }
 
     // runs forever, only paints dirty layers
     private rafId = 0;
@@ -344,6 +367,11 @@ export class RenderEngine {
         return this.view;
     }
 
+    /** The transformer this cell paints with, once it has drawn */
+    get transformer(): LiveTransformer | null {
+        return this.drawParams?.transformer ?? null;
+    }
+
     // Draw functions
 
     private doBackgroundRedraw(): void {
@@ -381,6 +409,8 @@ export class RenderEngine {
             panes: p.layouts,
             background: p.chartSettings.backgroundColor ?? COLORS.background,
             time,
+            cell: this.chartId,
+            focused: this.focused,
         };
 
         for (const hook of hooks) {
@@ -737,5 +767,6 @@ export class RenderEngine {
         this.dprQuery?.removeEventListener('change', this.onDprChange);
         cancelAnimationFrame(this.rafId);
         this.backgroundCanvas.remove();
+        this.eventBus.emit('render-engine:destroyed', { engine: this });
     }
 }
