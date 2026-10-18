@@ -10,11 +10,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - `ChartModel.onPluginsRemoved(fn)`, and `setPlugins` takes the ids you removed as an optional second arg.
+- `after-background` overlay phase: over the background, under grid and candles. `before-base` got
+  painted over by the background fill, so chart backgrounds had nowhere to go
+- Top toolbar buttons active color
 
 ### Changed
 - "Plugins" title becomes "Plugin Manager" in the plugin manager dropdown.
+- Adding or removing an overlay repaints the chart.
 
 ### Fixed
+- Hot reloading an extension left its old overlays painting unless the teardown removed them.
+  Overlays still registered at teardown get removed for you now.
+- Editor typings had overlay hooks taking a `RenderContext`. They get `(ctx, view, transformer)`.
 - Indicators removed from a saved chart came back on every reload if their plugin was set
   to active in the plugin manager. A restored chart's panes win now, and removing a plugin's
   last instance turns `activate` off so new charts don't get it either. Autostart stays on.

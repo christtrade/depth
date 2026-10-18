@@ -24,6 +24,8 @@ export type DrawHook = (
     transformer: LiveTransformer,
 ) => void;
 
+export type DrawPhase = 'before-base' | 'after-background' | 'after-base' | 'after-ui';
+
 // the ChristTrade mark. inlined as base64 so the asset compiles into the engine
 // and theres no external file to drop or repath. decoded once into an img and
 // cached, and the first draw after it loads asks for a base repaint.
@@ -158,6 +160,7 @@ export class RenderEngine {
 
     // called inside the raf loop, around the data layer
     private beforeBaseDraw: Set<DrawHook> = new Set();
+    private afterBackgroundDraw: Set<DrawHook> = new Set();
     private afterBaseDraw: Set<DrawHook> = new Set();
     private afterUIDraw: Set<DrawHook> = new Set();
 
@@ -362,6 +365,12 @@ export class RenderEngine {
             p.hideTimeScale,
             p.symbolInfo,
             p.priceScaleWidth,
+            this.afterBackgroundDraw.size
+                ? (ctx) => {
+                      for (const hook of this.afterBackgroundDraw)
+                          hook(ctx, view, this.drawParams.transformer);
+                  }
+                : undefined,
         );
 
         if (p.isPluginChartType && p.chartPlugin) {
@@ -519,15 +528,20 @@ export class RenderEngine {
     }
 
     // Plugin hooks
-    addDrawHook(phase: 'before-base' | 'after-base' | 'after-ui', hook: DrawHook): () => void {
+    addDrawHook(phase: DrawPhase, hook: DrawHook): () => void {
         const set =
             phase === 'before-base'
                 ? this.beforeBaseDraw
-                : phase === 'after-base'
-                  ? this.afterBaseDraw
-                  : this.afterUIDraw;
+                : phase === 'after-background'
+                  ? this.afterBackgroundDraw
+                  : phase === 'after-base'
+                    ? this.afterBaseDraw
+                    : this.afterUIDraw;
         set.add(hook);
-        return () => set.delete(hook);
+        this.markAllDirty();
+        return () => {
+            if (set.delete(hook)) this.markAllDirty();
+        };
     }
 
     // ResizeObserver

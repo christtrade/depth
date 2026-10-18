@@ -229,6 +229,7 @@ export function drawBaseLayer(
     hideTimeScale?: boolean,
     symbolInfo?: SymbolInfo,
     rightScaleWidth?: number,
+    afterBackground?: (ctx: CanvasRenderingContext2D) => void,
 ) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -249,6 +250,11 @@ export function drawBaseLayer(
     const xAxisHeight = hideTimeScale ? 0 : X_AXIS_HEIGHT;
 
     drawBackground(ctx, cssW, cssH, chartSettings);
+    if (afterBackground) {
+        ctx.save();
+        afterBackground(ctx);
+        ctx.restore();
+    }
 
     const rsWidth =
         rightScaleWidth ??

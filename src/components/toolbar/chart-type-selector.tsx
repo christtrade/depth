@@ -137,10 +137,10 @@ export function ChartTypeSelector({
                 onClick={() => setOpenWithCallback((p) => !p)}
                 className={cn(
                     'flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] font-medium',
-                    'border transition-all duration-150 select-none',
+                    'border transition-all select-none hover:bg-muted active:bg-muted/60',
                     open
                         ? 'border-border bg-muted text-white'
-                        : 'border-transparent text-gray-300 hover:text-white hover:bg-[#1a1d23] hover:border-border',
+                        : 'border-transparent text-gray-300 hover:text-white hover:border-border',
                 )}
             >
                 <span className="opacity-60 shrink-0 flex items-center">{active.icon}</span>

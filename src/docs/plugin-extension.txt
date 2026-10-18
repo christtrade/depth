@@ -102,8 +102,17 @@ const remove = ctx.addOverlay('after-base', (canvas, view, transformer) => {
 // call remove() in teardown
 ```
 
-Phases: `before-base` (under candles), `after-base` (over candles, under UI), `after-ui` (on top
-of everything including crosshair).
+Phases:
+
+| phase | where |
+|---|---|
+| `before-base` | before the base layer paints - the background covers it, so mostly useless for drawing |
+| `after-background` | over the background, under grid and candles. ctx is in css pixels. chart backgrounds go here |
+| `after-base` | over candles, under drawings and UI |
+| `after-ui` | on top of everything, crosshair included |
+
+Adding or removing an overlay repaints the chart, and overlays still registered at hot reload or
+uninstall get removed for you - forgetting `remove()` no longer leaves the old hook painting.
 
 To repaint after a state change, call:
 ```ts

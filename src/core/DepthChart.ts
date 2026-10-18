@@ -32,7 +32,7 @@ import {
     PluginType,
     ToolbarItem,
 } from './PluginRegistry';
-import { RenderEngine, type DrawHook } from './RenderEngine';
+import { RenderEngine, type DrawHook, type DrawPhase } from './RenderEngine';
 import {
     ChartEvents,
     TypedEventBus,
@@ -1556,7 +1556,7 @@ export class DepthChart {
             },
 
             addOverlay(
-                phase: 'before-base' | 'after-base' | 'after-ui',
+                phase: DrawPhase,
                 hook: DrawHook,
             ): () => void {
                 if (!chart._renderEngine) {

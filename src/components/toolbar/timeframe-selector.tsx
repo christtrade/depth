@@ -312,10 +312,10 @@ export function TimeframeSelector({
                 onClick={() => setOpenWithCallback((p) => !p)}
                 aria-label="All timeframes"
                 className={cn(
-                    'h-7 w-7 flex items-center justify-center rounded-md border transition-all duration-150 select-none',
+                    'h-7 w-7 flex items-center justify-center rounded-md border transition-all hover:bg-muted active:bg-muted/60 select-none',
                     open
                         ? 'border-border bg-muted text-slate-200'
-                        : 'border-transparent text-slate-500 hover:text-slate-200 hover:bg-[#1a1d23] hover:border-border',
+                        : 'border-transparent text-slate-500 hover:text-slate-200 hover:border-border',
                 )}
             >
                 <ChevronDown

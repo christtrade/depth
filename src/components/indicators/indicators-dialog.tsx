@@ -487,7 +487,7 @@ export function IndicatorsButton({
                 onClick={() => setOpenWithCallback((p) => !p)}
                 className={cn(
                     'flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] font-medium',
-                    'border transition-all duration-150 select-none border-transparent hover:border-border text-gray-300 hover:text-white',
+                    'border transition-all duration-150 select-none border-transparent hover:border-border hover:bg-muted active:bg-muted/60 text-gray-300 hover:text-white',
                     open ? 'border-border bg-muted text-white' : '',
                 )}
             >

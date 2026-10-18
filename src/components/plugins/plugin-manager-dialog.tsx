@@ -325,7 +325,7 @@ export function PluginManagerDialog({
                         onClick={() => onOpenChange(!open)}
                         className={cn(
                             'flex items-center gap-1.5 h-7 px-2 rounded-md transition-colors font-medium',
-                            'text-[12px] text-gray-300 hover:text-white hover:text-foreground hover:bg-muted border border-transparent hover:border-border',
+                            'text-[12px] text-gray-300 hover:text-white hover:text-foreground hover:bg-muted border border-transparent hover:border-border active:bg-muted/60',
                             open && 'border-border bg-muted text-white'
                         )}
                     >

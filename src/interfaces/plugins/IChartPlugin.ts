@@ -5,7 +5,7 @@
  */
 
 import type { TypedEventBus, InterceptableEvent, Interceptor } from '../../core/TypedEventBus';
-import type { RenderEngine, DrawHook } from '../../core/RenderEngine';
+import type { RenderEngine, DrawHook, DrawPhase } from '../../core/RenderEngine';
 import type { ExecutionEngine } from '../../core/ExecutionEngine';
 import type { GlobalChartBus } from '../../core/GlobalChartBus';
 import type { LiveTransformer } from '../ICoordinateTransformer';
@@ -256,7 +256,7 @@ export interface PluginContext {
     saveSettings<T>(patch: Partial<T>): void;
 
     // Rendering
-    addOverlay(phase: 'before-base' | 'after-base' | 'after-ui', hook: DrawHook): () => void;
+    addOverlay(phase: DrawPhase, hook: DrawHook): () => void;
 
     // UI surface
     registerToolbarItem(item: ToolbarItem): () => void;

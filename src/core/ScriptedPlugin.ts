@@ -25,6 +25,7 @@ import type { StrategyRange } from './strategy-range';
 import { planChunks, streamRangeChunks } from './strategy-stream';
 import type { OhlcvBar } from '../lib/indicator-stdlib';
 import { makeScopedCompiler } from './script-scope';
+import type { DrawHook, DrawPhase } from './RenderEngine';
 import { paramCvars, scriptArgSpecs, slugOf, type ScriptCommandMeta } from '../console/plugin-console';
 import { formatValue } from '../console/values';
 
@@ -1826,6 +1827,35 @@ const extensionCapability: CapabilityHandler = (
         return React.createElement(ExtensionPanel);
     };
 
+    // forgetting to off() an overlay would leave the old version painting after every save
+    const overlayOffs = new Set<() => void>();
+    const track = (off: () => void) => {
+        overlayOffs.add(off);
+        return () => {
+            overlayOffs.delete(off);
+            off();
+        };
+    };
+    const scopedCtx = new Proxy(ctx, {
+        get(target, prop) {
+            if (prop === 'addOverlay')
+                return (phase: DrawPhase, hook: DrawHook) => track(target.addOverlay(phase, hook));
+            if (prop === 'renderEngine') {
+                const engine = target.renderEngine;
+                return new Proxy(engine, {
+                    get(e, p) {
+                        if (p === 'addDrawHook')
+                            return (phase: DrawPhase, hook: DrawHook) =>
+                                track(e.addDrawHook(phase, hook));
+                        const v = Reflect.get(e, p);
+                        return typeof v === 'function' ? v.bind(e) : v;
+                    },
+                });
+            }
+            return Reflect.get(target, prop);
+        },
+    });
+
     let cleanup: (() => void) | void;
     try {
         const onInstall = compile<
@@ -1834,7 +1864,7 @@ const extensionCapability: CapabilityHandler = (
                 rerender: (state: unknown) => React.ReactElement,
             ) => (() => void) | void
         >(onInstallSrc);
-        cleanup = onInstall?.(ctx, rerender);
+        cleanup = onInstall?.(scopedCtx, rerender);
     } catch (err) {
         emitError(`extension onInstall error: ${err}`);
     }
@@ -1843,6 +1873,8 @@ const extensionCapability: CapabilityHandler = (
         try {
             if (typeof cleanup === 'function') cleanup();
         } catch {}
+        overlayOffs.forEach((off) => off());
+        overlayOffs.clear();
     };
 };
 
