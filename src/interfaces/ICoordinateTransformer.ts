@@ -1,18 +1,14 @@
-// a stateful, live coordinate transformer. the chart builds one, keeps it
-// current as the view changes and hands it to the render engine. plugin draw
-// hooks get the same instance, so their coordinate math is always in sync with
-// whatever is on screen:
+// one live instance per chart, the same one draw hooks get, so plugin math
+// matches whats on screen:
 //
-//   chart.renderEngine.addDrawHook('after-base', (ctx, transformer) => {
-//       const x = transformer.tsToX(myTs, chartW);
-//       const y = transformer.priceToY(myPrice, chartH);
+//   chart.renderEngine.addDrawHook('after-base', (ctx, view, transformer, info) => {
+//       const x = transformer.tsToX(myTs, info.plot.w);
+//       const y = transformer.priceToY(myPrice, info.plot.h);
 //       ctx.fillRect(x - 2, y - 2, 4, 4);
 //   });
-//
-// only 'linear' exists so far. adding log/percent is a setScaleMode call and
-// every call site, internal and plugin, picks up the new math for free.
 
 import { SessionMapper } from '../core/SessionMapper';
+import type { DrawHook } from '../core/RenderEngine';
 import { type SessionStatus, getSessionStatus } from '../core/SessionUtils';
 import type { TradingSession } from './IDataAdapter';
 import type { ViewBounds } from '../lib/types';
@@ -610,12 +606,3 @@ export class LiveTransformer {
         return ref * (1 + pct);
     }
 }
-
-// DrawHook signature
-// RenderEngine's addDrawHook passes the transformer to every hook.
-// Plugin authors import this type from the SDK.
-
-export type TransformedDrawHook = (
-    ctx: CanvasRenderingContext2D,
-    transformer: LiveTransformer,
-) => void;

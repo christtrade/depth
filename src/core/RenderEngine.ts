@@ -1,6 +1,12 @@
 
 import { TypedEventBus } from './TypedEventBus';
-import { drawBackground, drawBaseLayer, drawUILayer, X_AXIS_HEIGHT } from '../lib/renderers/renderer';
+import {
+    COLORS,
+    drawBackground,
+    drawBaseLayer,
+    drawUILayer,
+    X_AXIS_HEIGHT,
+} from '../lib/renderers/renderer';
 import { drawDrawingsLayer } from '../lib/renderers/drawings-renderer';
 import type { ChartPane, Rect } from '../lib/types/indicator-types';
 import type { Indicator } from '../lib/types/indicator-types';
@@ -18,10 +24,26 @@ import { SessionMapper } from './SessionMapper';
 import { AccountSnapshot, DataLevel, SymbolInfo } from '.';
 import type { CrosshairSync } from '../lib/types/layout-sync';
 
+/** Layout of the frame a draw hook runs in. Everything in css px */
+export interface DrawInfo {
+    width: number;
+    height: number;
+    dpr: number;
+    /** The main plot - the canvas minus the price and time axis */
+    plot: Rect;
+    /** Every panes box by id, `main` included */
+    panes: Readonly<Record<string, Rect>>;
+    /** The resolved background color */
+    background: string;
+    /** `performance.now()` at the start of the frame */
+    time: number;
+}
+
 export type DrawHook = (
     ctx: CanvasRenderingContext2D,
     view: ViewBounds,
     transformer: LiveTransformer,
+    info: DrawInfo,
 ) => void;
 
 export type DrawPhase = 'before-base' | 'after-background' | 'after-base' | 'after-ui';
@@ -246,11 +268,9 @@ export class RenderEngine {
             if (this.dirty.base) {
                 const ctx = this.baseCanvas.getContext('2d');
                 if (ctx) {
-                    for (const hook of this.beforeBaseDraw)
-                        hook(ctx, this.view!, this.drawParams.transformer);
+                    this.runHooks(this.beforeBaseDraw, ctx, started);
                     this.doBaseRedraw();
-                    for (const hook of this.afterBaseDraw)
-                        hook(ctx, this.view!, this.drawParams.transformer);
+                    this.runHooks(this.afterBaseDraw, ctx, started);
                 }
                 this.dirty.base = false;
                 // the ui layer holds the axis labels and price pills for the
@@ -270,8 +290,7 @@ export class RenderEngine {
                 const ctx = this.uiCanvas.getContext('2d');
                 if (ctx) {
                     this.doUIRedraw();
-                    for (const hook of this.afterUIDraw)
-                        hook(ctx, this.view!, this.drawParams.transformer);
+                    this.runHooks(this.afterUIDraw, ctx, started);
                 }
                 this.dirty.ui = false;
             }
@@ -340,12 +359,44 @@ export class RenderEngine {
             this.backgroundCanvas.height / dpr,
             p.chartSettings,
         );
-        for (const hook of this.afterBackgroundDraw) {
-            ctx.save();
-            hook(ctx, this.view, p.transformer);
-            ctx.restore();
-        }
+        this.runHooks(this.afterBackgroundDraw, ctx, performance.now());
         this.paintedBackgroundColor = p.chartSettings.backgroundColor;
+    }
+
+    private readonly failedHooks = new WeakSet<DrawHook>();
+
+    private runHooks(hooks: Set<DrawHook>, ctx: CanvasRenderingContext2D, time: number): void {
+        const p = this.drawParams;
+        if (!hooks.size || !p || !this.view) return;
+
+        const dpr = getEffectiveDpr();
+        const width = this.baseCanvas.width / dpr;
+        const height = this.baseCanvas.height / dpr;
+        const plot = this.plotSize;
+        const info: DrawInfo = {
+            width,
+            height,
+            dpr,
+            plot: { x: 0, y: 0, w: plot.width, h: plot.height },
+            panes: p.layouts,
+            background: p.chartSettings.backgroundColor ?? COLORS.background,
+            time,
+        };
+
+        for (const hook of hooks) {
+            ctx.save();
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            try {
+                hook(ctx, this.view, p.transformer, info);
+            } catch (err) {
+                if (!this.failedHooks.has(hook)) {
+                    this.failedHooks.add(hook);
+                    console.error('[RenderEngine] draw hook threw:', err);
+                }
+            } finally {
+                ctx.restore();
+            }
+        }
     }
 
     private doBaseRedraw(): void {

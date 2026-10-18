@@ -52,7 +52,6 @@ export { LiveTransformer } from '../interfaces/ICoordinateTransformer';
 export type {
     ICoordinateTransformer,
     PriceScaleMode,
-    TransformedDrawHook,
 } from '../interfaces/ICoordinateTransformer';
 
 // Plugins
@@ -406,6 +405,6 @@ export type { ChartPane, Indicator, Rect } from '../lib/types/indicator-types';
 export type { CrosshairSync, TimeRangeSync } from '../lib/types/layout-sync';
 export type { TradeLineHitMap } from '../lib/renderers/drawTradeLines';
 export type { PlaybackMode } from '../hooks/usePlaybackEngine';
-export type { DrawHook } from './RenderEngine';
+export type { DrawHook, DrawInfo, DrawPhase } from './RenderEngine';
 export type { InterceptableEvent, Interceptor } from './TypedEventBus';
 export { ChartState } from './ChartState';

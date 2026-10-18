@@ -88,19 +88,34 @@ Interceptable events: `trading:buy-market`, `trading:sell-market`, `chart:set-ti
 Requires `render:overlay` permission.
 
 Draw directly on the chart canvas. The hook runs inside the RAF loop - only when the relevant
-layer is dirty. Hook receives the canvas context, current view bounds, and the chart's transformer
-for coordinate conversion.
+layer is dirty. Hook gets `(ctx, view, transformer, info)`.
 
 ```ts
-const remove = ctx.addOverlay('after-base', (canvas, view, transformer) => {
-    const y = transformer.priceToY(19500, canvas.canvas.height)
-    canvas.beginPath()
-    canvas.moveTo(0, y)
-    canvas.lineTo(canvas.canvas.width, y)
-    canvas.stroke()
+const remove = ctx.addOverlay('after-base', (c, view, transformer, info) => {
+    const y = transformer.priceToY(19500, info.plot.h)
+    c.beginPath()
+    c.moveTo(0, y)
+    c.lineTo(info.plot.w, y)
+    c.stroke()
 })
 // call remove() in teardown
 ```
+
+Every phase runs inside save/restore with the ctx in css px, so nothing leaks between hooks or
+into the chart. A hook that throws gets logged once and skipped - the chart keeps painting.
+
+`info`:
+
+| field | |
+|---|---|
+| `width`, `height` | the whole canvas |
+| `dpr` | device pixel ratio the canvas is sized for |
+| `plot` | the main plot `{ x, y, w, h }`: the canvas minus the price and time axis |
+| `panes` | every pane's box by id, `main` included |
+| `background` | the resolved background color, to tell a light chart from a dark one |
+| `time` | `performance.now()` at the start of the frame |
+
+All in css px.
 
 Phases:
 
