@@ -20,6 +20,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   box, the resolved background color and the frame time, all css px. No more `getTransform()`
   maths to find the canvas size, and a hook can stay clear of the price axis.
 - `DrawInfo` and `DrawPhase` exported.
+- `ctx.schedule.frames(fps, (time, dt) => ...)`, an animation loop. `fps` 0 runs every frame.
+  Skips frames while the chart is off screen, and the first call back gets one interval as `dt`
+  so motion doesn't jump. `raf` only ever ran once, so a loop meant a hand-rolled
+  `requestAnimationFrame` and cleaning it up yourself.
 
 ### Changed
 - "Plugins" title becomes "Plugin Manager" in the plugin manager dropdown.
@@ -39,6 +43,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - Hot reloading an extension left its old overlays painting unless the teardown removed them.
   Overlays still registered at teardown get removed for you now.
+- `ctx.schedule` timers from an extension script kept running across hot reloads. Only
+  uninstall cancelled them. Hot reload does now too.
 - Editor typings had overlay hooks taking a `RenderContext`. They get `(ctx, view, transformer)`.
 - Sub-panes painted the default background over a custom `backgroundColor`.
 - A draw hook that threw stopped the render loop causing the chart to freeze. It's logged once and

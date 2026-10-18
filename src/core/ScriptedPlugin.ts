@@ -1827,7 +1827,7 @@ const extensionCapability: CapabilityHandler = (
         return React.createElement(ExtensionPanel);
     };
 
-    // forgetting to off() an overlay would leave the old version painting after every save
+    // forgetting to off() an overlay or timer would leave the old version running after every save
     const overlayOffs = new Set<() => void>();
     const track = (off: () => void) => {
         overlayOffs.add(off);
@@ -1835,6 +1835,18 @@ const extensionCapability: CapabilityHandler = (
             overlayOffs.delete(off);
             off();
         };
+    };
+    const tracked =
+        <A extends unknown[]>(fn: (...args: A) => () => void) =>
+        (...args: A) =>
+            track(fn(...args));
+
+    const trackedOnce = (start: (fire: () => void) => () => void, fn: () => void) => {
+        const off: () => void = start(() => {
+            overlayOffs.delete(off);
+            fn();
+        });
+        return track(off);
     };
     const scopedCtx = new Proxy(ctx, {
         get(target, prop) {
@@ -1851,6 +1863,16 @@ const extensionCapability: CapabilityHandler = (
                         return typeof v === 'function' ? v.bind(e) : v;
                     },
                 });
+            }
+            if (prop === 'schedule') {
+                const s = target.schedule;
+                return {
+                    interval: tracked(s.interval.bind(s)),
+                    timeout: (ms: number, fn: () => void) =>
+                        trackedOnce((fire) => s.timeout(ms, fire), fn),
+                    raf: (fn: () => void) => trackedOnce((fire) => s.raf(fire), fn),
+                    frames: tracked(s.frames.bind(s)),
+                } satisfies typeof s;
             }
             return Reflect.get(target, prop);
         },

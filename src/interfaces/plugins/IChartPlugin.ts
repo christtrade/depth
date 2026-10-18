@@ -133,6 +133,13 @@ export interface PluginSchedule {
     timeout(ms: number, fn: () => void): () => void;
     /** Managed animation-frame callback - auto-cancelled on plugin teardown. */
     raf(fn: () => void): () => void;
+    /**
+     * Repeating animation loop, at most `fps` a second, 0 = every frame. Skips frames
+     * while the chart is off screen; the first frame back gets one interval as `dt`.
+     * `time` is the raf timestamp, `dt` the ms since the last call. Auto-cancelled on
+     * plugin teardown.
+     */
+    frames(fps: number, fn: (time: number, dt: number) => void): () => void;
 }
 
 // Notifications

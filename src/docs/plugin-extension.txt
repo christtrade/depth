@@ -147,6 +147,29 @@ safe in multi-chart layouts.
 
 ---
 
+### Timers - `ctx.schedule`
+
+Timers that are cancelled for you on uninstall and hot reload.
+
+| | |
+|---|---|
+| `interval(ms, fn)` | repeating |
+| `timeout(ms, fn)` | once |
+| `raf(fn)` | one frame |
+| `frames(fps, (time, dt) => ...)` | animation loop, at most `fps` a second, `0` for every frame |
+
+`frames` skips frames while the chart is off screen - scrolled away, or a hidden cell in a
+layout. Background tabs pause on their own. The first call back after a pause gets one interval
+as `dt`, not the length of the pause, so motion doesn't jump.
+
+An animated background:
+
+```ts
+ctx.schedule.frames(30, () => ctx.renderEngine.markDirty('background'))
+```
+
+---
+
 ### Panels - `ctx.registerPanel`
 
 Requires `ui:panel` permission.

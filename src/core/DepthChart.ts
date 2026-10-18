@@ -1373,7 +1373,7 @@ export class DepthChart {
     private _buildPluginContext(pluginId: string): PluginContext {
         const chart = this;
 
-        const scheduleImpl = new PluginScheduleImpl();
+        const scheduleImpl = new PluginScheduleImpl(() => chart._renderEngine?.container);
         this.pluginSchedules.set(pluginId, scheduleImpl);
 
         // always built - the permission gates live in buildRestrictedContext
