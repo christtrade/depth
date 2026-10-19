@@ -818,7 +818,7 @@ export function DrawingSettingsDialog({
             <div
                 ref={dialogRef}
                 className={cn(
-                    'dlg-enter fixed z-[200] flex flex-col bg-[#14161b]/90 backdrop-blur-lg shadow-2xl overflow-hidden',
+                    'dlg-enter fixed z-[200] flex flex-col bg-background/90 backdrop-blur-lg shadow-2xl overflow-hidden',
                     fullscreen ? 'inset-0' : 'rounded-xl border border-white/10',
                 )}
                 style={
@@ -878,7 +878,7 @@ export function DrawingSettingsDialog({
                         </button>
                     ))}
                     <div
-                        className="absolute bottom-0 left-0 border-b-2 border-blue-500 transition-all duration-200"
+                        className="absolute bottom-0 left-0 border-b-2 border-brand-500 transition-all duration-200"
                         style={{
                             width: activeTabEl?.clientWidth ?? 0,
                             transform: `translateX(${activeTabEl?.offsetLeft ?? 0}px)`,
@@ -976,7 +976,7 @@ export function DrawingSettingsDialog({
                                 <>
                                     <Section label="Content">
                                         <textarea
-                                            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-[12px] text-white focus:outline-none focus:border-blue-500/60 resize-none placeholder:text-white/20"
+                                            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-[12px] text-white focus:outline-none focus:border-brand-500/60 resize-none placeholder:text-white/20"
                                             rows={3}
                                             value={textContent}
                                             onChange={(e) =>
@@ -1019,7 +1019,7 @@ export function DrawingSettingsDialog({
                                             max={48}
                                             min={8}
                                             step={1}
-                                            className="w-full accent-blue-500"
+                                            className="w-full accent-brand-500"
                                         />
                                         <div className="flex justify-between text-[10px] text-white/30 font-mono mt-1">
                                             <span>8px</span>
@@ -1049,7 +1049,7 @@ export function DrawingSettingsDialog({
                                     <Section label="Label text">
                                         <input
                                             type="text"
-                                            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-[12px] text-white focus:outline-none focus:border-blue-500/60 placeholder:text-white/20"
+                                            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-[12px] text-white focus:outline-none focus:border-brand-500/60 placeholder:text-white/20"
                                             value={label}
                                             onChange={(e) =>
                                                 onUpdate({ label: e.target.value } as any)
@@ -1093,7 +1093,7 @@ export function DrawingSettingsDialog({
                                             max={48}
                                             min={8}
                                             step={1}
-                                            className="w-full accent-blue-500"
+                                            className="w-full accent-brand-500"
                                         />
                                         <div className="flex justify-between text-[10px] text-white/30 font-mono mt-1">
                                             <span>8px</span>
@@ -1206,7 +1206,7 @@ export function DrawingSettingsDialog({
                                 <div className="flex gap-2">
                                     <input
                                         type="text"
-                                        className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-[12px] text-white focus:outline-none focus:border-blue-500/60 placeholder:text-white/20"
+                                        className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-[12px] text-white focus:outline-none focus:border-brand-500/60 placeholder:text-white/20"
                                         value={newTplName}
                                         onChange={(e) => setNewTplName(e.target.value)}
                                         onKeyDown={(e) => {
@@ -1220,7 +1220,7 @@ export function DrawingSettingsDialog({
                                             'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors',
                                             savedFlash
                                                 ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                                                : 'bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30',
+                                                : 'bg-brand-500/20 text-brand-400 border border-brand-500/30 hover:bg-brand-500/30',
                                         )}
                                         onClick={handleSaveTemplate}
                                     >
@@ -1256,7 +1256,7 @@ export function DrawingSettingsDialog({
                                                         </p>
                                                     </div>
                                                     <button
-                                                        className="px-2.5 py-1 text-[10px] rounded bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20"
+                                                        className="px-2.5 py-1 text-[10px] rounded bg-brand-500/15 text-brand-400 hover:bg-brand-500/25 transition-colors border border-brand-500/20"
                                                         onClick={() => handleApplyTemplate(tpl)}
                                                     >
                                                         Apply
@@ -1333,7 +1333,7 @@ export function StyleFieldControl({
                             className={cn(
                                 'flex-1 flex flex-col items-center gap-2 py-2.5 rounded-lg border transition-colors',
                                 value === w
-                                    ? 'border-blue-500/60 bg-blue-500/10 text-white'
+                                    ? 'border-brand-500/60 bg-brand-500/10 text-white'
                                     : 'border-white/8 bg-white/3 text-white/40 hover:border-white/20 hover:text-white/70',
                             )}
                             onClick={() => onUpdate({ [field.key]: w } as any)}
@@ -1363,7 +1363,7 @@ export function StyleFieldControl({
                                 className={cn(
                                     'flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-colors',
                                     active
-                                        ? 'border-blue-500/60 bg-blue-500/10 text-white'
+                                        ? 'border-brand-500/60 bg-brand-500/10 text-white'
                                         : 'border-white/8 bg-white/3 text-white/40 hover:border-white/20 hover:text-white/70',
                                 )}
                                 onClick={() => onUpdate({ [field.key]: preset.dash } as any)}
@@ -1398,7 +1398,7 @@ export function StyleFieldControl({
                     max={1}
                     min={0}
                     step={0.01}
-                    className="w-full accent-blue-500"
+                    className="w-full accent-brand-500"
                 />
                 <div className="flex justify-between text-[10px] text-white/30 font-mono mt-1">
                     <span>0%</span>
@@ -1419,7 +1419,7 @@ export function StyleFieldControl({
                     max={48}
                     min={8}
                     step={1}
-                    className="w-full accent-blue-500"
+                    className="w-full accent-brand-500"
                 />
                 <div className="flex justify-between text-[10px] text-white/30 font-mono mt-1">
                     <span>8px</span>
@@ -1442,7 +1442,7 @@ export function StyleFieldControl({
                     max={field.max}
                     min={field.min}
                     step={field.step}
-                    className="w-full accent-blue-500"
+                    className="w-full accent-brand-500"
                 />
                 <div className="flex justify-between text-[10px] text-white/30 font-mono mt-1">
                     <span>{field.step1}</span>
@@ -1528,7 +1528,7 @@ export function StyleFieldControl({
             <Section label={field.label}>
                 <input
                     type="text"
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-[12px] text-white focus:outline-none focus:border-blue-500/60 placeholder:text-white/20"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-[12px] text-white focus:outline-none focus:border-brand-500/60 placeholder:text-white/20"
                     value={drawing[field.key] ?? ''}
                     placeholder={field.placeholder}
                     maxLength={field.maxLength}
@@ -1545,7 +1545,7 @@ export function StyleFieldControl({
             <Section label={field.label}>
                 <div className="relative">
                     <select
-                        className="w-full appearance-none bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-[12px] text-white focus:outline-none focus:border-blue-500/60 cursor-pointer pr-8"
+                        className="w-full appearance-none bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-[12px] text-white focus:outline-none focus:border-brand-500/60 cursor-pointer pr-8"
                         value={value}
                         onChange={(e) => onUpdate({ [field.key]: e.target.value } as any)}
                     >
@@ -1586,7 +1586,7 @@ export function StyleFieldControl({
                             className={cn(
                                 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] transition-colors',
                                 value === opt.value
-                                    ? 'border-blue-500/60 bg-blue-500/10 text-white'
+                                    ? 'border-brand-500/60 bg-brand-500/10 text-white'
                                     : 'border-white/8 bg-white/3 text-white/40 hover:border-white/20 hover:text-white/70',
                             )}
                             onClick={() => onUpdate({ [field.key]: opt.value } as any)}
@@ -1653,7 +1653,7 @@ export function StyleFieldControl({
                             className={cn(
                                 'text-[10px] font-mono transition-colors',
                                 value === s.value
-                                    ? 'text-blue-400'
+                                    ? 'text-brand-400'
                                     : 'text-white/25 hover:text-white/50',
                             )}
                             onClick={() => onUpdate({ [field.key]: s.value } as any)}
@@ -1770,7 +1770,7 @@ export function StyleFieldControl({
                                 </span>
                                 <input
                                     type="number"
-                                    className="w-full bg-white/5 border border-white/10 rounded-md px-1.5 py-1 text-[11px] font-mono text-white text-center focus:outline-none focus:border-blue-500/60"
+                                    className="w-full bg-white/5 border border-white/10 rounded-md px-1.5 py-1 text-[11px] font-mono text-white text-center focus:outline-none focus:border-brand-500/60"
                                     value={val}
                                     onChange={(e) =>
                                         onUpdate({ [k]: parseFloat(e.target.value) || 0 } as any)
@@ -1819,7 +1819,7 @@ export function StyleFieldControl({
                             className={cn(
                                 'w-7 h-7 rounded flex items-center justify-center border transition-colors',
                                 value === pos
-                                    ? 'border-blue-500/60 bg-blue-500/20'
+                                    ? 'border-brand-500/60 bg-brand-500/20'
                                     : 'border-white/8 bg-white/3 hover:border-white/25 hover:bg-white/8',
                             )}
                             onClick={() => onUpdate({ [field.key]: pos } as any)}
@@ -1827,7 +1827,7 @@ export function StyleFieldControl({
                             <div
                                 className={cn(
                                     'w-2 h-2 rounded-full transition-colors',
-                                    value === pos ? 'bg-blue-400' : 'bg-white/25',
+                                    value === pos ? 'bg-brand-400' : 'bg-white/25',
                                 )}
                             />
                         </button>
@@ -1855,7 +1855,7 @@ export function StyleFieldControl({
                             className={cn(
                                 'flex-1 flex flex-col items-center gap-2 py-2.5 rounded-lg border transition-colors',
                                 value === val
-                                    ? 'border-blue-500/60 bg-blue-500/10 text-white'
+                                    ? 'border-brand-500/60 bg-brand-500/10 text-white'
                                     : 'border-white/8 bg-white/3 text-white/40 hover:border-white/20 hover:text-white/70',
                             )}
                             onClick={() => onUpdate({ [field.key]: val } as any)}
@@ -1897,7 +1897,7 @@ export function StyleFieldControl({
                             className={cn(
                                 'flex-1 flex flex-col items-center gap-2 py-2.5 rounded-lg border transition-colors',
                                 value === val
-                                    ? 'border-blue-500/60 bg-blue-500/10 text-white'
+                                    ? 'border-brand-500/60 bg-brand-500/10 text-white'
                                     : 'border-white/8 bg-white/3 text-white/40 hover:border-white/20 hover:text-white/70',
                             )}
                             onClick={() => onUpdate({ [field.key]: val } as any)}
@@ -1962,7 +1962,7 @@ export function StyleFieldControl({
                                         className={cn(
                                             'flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg border text-[11px] transition-colors',
                                             val === opt.val
-                                                ? 'border-blue-500/60 bg-blue-500/10 text-white'
+                                                ? 'border-brand-500/60 bg-brand-500/10 text-white'
                                                 : 'border-white/8 bg-white/3 text-white/40 hover:border-white/20 hover:text-white/70',
                                         )}
                                         onClick={() => onUpdate({ [key]: opt.val } as any)}
@@ -1986,7 +1986,7 @@ export function StyleFieldControl({
                 className={cn(
                     'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-colors',
                     value
-                        ? 'border-blue-500/30 bg-blue-500/8 text-white'
+                        ? 'border-brand-500/30 bg-brand-500/8 text-white'
                         : 'border-white/6 bg-white/3 text-white/50 hover:border-white/12 hover:bg-white/5 hover:text-white/70',
                 )}
                 onClick={() => onUpdate({ [field.key]: !value } as any)}
@@ -1994,7 +1994,7 @@ export function StyleFieldControl({
                 <div
                     className={cn(
                         'w-4 h-4 rounded border-[1.5px] flex items-center justify-center shrink-0 transition-colors',
-                        value ? 'border-blue-500 bg-blue-500' : 'border-white/20 bg-transparent',
+                        value ? 'border-brand-500 bg-brand-500' : 'border-white/20 bg-transparent',
                     )}
                 >
                     {value && <Check size={10} strokeWidth={3} className="text-white" />}
@@ -2020,7 +2020,7 @@ export function StyleFieldControl({
                     <Switch
                         checked={on}
                         onCheckedChange={(v) => onUpdate({ [field.toggleKey]: v } as any)}
-                        className="data-[state=checked]:bg-blue-500"
+                        className="data-[state=checked]:bg-brand-500"
                     />
                     <span
                         className={cn(
@@ -2038,7 +2038,7 @@ export function StyleFieldControl({
                     >
                         <input
                             type="number"
-                            className="w-16 bg-white/5 border border-white/10 rounded-md px-2 py-1 text-[12px] font-mono text-white text-right focus:outline-none focus:border-blue-500/60"
+                            className="w-16 bg-white/5 border border-white/10 rounded-md px-2 py-1 text-[12px] font-mono text-white text-right focus:outline-none focus:border-brand-500/60"
                             value={val}
                             min={field.min}
                             max={field.max}
@@ -2108,7 +2108,7 @@ export function StyleFieldControl({
                         <Switch
                             checked={on}
                             onCheckedChange={(v) => onUpdate({ [field.toggleKey]: v } as any)}
-                            className="data-[state=checked]:bg-blue-500"
+                            className="data-[state=checked]:bg-brand-500"
                         />
                         <span
                             className={cn(
@@ -2195,7 +2195,7 @@ export function StyleFieldControl({
                                             className={cn(
                                                 'w-7 h-7 flex items-center justify-center rounded-lg border text-[11px] transition-colors',
                                                 val === opt.value
-                                                    ? 'border-blue-500/60 bg-blue-500/10 text-white'
+                                                    ? 'border-brand-500/60 bg-brand-500/10 text-white'
                                                     : 'border-white/8 bg-white/3 text-white/40 hover:border-white/20 hover:text-white/70',
                                             )}
                                             onClick={() => onUpdate({ [f.key]: opt.value } as any)}
@@ -2214,7 +2214,7 @@ export function StyleFieldControl({
                                     className={cn(
                                         'flex items-center gap-1.5 px-2.5 h-7 rounded-lg border text-[11px] transition-colors',
                                         val
-                                            ? 'border-blue-500/60 bg-blue-500/10 text-white'
+                                            ? 'border-brand-500/60 bg-brand-500/10 text-white'
                                             : 'border-white/8 bg-white/3 text-white/40 hover:border-white/20 hover:text-white/70',
                                     )}
                                     onClick={() => onUpdate({ [f.key]: !val } as any)}
@@ -2264,7 +2264,7 @@ function NumberInputField({
             <div className="flex items-center gap-2">
                 <input
                     type="number"
-                    className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-[12px] font-mono text-white focus:outline-none focus:border-blue-500/60"
+                    className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-[12px] font-mono text-white focus:outline-none focus:border-brand-500/60"
                     value={local}
                     min={field.min}
                     max={field.max}
@@ -2320,7 +2320,7 @@ function PriceInput({ value, onChange }: { value: number; onChange: (v: number) 
     return (
         <input
             type="text"
-            className="w-full bg-white/5 border border-white/10 rounded px-2.5 py-1.5 text-[11px] font-mono text-white focus:outline-none focus:border-blue-500/60"
+            className="w-full bg-white/5 border border-white/10 rounded px-2.5 py-1.5 text-[11px] font-mono text-white focus:outline-none focus:border-brand-500/60"
             value={local}
             onChange={(e) => setLocal(e.target.value)}
             onFocus={() => {
@@ -2349,7 +2349,7 @@ function TsInput({ value, onChange }: { value: bigint; onChange: (v: bigint) => 
     return (
         <input
             type="text"
-            className="w-full bg-white/5 border border-white/10 rounded px-2.5 py-1.5 text-[11px] font-mono text-white focus:outline-none focus:border-blue-500/60"
+            className="w-full bg-white/5 border border-white/10 rounded px-2.5 py-1.5 text-[11px] font-mono text-white focus:outline-none focus:border-brand-500/60"
             value={local}
             onChange={(e) => setLocal(e.target.value)}
             onFocus={() => {
@@ -2413,7 +2413,7 @@ function HAlignButtons({
                         className={cn(
                             'flex items-center gap-1.5 px-3 py-2 rounded-lg border text-[11px] transition-colors',
                             value === a
-                                ? 'border-blue-500/60 bg-blue-500/10 text-white'
+                                ? 'border-brand-500/60 bg-brand-500/10 text-white'
                                 : 'border-white/8 bg-white/3 text-white/40 hover:border-white/20 hover:text-white/70',
                         )}
                         onClick={() => onChange(a)}
@@ -2447,7 +2447,7 @@ function VAlignButtons({
                     className={cn(
                         'flex items-center gap-1.5 px-3 py-2 rounded-lg border text-[11px] transition-colors',
                         value === val
-                            ? 'border-blue-500/60 bg-blue-500/10 text-white'
+                            ? 'border-brand-500/60 bg-brand-500/10 text-white'
                             : 'border-white/8 bg-white/3 text-white/40 hover:border-white/20 hover:text-white/70',
                     )}
                     onClick={() => onChange(val)}
@@ -2474,7 +2474,7 @@ function ToggleChip({
             className={cn(
                 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] transition-colors',
                 active
-                    ? 'border-blue-500/60 bg-blue-500/10 text-white'
+                    ? 'border-brand-500/60 bg-brand-500/10 text-white'
                     : 'border-white/8 bg-white/3 text-white/40 hover:border-white/20 hover:text-white/70',
             )}
             onClick={onClick}
@@ -2505,7 +2505,7 @@ function InlineToggleRow({
             className={cn(
                 'w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-left transition-colors',
                 active
-                    ? 'border-blue-500/30 bg-blue-500/8 text-white'
+                    ? 'border-brand-500/30 bg-brand-500/8 text-white'
                     : 'border-white/6 bg-white/3 text-white/50 hover:border-white/12 hover:bg-white/5 hover:text-white/70',
             )}
             onClick={onToggle}
@@ -2514,7 +2514,7 @@ function InlineToggleRow({
             <Switch
                 checked={active}
                 onCheckedChange={onToggle}
-                className="data-[state=checked]:bg-blue-500"
+                className="data-[state=checked]:bg-brand-500"
             />
         </button>
     );
@@ -2525,7 +2525,7 @@ function VisibilityRow({
     label,
     description,
     checked,
-    activeColor = 'text-blue-400',
+    activeColor = 'text-brand-400',
     onCheckedChange,
 }: {
     icon: React.ReactNode;
@@ -2545,7 +2545,7 @@ function VisibilityRow({
             <Switch
                 checked={checked}
                 onCheckedChange={onCheckedChange}
-                className="data-[state=checked]:bg-blue-500"
+                className="data-[state=checked]:bg-brand-500"
             />
         </div>
     );
@@ -2630,7 +2630,7 @@ function FibLevelsEditor({
 
                     <input
                         type="text"
-                        className="w-full bg-white/5 border border-white/10 rounded-md px-2 py-1 text-[12px] font-mono text-white/80 focus:outline-none focus:border-blue-500/50"
+                        className="w-full bg-white/5 border border-white/10 rounded-md px-2 py-1 text-[12px] font-mono text-white/80 focus:outline-none focus:border-brand-500/50"
                         value={level.value}
                         onChange={(e) => update(level.id, { value: e.target.value })}
                         onKeyDown={(e) => e.stopPropagation()}
@@ -2670,7 +2670,7 @@ function FibLevelsEditor({
                 </label>
                 <input
                     type="text"
-                    className="flex-1 bg-white/4 border border-dashed border-white/12 rounded-lg px-2.5 py-1.5 text-[12px] font-mono text-white/60 placeholder:text-white/20 focus:outline-none focus:border-blue-500/40 focus:border-solid focus:bg-white/6"
+                    className="flex-1 bg-white/4 border border-dashed border-white/12 rounded-lg px-2.5 py-1.5 text-[12px] font-mono text-white/60 placeholder:text-white/20 focus:outline-none focus:border-brand-500/40 focus:border-solid focus:bg-white/6"
                     placeholder="Level  e.g. 0.786"
                     value={newValue}
                     onChange={(e) => setNewValue(e.target.value)}
@@ -2681,7 +2681,7 @@ function FibLevelsEditor({
                     maxLength={8}
                 />
                 <button
-                    className="px-3 h-8 bg-blue-500/15 border border-blue-500/30 rounded-lg text-[11px] font-medium text-blue-400 hover:bg-blue-500/25 transition-colors shrink-0"
+                    className="px-3 h-8 bg-brand-500/15 border border-brand-500/30 rounded-lg text-[11px] font-medium text-brand-400 hover:bg-brand-500/25 transition-colors shrink-0"
                     onClick={add}
                 >
                     + Add
@@ -2756,7 +2756,7 @@ function ChannelLevelsEditor({
                         <input
                             type="number"
                             step="0.1"
-                            className="w-full bg-white/5 border border-white/10 rounded-md px-2 py-1 text-[12px] font-mono text-white/80 focus:outline-none focus:border-blue-500/50"
+                            className="w-full bg-white/5 border border-white/10 rounded-md px-2 py-1 text-[12px] font-mono text-white/80 focus:outline-none focus:border-brand-500/50"
                             value={level.value}
                             onChange={(e) => update(level.id, { value: e.target.value })}
                             onKeyDown={(e) => e.stopPropagation()}
@@ -2788,7 +2788,7 @@ function ChannelLevelsEditor({
                                     className={cn(
                                         'w-full h-6 rounded-md text-[10px] font-mono border transition-colors',
                                         level.lineWidth === w
-                                            ? 'border-blue-500/60 bg-blue-500/10 text-white'
+                                            ? 'border-brand-500/60 bg-brand-500/10 text-white'
                                             : 'border-white/8 bg-white/3 text-white/40 hover:border-white/20 hover:text-white/70',
                                     )}
                                     onClick={() => update(level.id, { lineWidth: w })}
@@ -2838,7 +2838,7 @@ function ChannelLevelsEditor({
                 <input
                     type="number"
                     step="0.1"
-                    className="flex-1 bg-white/5 border border-dashed border-white/12 rounded-lg px-2.5 py-1.5 text-[12px] font-mono text-white/60 placeholder:text-white/20 focus:outline-none focus:border-blue-500/40 focus:border-solid focus:bg-white/6"
+                    className="flex-1 bg-white/5 border border-dashed border-white/12 rounded-lg px-2.5 py-1.5 text-[12px] font-mono text-white/60 placeholder:text-white/20 focus:outline-none focus:border-brand-500/40 focus:border-solid focus:bg-white/6"
                     placeholder="Level  e.g. 0.5"
                     value={newValue}
                     onChange={(e) => setNewValue(e.target.value)}
@@ -2848,7 +2848,7 @@ function ChannelLevelsEditor({
                     }}
                 />
                 <button
-                    className="px-3 h-8 bg-blue-500/15 border border-blue-500/30 rounded-lg active:scale-[0.98] text-[11px] font-medium text-blue-400 hover:bg-blue-500/25 transition-all shrink-0"
+                    className="px-3 h-8 bg-brand-500/15 border border-brand-500/30 rounded-lg active:scale-[0.98] text-[11px] font-medium text-brand-400 hover:bg-brand-500/25 transition-all shrink-0"
                     onClick={add}
                 >
                     + Add

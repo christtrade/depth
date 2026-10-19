@@ -218,7 +218,7 @@ export function TimeframeSelector({
                     open={open}
                     offset={16}
                     maxHeight={354}
-                    className="z-50 flex flex-col w-[244px] rounded-lg border border-[#1e2128] bg-[#16181d] shadow-2xl overflow-hidden"
+                    className="z-50 flex flex-col w-[244px] rounded-lg border border-raised bg-background shadow-2xl overflow-hidden"
                 >
                         <div className="p-2.5 space-y-3 flex-1 min-h-0 overflow-y-auto">
                             {PRESET_GROUPS.filter((g) => g.tfs.length > 0).map((group) => (
@@ -264,7 +264,7 @@ export function TimeframeSelector({
                                 </div>
                             )}
 
-                                <div className="pt-2 border-t border-[#1e2128]">
+                                <div className="pt-2 border-t border-raised">
                                     <SectionLabel>
                                         <span className="inline-flex items-center gap-1">
                                             Add custom
@@ -282,11 +282,11 @@ export function TimeframeSelector({
                                             onKeyDown={handleInputKeyDown}
                                             placeholder="e.g. 7m"
                                             className={cn(
-                                                'w-full h-7 px-2 rounded-md text-xs bg-[#0e1014] font-[500] border outline-none transition-colors',
+                                                'w-full h-7 px-2 rounded-md text-xs bg-sunken font-[500] border outline-none transition-colors',
                                                 'placeholder:text-slate-700 text-slate-200',
                                                 inputError
                                                     ? 'border-red-500/50 focus:border-red-500/80'
-                                                    : 'border-[#1e2128] focus:border-border',
+                                                    : 'border-raised focus:border-border',
                                             )}
                                         />
                                         <button
@@ -347,16 +347,16 @@ function QuickPick({
                         className={cn(
                             'relative h-7 px-2 rounded-md text-[11px] font-medium flex items-center gap-1 transition-colors duration-150 select-none',
                             locked
-                                ? 'text-slate-700 hover:text-cyan-300/80'
+                                ? 'text-slate-700 hover:text-brand-300/80'
                                 : active
                                   ? 'text-white'
-                                  : 'text-slate-500 hover:text-slate-200 hover:bg-[#1a1d23]',
+                                  : 'text-slate-500 hover:text-slate-200 hover:bg-card',
                         )}
                     >
                         {tf.label}
                         {<Lock size={8} />}
                         {active && (
-                            <span className="absolute inset-x-1.5 bottom-[4px] h-[1px] rounded-full bg-[#08b3de]" />
+                            <span className="absolute inset-x-1.5 bottom-[4px] h-[1px] rounded-full bg-brand-500" />
                         )}
                     </button>
                 </TooltipTrigger>
@@ -370,15 +370,15 @@ function QuickPick({
                 className={cn(
                     'relative h-7 px-2 rounded-md text-[11px] font-medium flex items-center gap-1 transition-colors duration-150 select-none',
                     locked
-                        ? 'text-slate-700 hover:text-cyan-300/80'
+                        ? 'text-slate-700 hover:text-brand-300/80'
                         : active
                           ? 'text-white'
-                          : 'text-slate-500 hover:text-slate-200 hover:bg-[#1a1d23]',
+                          : 'text-slate-500 hover:text-slate-200 hover:bg-card',
                 )}
             >
                 {tf.label}
                 {active && (
-                    <span className="absolute inset-x-1.5 bottom-[4px] h-[1px] rounded-full bg-[#08b3de]" />
+                    <span className="absolute inset-x-1.5 bottom-[4px] h-[1px] rounded-full bg-brand-500" />
                 )}
             </button>
         )
@@ -419,10 +419,10 @@ function TfChip({
                             'group relative flex items-center h-6 rounded text-xs select-none cursor-pointer transition-all duration-100 font-[500] pl-2',
                             onRemove ? 'pr-1' : 'pr-1.5',
                             locked
-                                ? 'bg-transparent text-slate-600 border border-dashed border-[#1e2128] hover:text-cyan-300/80 hover:border-cyan-400/30'
+                                ? 'bg-transparent text-slate-600 border border-dashed border-raised hover:text-brand-300/80 hover:border-brand-400/30'
                                 : active
-                                  ? 'bg-[#1a1d23] text-white border border-border'
-                                  : 'bg-[#1a1d23] text-slate-500 border border-[#1e2128] hover:text-slate-200 hover:border-slate-600 hover:bg-[#1e2229]',
+                                  ? 'bg-card text-white border border-border'
+                                  : 'bg-card text-slate-500 border border-raised hover:text-slate-200 hover:border-slate-600 hover:bg-raised',
                         )}
                         onClick={() => onSelect(tf)}
                     >
@@ -454,10 +454,10 @@ function TfChip({
                     'group relative flex items-center h-6 rounded text-xs select-none cursor-pointer transition-all duration-100 font-[500] pl-2',
                     onRemove ? 'pr-1' : 'pr-1.5',
                     locked
-                        ? 'bg-transparent text-slate-600 border border-dashed border-[#1e2128] hover:text-cyan-300/80 hover:border-cyan-400/30'
+                        ? 'bg-transparent text-slate-600 border border-dashed border-raised hover:text-brand-300/80 hover:border-brand-400/30'
                         : active
-                          ? 'bg-[#1a1d23] text-white border border-border'
-                          : 'bg-[#1a1d23] text-slate-500 border border-[#1e2128] hover:text-slate-200 hover:border-slate-600 hover:bg-[#1e2229]',
+                          ? 'bg-card text-white border border-border'
+                          : 'bg-card text-slate-500 border border-raised hover:text-slate-200 hover:border-slate-600 hover:bg-raised',
                 )}
                 onClick={() => onSelect(tf)}
             >
@@ -467,7 +467,7 @@ function TfChip({
                     className={cn(
                         'ml-1.5 transition-all',
                         pinned
-                            ? 'text-[#08b3de]'
+                            ? 'text-brand-500'
                             : 'text-slate-600 opacity-0 group-hover:opacity-100 hover:text-slate-300',
                     )}
                     onClick={(e) => {

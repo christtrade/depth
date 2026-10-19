@@ -309,7 +309,7 @@ export function IndicatorSettingsDialog({
             <div
                 ref={dialogRef}
                 className={cn(
-                    'dlg-enter fixed z-[200] flex flex-col bg-[#14161b]/90 backdrop-blur-lg shadow-2xl overflow-hidden min-h-0',
+                    'dlg-enter fixed z-[200] flex flex-col bg-background/90 backdrop-blur-lg shadow-2xl overflow-hidden min-h-0',
                     fullscreen ? 'inset-0' : 'rounded-xl border border-white/10',
                 )}
                 style={
@@ -369,7 +369,7 @@ export function IndicatorSettingsDialog({
                         </button>
                     ))}
                     <div
-                        className="absolute bottom-0 left-0 border-b-2 border-blue-500 transition-all duration-200"
+                        className="absolute bottom-0 left-0 border-b-2 border-brand-500 transition-all duration-200"
                         style={{
                             width: activeTabEl?.clientWidth ?? 0,
                             transform: `translateX(${activeTabEl?.offsetLeft ?? 0}px)`,
@@ -418,7 +418,7 @@ function FieldRow({
                 className={cn(
                     'w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-left transition-colors',
                     active
-                        ? 'border-blue-500/30 bg-blue-500/8 text-white'
+                        ? 'border-brand-500/30 bg-brand-500/8 text-white'
                         : 'border-white/6 bg-white/3 text-white/50 hover:border-white/12 hover:bg-white/5 hover:text-white/70',
                 )}
                 onClick={() => patch(field.key, !active)}
@@ -432,7 +432,7 @@ function FieldRow({
                 <Switch
                     checked={active}
                     onCheckedChange={(v) => patch(field.key, v)}
-                    className="data-[state=checked]:bg-blue-500"
+                    className="data-[state=checked]:bg-brand-500"
                 />
             </button>
         );
@@ -445,7 +445,7 @@ function FieldRow({
                 className={cn(
                     'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-colors',
                     value
-                        ? 'border-blue-500/30 bg-blue-500/8 text-white'
+                        ? 'border-brand-500/30 bg-brand-500/8 text-white'
                         : 'border-white/6 bg-white/3 text-white/50 hover:border-white/12 hover:bg-white/5 hover:text-white/70',
                 )}
                 onClick={() => patch(field.key, !value)}
@@ -453,7 +453,7 @@ function FieldRow({
                 <div
                     className={cn(
                         'w-4 h-4 rounded border-[1.5px] flex items-center justify-center shrink-0 transition-colors',
-                        value ? 'border-blue-500 bg-blue-500' : 'border-white/20 bg-transparent',
+                        value ? 'border-brand-500 bg-brand-500' : 'border-white/20 bg-transparent',
                     )}
                 >
                     {value && <Check size={10} strokeWidth={3} className="text-white" />}
@@ -574,7 +574,7 @@ function FieldRow({
                         <Switch
                             checked={on}
                             onCheckedChange={(v) => patch(field.toggleKey, v)}
-                            className="data-[state=checked]:bg-blue-500"
+                            className="data-[state=checked]:bg-brand-500"
                         />
                         <span
                             className={cn(
@@ -717,7 +717,7 @@ function FieldRow({
                             className={cn(
                                 'text-[10px] font-mono transition-colors',
                                 val === s.value
-                                    ? 'text-blue-400'
+                                    ? 'text-brand-400'
                                     : 'text-white/25 hover:text-white/50',
                             )}
                             onClick={() => patch(field.key, s.value)}
@@ -780,7 +780,7 @@ function FieldRow({
             <FieldSection label={field.label}>
                 <input
                     type="text"
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-[12px] text-white focus:outline-none focus:border-blue-500/60 placeholder:text-white/20"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-[12px] text-white focus:outline-none focus:border-brand-500/60 placeholder:text-white/20"
                     value={String(local[field.key] ?? '')}
                     placeholder={field.placeholder}
                     maxLength={field.maxLength}
@@ -800,7 +800,7 @@ function FieldRow({
             <FieldSection label={field.label}>
                 <input
                     type={withTime ? 'datetime-local' : 'date'}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-[12px] text-white focus:outline-none focus:border-blue-500/60 [color-scheme:dark]"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-[12px] text-white focus:outline-none focus:border-brand-500/60 [color-scheme:dark]"
                     value={trim(local[field.key])}
                     min={field.min ? trim(field.min) : undefined}
                     max={field.max ? trim(field.max) : undefined}
@@ -848,7 +848,7 @@ function FieldRow({
                             className={cn(
                                 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] transition-colors',
                                 val === opt.value
-                                    ? 'border-blue-500/60 bg-blue-500/10 text-white'
+                                    ? 'border-brand-500/60 bg-brand-500/10 text-white'
                                     : 'border-white/8 bg-white/3 text-white/40 hover:border-white/20 hover:text-white/70',
                             )}
                             onClick={() => patch(field.key, opt.value)}
@@ -871,7 +871,7 @@ function FieldRow({
                     <Switch
                         checked={on}
                         onCheckedChange={(v) => patch(field.toggleKey, v)}
-                        className="data-[state=checked]:bg-blue-500"
+                        className="data-[state=checked]:bg-brand-500"
                     />
                     <span
                         className={cn(
@@ -889,7 +889,7 @@ function FieldRow({
                     >
                         <input
                             type="number"
-                            className="w-16 bg-white/5 border border-white/10 rounded-md px-2 py-1 text-[12px] font-mono text-white text-right focus:outline-none focus:border-blue-500/60"
+                            className="w-16 bg-white/5 border border-white/10 rounded-md px-2 py-1 text-[12px] font-mono text-white text-right focus:outline-none focus:border-brand-500/60"
                             value={val}
                             min={field.min}
                             max={field.max}
@@ -958,7 +958,7 @@ function FieldRow({
                                             className={cn(
                                                 'w-7 h-7 flex items-center justify-center rounded-lg border text-[11px] transition-colors',
                                                 val === opt.value
-                                                    ? 'border-blue-500/60 bg-blue-500/10 text-white'
+                                                    ? 'border-brand-500/60 bg-brand-500/10 text-white'
                                                     : 'border-white/8 bg-white/3 text-white/40 hover:border-white/20 hover:text-white/70',
                                             )}
                                             onClick={() => patch(f.key, opt.value)}
@@ -977,7 +977,7 @@ function FieldRow({
                                     className={cn(
                                         'flex items-center gap-1.5 px-2.5 h-7 rounded-lg border text-[11px] transition-colors',
                                         val
-                                            ? 'border-blue-500/60 bg-blue-500/10 text-white'
+                                            ? 'border-brand-500/60 bg-brand-500/10 text-white'
                                             : 'border-white/8 bg-white/3 text-white/40 hover:border-white/20 hover:text-white/70',
                                     )}
                                     onClick={() => patch(f.key, !val)}
@@ -1054,7 +1054,7 @@ function NumberInputField({
                 if (e.key === 'Enter') commit();
             }}
             className={cn(
-                'bg-white/5 border border-white/10 rounded-md px-2 py-1 text-[12px] font-mono text-white/80 focus:outline-none focus:border-blue-500/50 text-right',
+                'bg-white/5 border border-white/10 rounded-md px-2 py-1 text-[12px] font-mono text-white/80 focus:outline-none focus:border-brand-500/50 text-right',
                 inline ? 'w-20' : 'flex-1',
             )}
         />

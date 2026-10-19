@@ -602,7 +602,7 @@ export function DrawingSettingsBar({
                             <AnimatedPanel
                                 open={openField === key}
                                 offset={4}
-                                className="z-50 p-1.5 rounded-lg border border-border bg-[#1c1e24] shadow-xl flex flex-col gap-1 min-w-[80px] overflow-y-auto"
+                                className="z-50 p-1.5 rounded-lg border border-border bg-raised shadow-xl flex flex-col gap-1 min-w-[80px] overflow-y-auto"
                                 onMouseDown={(e) => e.stopPropagation()}
                             >
                                 {LINE_WIDTHS.map((w) => (
@@ -656,7 +656,7 @@ export function DrawingSettingsBar({
                             <AnimatedPanel
                                 open={openField === key}
                                 offset={4}
-                                className="z-50 p-1.5 rounded-lg border border-border bg-[#1c1e24] shadow-xl flex flex-col gap-1 min-w-[120px] overflow-y-auto"
+                                className="z-50 p-1.5 rounded-lg border border-border bg-raised shadow-xl flex flex-col gap-1 min-w-[120px] overflow-y-auto"
                                 onMouseDown={(e) => e.stopPropagation()}
                             >
                                 {DASH_PRESETS.map((preset) => (
@@ -750,7 +750,7 @@ export function DrawingSettingsBar({
                                     'flex items-center gap-1 px-1.5 py-1 rounded transition-colors',
                                     TAP,
                                     enabled
-                                        ? 'text-blue-400 hover:bg-white/10'
+                                        ? 'text-brand-400 hover:bg-white/10'
                                         : 'text-muted-foreground/40 hover:bg-white/10 hover:text-muted-foreground',
                                 )}
                                 onClick={() => {
@@ -852,7 +852,7 @@ export function DrawingSettingsBar({
                                 className={cn(
                                     'px-2.5 h-7 rounded text-[11px] font-medium transition-colors [@media(pointer:coarse)]:h-10',
                                     mode === m.value
-                                        ? 'bg-blue-500/25 text-blue-300 border border-blue-500/40'
+                                        ? 'bg-brand-500/25 text-brand-300 border border-brand-500/40'
                                         : 'text-white/40 hover:text-white/70 hover:bg-white/8 border border-transparent',
                                 )}
                                 onClick={() => {
@@ -924,7 +924,7 @@ export function DrawingSettingsBar({
 
             <div
                 ref={barRef}
-                className="dsb-enter fixed z-[150] flex items-center gap-0.5 h-9 [@media(pointer:coarse)]:h-11 rounded-lg border border-border bg-[#1c1e24] shadow-xl w-fit"
+                className="dsb-enter fixed z-[150] flex items-center gap-0.5 h-9 [@media(pointer:coarse)]:h-11 rounded-lg border border-border bg-raised shadow-xl w-fit"
                 style={{
                     left: posRef.current!.x,
                     top: posRef.current!.y,
@@ -1111,7 +1111,7 @@ export function DrawingSettingsBar({
                             More
                         </TooltipContent>
                     </Tooltip>
-                    <DropdownMenuContent align="end" className="bg-[#1c1e24] border-border">
+                    <DropdownMenuContent align="end" className="bg-raised border-border">
                         <DropdownMenuItem
                             onClick={onDuplicate}
                             className={cn('gap-2 cursor-pointer text-xs', TAP_ROW)}

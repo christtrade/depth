@@ -55,8 +55,8 @@ const BUILTIN_CATEGORY_META: Record<
     volume: {
         label: 'Volume',
         icon: <BarChart2 size={11} />,
-        dot: 'bg-blue-400',
-        text: 'text-blue-400',
+        dot: 'bg-brand-400',
+        text: 'text-brand-400',
     },
     orderflow: {
         label: 'Order Flow',
@@ -155,8 +155,8 @@ function Tag({ children, cyan }: { children: React.ReactNode; cyan?: boolean }) 
             className={cn(
                 'text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded border shrink-0 leading-none',
                 cyan
-                    ? 'border-[#08b3de]/30 text-[#08b3de]/80 bg-[#08b3de]/5'
-                    : 'border-[#1e2128] text-slate-500 bg-[#0e1014]',
+                    ? 'border-brand-500/30 text-brand-500/80 bg-brand-500/5'
+                    : 'border-raised text-slate-500 bg-sunken',
             )}
         >
             {children}
@@ -183,18 +183,18 @@ function FilterChip({
             className={cn(
                 'flex items-center gap-1.5 h-6 pl-1.5 pr-2 rounded-md text-[10px] font-medium whitespace-nowrap shrink-0 border transition-colors duration-150 select-none',
                 active
-                    ? 'bg-[#08b3de]/10 border-[#08b3de]/30 text-[#08b3de]'
-                    : 'bg-[#0e1014] border-[#1e2128] text-slate-400 hover:text-slate-200 hover:border-slate-600',
+                    ? 'bg-brand-500/10 border-brand-500/30 text-brand-500'
+                    : 'bg-sunken border-raised text-slate-400 hover:text-slate-200 hover:border-slate-600',
             )}
         >
-            <span className={cn('shrink-0', active ? 'text-[#08b3de]' : 'text-slate-500')}>
+            <span className={cn('shrink-0', active ? 'text-brand-500' : 'text-slate-500')}>
                 {icon}
             </span>
             {label}
             <span
                 className={cn(
                     'tabular-nums text-[9px] px-1 rounded-full leading-[13px]',
-                    active ? 'bg-[#08b3de]/15 text-[#08b3de]' : 'bg-white/5 text-slate-500',
+                    active ? 'bg-brand-500/15 text-brand-500' : 'bg-white/5 text-slate-500',
                 )}
             >
                 {count}
@@ -239,12 +239,12 @@ function IndicatorRow({
             title={refusal}
             className={cn(
                 'group relative w-full flex items-center gap-2.5 pl-3 pr-1.5 h-9 cursor-pointer transition-colors',
-                highlighted ? 'bg-[#1a1d23]' : isActive ? 'bg-[#15181e]' : 'hover:bg-[#1a1d23]',
+                highlighted ? 'bg-card' : isActive ? 'bg-[#15181e]' : 'hover:bg-card',
                 refusal && 'opacity-45',
             )}
         >
             {highlighted && (
-                <span className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full bg-[#08b3de]" />
+                <span className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full bg-brand-500" />
             )}
 
             <span
@@ -278,7 +278,7 @@ function IndicatorRow({
                                 onToggle();
                             }}
                             title={isVisible ? 'Hide' : 'Show'}
-                            className="w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-slate-200 hover:bg-[#1e2128] transition-colors"
+                            className="w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-slate-200 hover:bg-raised transition-colors"
                         >
                             {isVisible ? <Eye size={13} /> : <EyeOff size={13} />}
                         </button>
@@ -325,7 +325,7 @@ function SectionLabel({
     count: number;
 }) {
     return (
-        <div className="flex items-center gap-1.5 px-3 pt-2.5 pb-1 sticky top-0 bg-[#16181d] z-[1]">
+        <div className="flex items-center gap-1.5 px-3 pt-2.5 pb-1 sticky top-0 bg-background z-[1]">
             <span className="text-[9px] font-semibold text-slate-500 uppercase tracking-widest">
                 {label}
             </span>
@@ -505,9 +505,9 @@ export function IndicatorsButton({
                 <AnimatedPanel
                     open={open}
                     maxHeight={480}
-                    className="z-50 flex flex-col w-[30rem] rounded-lg border border-[#1e2128] bg-[#16181d] shadow-2xl overflow-hidden"
+                    className="z-50 flex flex-col w-[30rem] rounded-lg border border-raised bg-background shadow-2xl overflow-hidden"
                 >
-                    <div className="flex items-center gap-2.5 px-3 h-11 border-b border-[#1e2128] shrink-0">
+                    <div className="flex items-center gap-2.5 px-3 h-11 border-b border-raised shrink-0">
                         <Search size={14} className="text-slate-600 shrink-0" />
                         <input
                             ref={searchRef}
@@ -518,7 +518,7 @@ export function IndicatorsButton({
                         />
                     </div>
 
-                    <div className="flex items-center gap-1.5 px-3 py-2 border-b border-[#1e2128] shrink-0 overflow-x-auto no-scrollbar">
+                    <div className="flex items-center gap-1.5 px-3 py-2 border-b border-raised shrink-0 overflow-x-auto no-scrollbar">
                         <FilterChip
                             icon={<LayoutGrid size={11} />}
                             label="All"
@@ -625,7 +625,7 @@ export function IndicatorsButton({
                         )}
                     </div>
 
-                    <div className="flex items-center justify-between h-7 px-3 border-t border-[#1e2128] shrink-0">
+                    <div className="flex items-center justify-between h-7 px-3 border-t border-raised shrink-0">
                         <span className="text-[10px] text-slate-700 flex items-center gap-2">
                             <kbd className="font-sans">↑↓</kbd> move
                             <kbd className="font-sans">↵</kbd> add

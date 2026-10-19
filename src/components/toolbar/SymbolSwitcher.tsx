@@ -160,7 +160,7 @@ export default function SymbolSwitcher({ eventBus, symbol, onSymbolChange }: Sym
                     'border transition-colors duration-150 select-none',
                     open
                         ? 'border-border bg-muted/30'
-                        : 'border-transparent hover:bg-[#1a1d23]/30 hover:border-border',
+                        : 'border-transparent hover:bg-card/30 hover:border-border',
                 )}
             >
                 <div
@@ -189,9 +189,9 @@ export default function SymbolSwitcher({ eventBus, symbol, onSymbolChange }: Sym
                 <AnimatedPanel
                     open={open}
                     maxHeight={416}
-                    className="z-50 flex flex-col w-[35rem] rounded-lg border border-[#1e2128] bg-[#16181d] shadow-2xl overflow-hidden"
+                    className="z-50 flex flex-col w-[35rem] rounded-lg border border-raised bg-background shadow-2xl overflow-hidden"
                 >
-                    <div className="flex items-center gap-2.5 px-3 h-11 border-b border-[#1e2128] shrink-0">
+                    <div className="flex items-center gap-2.5 px-3 h-11 border-b border-raised shrink-0">
                         <Search size={14} className="text-slate-600 shrink-0" />
                         <input
                             ref={searchRef}
@@ -221,7 +221,7 @@ export default function SymbolSwitcher({ eventBus, symbol, onSymbolChange }: Sym
                                 {errorInfo.canRetry && (
                                     <button
                                         onClick={() => runSearch(query)}
-                                        className="mt-1.5 h-6 px-2.5 rounded border border-[#1e2128] bg-[#0e1014] text-[11px] text-slate-300 hover:border-[#08b3de]/40 hover:text-white transition-colors"
+                                        className="mt-1.5 h-6 px-2.5 rounded border border-raised bg-sunken text-[11px] text-slate-300 hover:border-brand-500/40 hover:text-white transition-colors"
                                     >
                                         Try again
                                     </button>
@@ -257,7 +257,7 @@ export default function SymbolSwitcher({ eventBus, symbol, onSymbolChange }: Sym
                                     <button
                                         onClick={() => runSearch(query, cursor)}
                                         disabled={loadingMore}
-                                        className="w-full h-8 flex items-center justify-center gap-1.5 text-[11px] text-slate-500 hover:text-slate-300 hover:bg-[#1a1d23] transition-colors disabled:hover:bg-transparent"
+                                        className="w-full h-8 flex items-center justify-center gap-1.5 text-[11px] text-slate-500 hover:text-slate-300 hover:bg-card transition-colors disabled:hover:bg-transparent"
                                     >
                                         {loadingMore ? (
                                             <Loader2 size={12} className="animate-spin" />
@@ -270,7 +270,7 @@ export default function SymbolSwitcher({ eventBus, symbol, onSymbolChange }: Sym
                         )}
                     </div>
 
-                    <div className="flex items-center gap-2 h-7 px-3 border-t border-[#1e2128] shrink-0">
+                    <div className="flex items-center gap-2 h-7 px-3 border-t border-raised shrink-0">
                         <span className="text-[10px] text-slate-600 tabular-nums">
                             {symbols.length}
                             {hasMore ? '+' : ''} {symbols.length === 1 ? 'symbol' : 'symbols'}
@@ -305,11 +305,11 @@ function SymbolRow({
                 onClick={() => onPick(sym.symbol)}
                 className={cn(
                     'group w-full flex items-center gap-3 pl-3 pr-1.5 h-9 text-left transition-colors duration-200 hover:duration-0',
-                    active ? 'bg-[#1a1d23]' : 'hover:bg-[#1a1d23]',
+                    active ? 'bg-card' : 'hover:bg-card',
                 )}
             >
                 {active ? (
-                    <div className="w-1 h-1 rounded-full bg-[#08b3de] shrink-0" />
+                    <div className="w-1 h-1 rounded-full bg-brand-500 shrink-0" />
                 ) : (
                     <div className="w-1 shrink-0" />
                 )}
@@ -332,7 +332,7 @@ function SymbolRow({
                 </span>
 
                 {sym.type && (
-                    <span className="text-[9px] font-medium uppercase tracking-wider text-slate-500 px-1.5 py-0.5 rounded border border-[#1e2128] bg-[#0e1014] shrink-0">
+                    <span className="text-[9px] font-medium uppercase tracking-wider text-slate-500 px-1.5 py-0.5 rounded border border-raised bg-sunken shrink-0">
                         {sym.type}
                     </span>
                 )}
@@ -349,7 +349,7 @@ function SymbolRow({
                             e.stopPropagation();
                             onToggle();
                         }}
-                        className="w-6 h-6 flex items-center justify-center rounded text-slate-600 hover:text-slate-300 hover:bg-[#1e2128] shrink-0"
+                        className="w-6 h-6 flex items-center justify-center rounded text-slate-600 hover:text-slate-300 hover:bg-raised shrink-0"
                     >
                         <ChevronDown
                             size={13}
@@ -370,7 +370,7 @@ function SymbolRow({
                     <button
                         key={sub.symbol}
                         onClick={() => onPick(sub.symbol)}
-                        className="group w-full flex items-center gap-3 pl-3 pr-1.5 h-8 text-left bg-[#121419] hover:bg-[#1a1d23] transition-colors"
+                        className="group w-full flex items-center gap-3 pl-3 pr-1.5 h-8 text-left bg-[#121419] hover:bg-card transition-colors"
                     >
                         <div className="w-1 shrink-0" />
                         <span className="w-24 shrink-0 flex items-center gap-2">
@@ -383,7 +383,7 @@ function SymbolRow({
                             {sub.longName ?? sub.description ?? ''}
                         </span>
                         {sub.type && (
-                            <span className="text-[9px] font-medium uppercase tracking-wider text-slate-600 px-1.5 py-0.5 rounded border border-[#1e2128] shrink-0">
+                            <span className="text-[9px] font-medium uppercase tracking-wider text-slate-600 px-1.5 py-0.5 rounded border border-raised shrink-0">
                                 {sub.type}
                             </span>
                         )}

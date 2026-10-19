@@ -224,7 +224,7 @@ function PanelDropZones({
     };
 
     const zoneClass =
-        'absolute z-50 opacity-0 transition-all duration-200 border-blue-500 pointer-events-auto';
+        'absolute z-50 opacity-0 transition-all duration-200 border-brand-500 pointer-events-auto';
 
     return (
         <div className="relative flex-1 flex flex-col min-h-0 min-w-0 group">
@@ -250,7 +250,7 @@ function PanelDropZones({
                                     pos === 'top' && 'top-0 left-0 right-0 h-[30%] z-[51]',
                                     pos === 'bottom' &&
                                         'bottom-0 left-0 right-0 h-[30%] z-[51]',
-                                    isOver && 'opacity-100 bg-blue-500/20',
+                                    isOver && 'opacity-100 bg-brand-500/20',
                                     isOver && activeBorderClass,
                                 )}
                                 onDragLeave={() => setActiveZone(null)}

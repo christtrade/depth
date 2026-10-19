@@ -204,7 +204,7 @@ export function ChartSettingsDialog({
             <div
                 ref={dialogRef}
                 className={cn(
-                    'dlg-enter fixed z-[200] flex flex-col bg-[#14161b]/90 backdrop-blur-lg bg-[#14161b] shadow-2xl overflow-hidden min-h-0',
+                    'dlg-enter fixed z-[200] flex flex-col bg-background/90 backdrop-blur-lg bg-background shadow-2xl overflow-hidden min-h-0',
                     fullscreen ? 'inset-0' : 'rounded-xl border border-white/10',
                 )}
                 style={
@@ -265,7 +265,7 @@ export function ChartSettingsDialog({
                         </button>
                     ))}
                     <div
-                        className="absolute bottom-0 left-0 border-b-2 border-blue-500 transition-transform duration-200"
+                        className="absolute bottom-0 left-0 border-b-2 border-brand-500 transition-transform duration-200"
                         style={{
                             width: `${100 / tabs.length}%`,
                             transform: `translateX(${
@@ -1466,7 +1466,7 @@ function InlineToggleRow({
             className={cn(
                 'w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-left transition-colors',
                 active
-                    ? 'border-blue-500/30 bg-blue-500/8 text-white'
+                    ? 'border-brand-500/30 bg-brand-500/8 text-white'
                     : 'border-white/6 bg-white/3 text-white/50 hover:border-white/12 hover:bg-white/5 hover:text-white/70',
             )}
             onClick={onToggle}
@@ -1475,7 +1475,7 @@ function InlineToggleRow({
             <Switch
                 checked={active}
                 onCheckedChange={onToggle}
-                className="data-[state=checked]:bg-blue-500"
+                className="data-[state=checked]:bg-brand-500"
             />
         </button>
     );
@@ -1495,7 +1495,7 @@ function ToggleChip({
             className={cn(
                 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-medium transition-colors',
                 active
-                    ? 'border-blue-500/40 bg-blue-500/15 text-blue-300'
+                    ? 'border-brand-500/40 bg-brand-500/15 text-brand-300'
                     : 'border-white/8 bg-white/4 text-white/40 hover:border-white/15 hover:bg-white/7 hover:text-white/70',
             )}
             onClick={onClick}

@@ -156,7 +156,7 @@ export function ChartTypeSelector({
 
                 <AnimatedPanel
                     open={open}
-                    className="z-50 w-[212px] rounded-lg border border-[#1e2128] bg-[#16181d] shadow-2xl overflow-y-auto"
+                    className="z-50 w-[212px] rounded-lg border border-raised bg-background shadow-2xl overflow-y-auto"
                 >
                     <div className="p-2.5 space-y-3">
                         <div>
@@ -223,14 +223,14 @@ function TypeTile({
                     className={cn(
                         'group relative flex flex-col items-center justify-center gap-1.5 h-[3.75rem] rounded-md border transition-all duration-100 select-none',
                         refused
-                            ? 'border-[#1e2128] text-slate-700 cursor-not-allowed'
+                            ? 'border-raised text-slate-700 cursor-not-allowed'
                             : active
-                              ? 'bg-[#1a1d23] border-border text-white'
-                              : 'border-[#1e2128] text-slate-500 hover:text-slate-200 hover:bg-[#1a1d23] hover:border-slate-600',
+                              ? 'bg-card border-border text-white'
+                              : 'border-raised text-slate-500 hover:text-slate-200 hover:bg-card hover:border-slate-600',
                     )}
                 >
                     {active && !refused && (
-                        <span className="absolute top-1.5 right-1.5 w-1 h-1 rounded-full bg-[#08b3de]" />
+                        <span className="absolute top-1.5 right-1.5 w-1 h-1 rounded-full bg-brand-500" />
                     )}
                     {refused && (
                         <Lock size={8} className="absolute top-1.5 right-1.5 text-slate-700" />

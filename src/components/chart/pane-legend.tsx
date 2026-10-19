@@ -120,7 +120,7 @@ export function PaneLegend({
                     <div ref={rowRef} className="flex flex-row items-center flex-wrap gap-x-2 gap-y-0.5 min-w-0">
                         <div
                             ref={itemRef}
-                            className="relative flex items-center gap-0.5 min-w-0 max-w-full [@media(hover:hover)]:hover:bg-[#1a1d23] rounded-sm border border-transparent [@media(hover:hover)]:hover:border-border [&>*]:shrink-0"
+                            className="relative flex items-center gap-0.5 min-w-0 max-w-full [@media(hover:hover)]:hover:bg-card rounded-sm border border-transparent [@media(hover:hover)]:hover:border-border [&>*]:shrink-0"
                             style={{ pointerEvents: 'auto' }}
                             onPointerEnter={(e) => e.pointerType === 'mouse' && setNameHovered(pane.id)}
                             onPointerLeave={(e) => e.pointerType === 'mouse' && setNameHovered(null)}
@@ -163,8 +163,8 @@ export function PaneLegend({
                             key={ind.id}
                             // :hover sticks after a tap, so touch gets its highlight from tapOpened instead
                             className={cn(
-                                'flex items-center gap-0.5 self-start max-w-full min-w-0 py-0.5 rounded-sm px-1 duration-100 border border-transparent [@media(hover:hover)]:hover:bg-[#1a1d23] [@media(hover:hover)]:hover:duration-0 [@media(hover:hover)]:hover:border-border',
-                                tapOpened === ind.id && 'bg-[#1a1d23] border-border',
+                                'flex items-center gap-0.5 self-start max-w-full min-w-0 py-0.5 rounded-sm px-1 duration-100 border border-transparent [@media(hover:hover)]:hover:bg-card [@media(hover:hover)]:hover:duration-0 [@media(hover:hover)]:hover:border-border',
+                                tapOpened === ind.id && 'bg-card border-border',
                             )}
                             style={{ pointerEvents: 'auto' }}
                             data-indicator-row={ind.id}

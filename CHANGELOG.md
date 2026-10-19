@@ -33,6 +33,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `DrawInfo.cell` and `DrawInfo.focused`, so a hook can draw on one chart of a layout only.
 - `DepthChart.getRenderEngines()`, every cell's engine by cell id, and `DepthChart.addOverlay`.
 - `RenderEngine.cellId`, `RenderEngine.transformer`, and a `render-engine:destroyed` event.
+- `--sunken` and `--raised` theme tokens (`bg-sunken`, `bg-raised`), a step under the page and a
+  step over a card.
+- `brand-50` to `brand-950`, the accent as a theme token scale (`--brand-<shade>`, rgb channels so
+  `/60` works). Blue by default, so nothing changes unless the host sets its own.
 
 ### Changed
 - "Plugins" title becomes "Plugin Manager" in the plugin manager dropdown.
@@ -46,12 +50,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and the rest got whatever transform the renderer left behind.
 - `DepthChart.renderEngine` is the focused cell's. It used to be whichever cell mounted last.
 - Dropdown panels open over 200ms with an ease-out curve and a 3% zoom instead of 5%, and close in 150ms
+- Toolbars, dropdowns and dialogs color their surfaces from theme tokens instead of hex, so a host
+  theme reaches them. They were stuck on the default dark.
+- Selected, focused and checked states use `brand-*` instead of `blue-*`, so the accent follows the
+  host's theme.
 
 ### Deprecated
 - `TransformedDrawHook`, use `DrawHook`. It was typed `(ctx, transformer)`, which no hook was
   ever called with. It's an alias of `DrawHook` now.
 
 ### Fixed
+- The order panel's tab indicator ignored its easing. An arbitrary `ease-[..]` is ambiguous with
+  tailwindcss-animate and generates nothing.
 - Hot reloading an extension left its old overlays painting unless the teardown removed them.
   Overlays still registered at teardown get removed for you now.
 - `ctx.schedule` timers from an extension script kept running across hot reloads. Only

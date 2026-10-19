@@ -38,6 +38,14 @@ module.exports = {
             colors: {
                 background: 'hsl(var(--background))',
                 foreground: 'hsl(var(--foreground))',
+                sunken: 'hsl(var(--sunken))',
+                raised: 'hsl(var(--raised))',
+                brand: Object.fromEntries(
+                    ['50', '100', '200', '300', '400', '500', '600', '700', '800', '900', '950'].map((s) => [
+                        s,
+                        `rgb(var(--brand-${s}) / <alpha-value>)`,
+                    ]),
+                ),
                 card: { DEFAULT: 'hsl(var(--card))', foreground: 'hsl(var(--card-foreground))' },
                 popover: {
                     DEFAULT: 'hsl(var(--popover))',

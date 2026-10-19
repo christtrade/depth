@@ -269,7 +269,7 @@ export function TimezoneSelect({
                     'w-full flex items-center justify-between gap-2 rounded-lg border text-left transition-all',
                     compact ? 'h-7 px-2 text-[11px]' : 'px-3 py-2.5 text-[12px]',
                     open
-                        ? 'border-blue-500/40 bg-blue-500/8 text-white ring-1 ring-blue-500/20'
+                        ? 'border-brand-500/40 bg-brand-500/8 text-white ring-1 ring-brand-500/20'
                         : 'border-white/8 bg-white/3 text-white hover:border-white/15 hover:bg-white/5',
                 )}
             >
@@ -305,7 +305,7 @@ export function TimezoneSelect({
                     matchWidth
                     maxHeight={320}
                     className={cn(
-                        'z-50 rounded-xl border border-white/10 bg-[#1a1d23]',
+                        'z-50 rounded-xl border border-white/10 bg-card',
                         'flex flex-col overflow-hidden',
                     )}
                 >
@@ -350,7 +350,7 @@ export function TimezoneSelect({
                                 if (!entries.length) return null;
                                 return (
                                     <div key={region}>
-                                        <div className="sticky top-0 z-10 px-3 pt-2.5 pb-1 bg-[#1a1d23]">
+                                        <div className="sticky top-0 z-10 px-3 pt-2.5 pb-1 bg-card">
                                             <span className="text-[9px] font-semibold uppercase tracking-widest text-white/20">
                                                 {region}
                                             </span>
@@ -375,8 +375,8 @@ export function TimezoneSelect({
                                                         isFocused &&
                                                             !isSelected &&
                                                             'bg-white/4 text-white/80',
-                                                        isSelected && isFocused && 'bg-blue-500/10',
-                                                        isSelected && !isFocused && 'bg-blue-500/6',
+                                                        isSelected && isFocused && 'bg-brand-500/10',
+                                                        isSelected && !isFocused && 'bg-brand-500/6',
                                                     )}
                                                 >
                                                     <div className="flex items-center gap-2.5 min-w-0">
@@ -384,7 +384,7 @@ export function TimezoneSelect({
                                                             {isSelected ? (
                                                                 <Check
                                                                     size={11}
-                                                                    className="text-blue-400"
+                                                                    className="text-brand-400"
                                                                 />
                                                             ) : (
                                                                 <span />

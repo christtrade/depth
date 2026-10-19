@@ -161,7 +161,7 @@ function ModeLabel<T extends string>({
             </DropdownMenuTrigger>
             <DropdownMenuContent
                 align="start"
-                className="min-w-[172px] border-[#22262e] bg-[#1b1e25] p-1 z-[210]"
+                className="min-w-[172px] border-border bg-[#1b1e25] p-1 z-[210]"
             >
                 {options.map((option) => (
                     <DropdownMenuItem
@@ -354,7 +354,7 @@ function Toggle({
             <Switch
                 checked={checked}
                 onCheckedChange={onChange}
-                className="mt-0.5 shrink-0 scale-[0.8] data-[state=checked]:bg-blue-500"
+                className="mt-0.5 shrink-0 scale-[0.8] data-[state=checked]:bg-brand-500"
             />
         </div>
     );
@@ -1037,7 +1037,7 @@ export function OrderPanel({
                     })}
                     <span
                         aria-hidden
-                        className="absolute bottom-[-1px] h-[2px] rounded-full motion-safe:transition-[left] motion-safe:duration-200 motion-safe:ease-[cubic-bezier(0.22,1,0.36,1)]"
+                        className="absolute bottom-[-1px] h-[2px] rounded-full motion-safe:transition-[left] motion-safe:duration-200 motion-safe:[transition-timing-function:cubic-bezier(0.22,1,0.36,1)]"
                         style={{
                             background: accent,
                             width: `${100 / ORDER_TYPES.length}%`,
@@ -1136,7 +1136,7 @@ export function OrderPanel({
                                 <Switch
                                     checked={on}
                                     onCheckedChange={setOn}
-                                    className="scale-[0.8] data-[state=checked]:bg-blue-500"
+                                    className="scale-[0.8] data-[state=checked]:bg-brand-500"
                                 />
                             </div>
                             <SwapField

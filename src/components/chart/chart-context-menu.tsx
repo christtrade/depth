@@ -239,7 +239,7 @@ export function ChartContextMenu({
     return (
         <div
             ref={menuRef}
-            className="fixed z-[9999] min-w-[192px] rounded-xl border border-white/10 bg-[#14161b] shadow-2xl overflow-hidden"
+            className="fixed z-[9999] min-w-[192px] rounded-xl border border-white/10 bg-background shadow-2xl overflow-hidden"
             style={{
                 left: Math.max(8, x + width > screenWidth ? screenWidth - width : x),
                 top: Math.max(8, y + height > screenHeight ? screenHeight - height : y),

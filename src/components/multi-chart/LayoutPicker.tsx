@@ -113,7 +113,7 @@ function Thumb({ p, active, size = 32 }: { p: Preset; active: boolean; size?: nu
     }
 
     return (
-        <div className={`rounded-md p-[5px] ${active ? 'bg-[#272b35]' : 'bg-transparent'} transition stroke-[#A8AFBD] group-hover:stroke-white`}>
+        <div className={`rounded-md p-[5px] ${active ? 'bg-secondary' : 'bg-transparent'} transition stroke-[#A8AFBD] group-hover:stroke-white`}>
             <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
                 <rect x={0.5} y={0.5} width={W - 1} height={H - 1} rx={2.5} fill="transparent" strokeWidth={1} />
                 {lines}
@@ -186,7 +186,7 @@ export function LayoutPicker({
                                         <DropdownMenuItem
                                             key={p.id}
                                             onClick={() => onChange(p)}
-                                            className="flex flex-col items-center gap-1 p-0 rounded-md w-fit cursor-pointer hover:!bg-[#272b35] group"
+                                            className="flex flex-col items-center gap-1 p-0 rounded-md w-fit cursor-pointer hover:!bg-secondary group"
                                         >
                                             <Thumb p={p} active={on} size={20} />
                                         </DropdownMenuItem>
@@ -215,7 +215,7 @@ export function LayoutPicker({
                                 onCheckedChange={(on) =>
                                     setSyncInLayout({ ...syncInLayout, [key]: on })
                                 }
-                                className="data-[state=checked]:bg-blue-500"
+                                className="data-[state=checked]:bg-brand-500"
                             />
                         </label>
                     ))}

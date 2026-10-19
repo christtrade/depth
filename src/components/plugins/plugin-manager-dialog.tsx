@@ -278,7 +278,7 @@ function PluginRow({
                 checked={row.loaded}
                 disabled={!row.available}
                 onCheckedChange={onToggleLoaded}
-                className="shrink-0 data-[state=checked]:bg-blue-500"
+                className="shrink-0 data-[state=checked]:bg-brand-500"
             />
         </div>
     );
@@ -425,7 +425,7 @@ export function PluginManagerDialog({
                 open={open}
                 align="right"
                 maxHeight={560}
-                className="z-50 flex flex-col w-[30rem] rounded-lg border border-[#1e2128] bg-[#16181d] shadow-2xl overflow-hidden"
+                className="z-50 flex flex-col w-[30rem] rounded-lg border border-raised bg-background shadow-2xl overflow-hidden"
             >
                     <div className="px-4 pt-4 pb-3 shrink-0">
                         <div className="text-sm font-medium">Plugin Manager</div>
