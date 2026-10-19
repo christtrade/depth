@@ -239,7 +239,7 @@ function IndicatorRow({
             title={refusal}
             className={cn(
                 'group relative w-full flex items-center gap-2.5 pl-3 pr-1.5 h-9 cursor-pointer transition-colors',
-                highlighted ? 'bg-card' : isActive ? 'bg-[#15181e]' : 'hover:bg-card',
+                highlighted ? 'bg-card' : isActive ? 'bg-raised' : 'hover:bg-card',
                 refusal && 'opacity-45',
             )}
         >

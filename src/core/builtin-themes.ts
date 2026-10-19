@@ -15,9 +15,19 @@ const ORANGE = brand(['255 247 237', '255 237 213', '254 215 170', '253 186 116'
 const PURPLE = brand(['250 245 255', '243 232 255', '233 213 255', '216 180 254', '192 132 252', '168 85 247', '147 51 234', '126 34 206', '107 33 168', '88 28 135', '59 7 100']);
 const ROSE = brand(['255 241 242', '255 241 242', '255 228 230', '254 205 211', '253 164 175', '251 113 133', '244 63 94', '225 29 72', '190 18 60', '159 18 57', '76 5 25']);
 
-const LIGHT_SHADE = { '50': '950', '100': '900', '200': '800', '300': '700', '400': '600', '500': '600' } as Record<string, string>;
+const LIGHT_SHADE = { '50': '950', '100': '900', '200': '800', '300': '700', '400': '600', '500': '600', '800': '200', '900': '100', '950': '50' } as Record<string, string>;
 const forLight = (scale: Record<string, string>): Record<string, string> =>
     Object.fromEntries(SHADES.map((s) => [`brand-${s}`, scale[`brand-${LIGHT_SHADE[s] ?? s}`]]));
+
+const GRAYS: Record<string, string[]> = {
+    gray: ['249 250 251', '243 244 246', '229 231 235', '209 213 219', '156 163 175', '107 114 128', '75 85 99', '55 65 81', '31 41 55', '17 24 39', '3 7 18'],
+    slate: ['248 250 252', '241 245 249', '226 232 240', '203 213 225', '148 163 184', '100 116 139', '71 85 105', '51 65 85', '30 41 59', '15 23 42', '2 6 23'],
+    zinc: ['250 250 250', '244 244 245', '228 228 231', '212 212 216', '161 161 170', '113 113 122', '82 82 91', '63 63 70', '39 39 42', '24 24 27', '9 9 11'],
+    neutral: ['250 250 250', '245 245 245', '229 229 229', '212 212 212', '163 163 163', '115 115 115', '82 82 82', '64 64 64', '38 38 38', '23 23 23', '10 10 10'],
+};
+const LIGHT_GRAYS = Object.fromEntries(
+    Object.entries(GRAYS).flatMap(([name, rgb]) => SHADES.map((s, i) => [`${name}-${s}`, rgb[rgb.length - 1 - i]])),
+);
 
 /**
  * What every built-in dark theme starts from. Spread it and override what's
@@ -365,6 +375,7 @@ export const BUILTIN_THEMES: readonly ThemeDef[] = [
             input: '220 13% 84%',
             ring: '221 44% 45%',
             ...forLight(CYAN),
+            ...LIGHT_GRAYS,
         },
         chart: {
             ...candles('#089981', '#f23645'),
@@ -399,6 +410,7 @@ export const BUILTIN_THEMES: readonly ThemeDef[] = [
             input: '223 16% 83%',
             ring: '266 85% 58%',
             ...forLight(VIOLET),
+            ...LIGHT_GRAYS,
         },
         chart: {
             ...candles('#40a02b', '#d20f39'),
@@ -433,6 +445,7 @@ export const BUILTIN_THEMES: readonly ThemeDef[] = [
             input: '10 9% 86%',
             ring: '343 35% 50%',
             ...forLight(ROSE),
+            ...LIGHT_GRAYS,
         },
         chart: {
             ...candles('#286983', '#b4637a'),
@@ -467,6 +480,7 @@ export const BUILTIN_THEMES: readonly ThemeDef[] = [
             input: '40 38% 73%',
             ring: '19 97% 35%',
             ...forLight(ORANGE),
+            ...LIGHT_GRAYS,
         },
         chart: {
             ...candles('#79740e', '#9d0006'),
@@ -501,6 +515,7 @@ export const BUILTIN_THEMES: readonly ThemeDef[] = [
             input: '46 30% 80%',
             ring: '205 69% 49%',
             ...forLight(BLUE),
+            ...LIGHT_GRAYS,
         },
         chart: {
             ...candles('#859900', '#dc322f'),

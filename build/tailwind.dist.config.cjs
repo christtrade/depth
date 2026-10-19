@@ -6,6 +6,15 @@
 
 const preflight = process.env.PREFLIGHT !== '0';
 
+const defaultColors = require('tailwindcss/colors');
+const themedGray = (name) =>
+    Object.fromEntries(
+        Object.entries(defaultColors[name]).map(([shade, hex]) => [
+            shade,
+            `rgb(var(--${name}-${shade}, ${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(' ')}) / <alpha-value>)`,
+        ]),
+    );
+
 /** @type {import('tailwindcss').Config} */
 module.exports = {
     darkMode: ['class'],
@@ -39,6 +48,10 @@ module.exports = {
                 // themed, so white text flips to dark ink on a light theme
                 white: 'rgb(var(--white, 255 255 255) / <alpha-value>)',
                 'pure-white': '#ffffff',
+                gray: themedGray('gray'),
+                slate: themedGray('slate'),
+                zinc: themedGray('zinc'),
+                neutral: themedGray('neutral'),
                 background: 'hsl(var(--background))',
                 foreground: 'hsl(var(--foreground))',
                 sunken: 'hsl(var(--sunken))',

@@ -53,11 +53,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 const UP = '#2962ff';
 const DOWN = '#f23645';
 
-const PANEL = '#16181d';
-const WELL = '#0f1116';
-const INSET = '#1b1e25';
-const EDGE = '#22262e';
-const HAIRLINE = '#1e2128';
+const PANEL = 'hsl(var(--background))';
+const WELL = 'hsl(var(--sunken))';
+const INSET = 'hsl(var(--card))';
+const EDGE = 'hsl(var(--border) / 0.75)';
+const HAIRLINE = 'hsl(var(--border) / 0.6)';
 
 const PANEL_W = 340;
 const VIEWPORT_PADDING = 12;
@@ -161,13 +161,13 @@ function ModeLabel<T extends string>({
             </DropdownMenuTrigger>
             <DropdownMenuContent
                 align="start"
-                className="min-w-[172px] border-border bg-[#1b1e25] p-1 z-[210]"
+                className="min-w-[172px] border-border bg-card p-1 z-[210]"
             >
                 {options.map((option) => (
                     <DropdownMenuItem
                         key={option.id}
                         onSelect={() => onChange(option.id)}
-                        className={`cursor-pointer rounded text-[12px] focus:bg-[#272c35] ${
+                        className={`cursor-pointer rounded text-[12px] focus:bg-raised ${
                             option.id === value ? 'text-slate-100' : 'text-slate-400'
                         }`}
                     >
@@ -258,7 +258,7 @@ function Figures({ rows }: { rows: FigureRow[] }) {
                         )}
                         <span
                             className="text-[12px] tabular-nums"
-                            style={{ color: row.tone ?? '#cbd5e1' }}
+                            style={{ color: row.tone ?? 'rgb(var(--slate-300, 203 213 225))' }}
                         >
                             {row.value}
                         </span>
@@ -955,13 +955,13 @@ export function OrderPanel({
                             >
                                 <span
                                     className="text-[11.5px] font-medium"
-                                    style={{ color: on ? colour : '#64748b' }}
+                                    style={{ color: on ? colour : 'rgb(var(--slate-500, 100 116 139))' }}
                                 >
                                     {sell ? 'Sell' : 'Buy'}
                                 </span>
                                 <span
                                     className="text-[17px] font-semibold tracking-tight"
-                                    style={{ color: on ? colour : '#94a3b8' }}
+                                    style={{ color: on ? colour : 'rgb(var(--slate-400, 148 163 184))' }}
                                 >
                                     {showPrice(sell ? quote.bid : quote.ask)}
                                 </span>

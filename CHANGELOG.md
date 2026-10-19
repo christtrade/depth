@@ -69,6 +69,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `white` is a theme token now, `--white` as rgb channels: white on dark themes, dark ink on light
   ones. `text-white/55` and every other white overlay flip with the theme instead of going
   invisible on a light one. Dark themes set `white: '255 255 255'`, so nothing changes there.
+- `gray`, `slate`, `zinc` and `neutral` read `--<name>-<shade>` too, falling back to Tailwind's
+  own values. The light built-ins set them to the scale run backwards, so `text-slate-300` stays
+  readable on a light page.
 - `theme:change` carries the whole `ThemeDef` instead of `'light' | 'dark'`.
 - `lifecycle.onThemeChange` callbacks get the theme as a second arg, after the mode.
 - The chart settings dialog shows the colors the chart draws with, theme included.
@@ -93,6 +96,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ever called with. It's an alias of `DrawHook` now.
 
 ### Fixed
+- The order panel, symbol switcher rows, active indicator row and layout picker icon were hardcoded
+  dark hex, so they stayed dark on every theme. They use theme tokens now.
 - Tooltip text was invisible on themes with a dark `primary-foreground`, like Rosé Pine. Tooltips
   took their text color from the primary button ink while nearly every caller swapped the
   background for a surface. They're a bordered `popover` surface by default now.

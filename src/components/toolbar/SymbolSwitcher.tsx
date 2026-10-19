@@ -370,11 +370,11 @@ function SymbolRow({
                     <button
                         key={sub.symbol}
                         onClick={() => onPick(sub.symbol)}
-                        className="group w-full flex items-center gap-3 pl-3 pr-1.5 h-8 text-left bg-[#121419] hover:bg-card transition-colors"
+                        className="group w-full flex items-center gap-3 pl-3 pr-1.5 h-8 text-left bg-sunken hover:bg-card transition-colors"
                     >
                         <div className="w-1 shrink-0" />
                         <span className="w-24 shrink-0 flex items-center gap-2">
-                            <span className="w-3 h-px bg-[#272b33] shrink-0" />
+                            <span className="w-3 h-px bg-border shrink-0" />
                             <span className="text-[11px] font-medium uppercase tracking-tight text-slate-400 truncate group-hover:text-slate-200">
                                 {sub.symbol}
                             </span>

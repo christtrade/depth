@@ -113,7 +113,7 @@ function Thumb({ p, active, size = 32 }: { p: Preset; active: boolean; size?: nu
     }
 
     return (
-        <div className={`rounded-md p-[5px] ${active ? 'bg-secondary' : 'bg-transparent'} transition stroke-[#A8AFBD] group-hover:stroke-white`}>
+        <div className={`rounded-md p-[5px] ${active ? 'bg-secondary' : 'bg-transparent'} transition stroke-muted-foreground group-hover:stroke-white`}>
             <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
                 <rect x={0.5} y={0.5} width={W - 1} height={H - 1} rx={2.5} fill="transparent" strokeWidth={1} />
                 {lines}
