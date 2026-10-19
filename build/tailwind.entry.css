@@ -8,6 +8,7 @@
     :root {
         --background: 0 0% 100%;
         --foreground: 220 14% 10%;
+        --white: 22 24 29;
         --sunken: 220 14% 96%;
         --raised: 220 14% 98%;
         /* the accent - blue unless the host sets its own. rgb channels, so brand-500/60 works */
@@ -45,6 +46,7 @@
     .dark {
         --background: 220 14% 10%;
         --foreground: 0 0% 100%;
+        --white: 255 255 255;
         --sunken: 220 14% 7%;
         --raised: 220 14% 14%;
         --card: 220 14% 12%;

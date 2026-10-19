@@ -36,6 +36,9 @@ module.exports = {
             // `* { @apply border-border }` rule going missing in dist.
             borderColor: { DEFAULT: 'hsl(var(--border))' },
             colors: {
+                // themed, so white text flips to dark ink on a light theme
+                white: 'rgb(var(--white, 255 255 255) / <alpha-value>)',
+                'pure-white': '#ffffff',
                 background: 'hsl(var(--background))',
                 foreground: 'hsl(var(--foreground))',
                 sunken: 'hsl(var(--sunken))',

@@ -22,6 +22,7 @@ const ROSE = brand(['255 241 242', '255 241 242', '255 228 230', '254 205 211', 
 export const BASE_DARK_VARS: Readonly<Record<string, string>> = {
     background: '220 14% 10%',
     foreground: '0 0% 100%',
+    white: '255 255 255',
     sunken: '220 14% 7%',
     raised: '220 14% 14%',
     card: '220 14% 12%',

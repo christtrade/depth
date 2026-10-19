@@ -61,8 +61,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Pickers can follow plugin themes without polling `getThemes()`.
 - `BASE_DARK_VARS`, the vars every built-in dark theme starts from. Spread it and override what's
   different, instead of copying 30-odd tokens to change the accent.
+- `pure-white` color, for text on a colored fill that stays white on every theme.
 
 ### Changed
+- `white` is a theme token now, `--white` as rgb channels: white on dark themes, dark ink on light
+  ones. `text-white/55` and every other white overlay flip with the theme instead of going
+  invisible on a light one. Dark themes set `white: '255 255 255'`, so nothing changes there.
 - `theme:change` carries the whole `ThemeDef` instead of `'light' | 'dark'`.
 - `lifecycle.onThemeChange` callbacks get the theme as a second arg, after the mode.
 - The chart settings dialog shows the colors the chart draws with, theme included.
