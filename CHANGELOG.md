@@ -48,6 +48,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Built-in themes: One Dark, Midnight, Nord, Catppuccin, Tokyo Night, Gruvbox, Dracula and Rosé
   Pine, each with its own UI tokens, accent and canvas colors. `dark` stays the default and sets
   nothing, so the host's CSS and the chart defaults are untouched until another theme is picked.
+- Light built-ins: Light, Catppuccin Latte, Rosé Pine Dawn, Gruvbox Light and Solarized Light,
+  canvas included.
 - A theme's `vars` are applied to depth's own elements (`.depth-root`, portaled panels and
   tooltips included), so an app with no CSS of its own still gets themed toolbars and dialogs. A
   theme with no `vars` leaves the host's CSS in charge. Names and values that could break out of

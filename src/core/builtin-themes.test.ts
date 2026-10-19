@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { BUILTIN_THEMES } from './builtin-themes';
+import { BASE_DARK_VARS, BUILTIN_THEMES } from './builtin-themes';
 import { themeCss } from './theme-style';
 import { CHART_COLOR_KEYS } from '../lib/types/chart-settings';
 
@@ -20,6 +20,12 @@ describe('built-in themes', () => {
             const declared = (themeCss(theme)?.match(/--[a-z0-9-]+:/g) ?? []).length;
             assert.equal(declared, Object.keys(theme.vars).length);
         });
+
+        if (theme.dark === false)
+            it(`${theme.id}: sets every var a dark theme does, so none falls back to dark`, () => {
+                const missing = Object.keys(BASE_DARK_VARS).filter((k) => !(k in theme.vars));
+                assert.deepEqual(missing, []);
+            });
 
         it(`${theme.id}: chart colors are real settings, as hex`, () => {
             for (const [key, value] of Object.entries(theme.chart ?? {})) {
