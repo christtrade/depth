@@ -1535,18 +1535,18 @@ export class DepthChart {
                 chart.playbackStateRegistry.register(pluginId, snapshot),
         };
 
-        const consoleOffs = new Set<() => void>();
+        const uninstallOffs = new Set<() => void>();
         const track = (off: () => void) => {
-            consoleOffs.add(off);
+            uninstallOffs.add(off);
             return () => {
-                consoleOffs.delete(off);
+                uninstallOffs.delete(off);
                 off();
             };
         };
         const offUninstalled = chart.eventBus.on('plugin:uninstalled', ({ id }) => {
             if (id !== pluginId) return;
-            consoleOffs.forEach((off) => off());
-            consoleOffs.clear();
+            uninstallOffs.forEach((off) => off());
+            uninstallOffs.clear();
             offUninstalled();
         });
         const pluginConsole = {
@@ -1720,11 +1720,7 @@ export class DepthChart {
                 };
             },
 
-            registerTheme(_theme: any): () => void {
-                return () => {
-                    console.warn('[Depth] registerTheme not yet implemented');
-                };
-            },
+            registerTheme: (theme: ThemeDef) => track(chart.registerTheme(theme)),
         };
     }
 

@@ -1887,6 +1887,7 @@ const extensionCapability: CapabilityHandler = (
                     frames: tracked(s.frames.bind(s)),
                 } satisfies typeof s;
             }
+            if (prop === 'registerTheme') return tracked(target.registerTheme);
             if (prop === 'params') return { ...params };
             if (prop === 'onParamsChange')
                 return (fn: (params: Record<string, unknown>) => void) => {

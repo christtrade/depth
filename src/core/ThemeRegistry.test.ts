@@ -41,14 +41,27 @@ describe('ThemeRegistry', () => {
         assert.equal(themes.current, edited);
     });
 
-    it('unregistering the current theme falls back to the default', () => {
+    it('unregistering the current theme falls back to the default', async () => {
         const { themes, seen } = setup();
         const off = themes.register(nord);
         themes.set('nord');
         off();
         assert.equal(themes.current.id, DEFAULT_THEME_ID);
         assert.equal(themes.get('nord'), undefined);
+        await Promise.resolve();
         assert.deepEqual(seen, ['nord', DEFAULT_THEME_ID]);
+    });
+
+    it('a hot reload keeps the chart on the theme', async () => {
+        const { themes, seen } = setup();
+        const off = themes.register(nord);
+        themes.set('nord');
+        off();
+        const edited = { ...nord, vars: { background: '0 0% 0%' } };
+        themes.register(edited);
+        await Promise.resolve();
+        assert.equal(themes.current, edited);
+        assert.deepEqual(seen, ['nord', 'nord']);
     });
 
     it("an old unregister can't remove the theme that replaced it", () => {

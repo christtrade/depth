@@ -55,6 +55,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Chart settings for the colors that were fixed in the renderer: `axisTextColor`, `axisBorderColor`,
   `crosshairLabelColor`, `crosshairLabelTextColor`, `priceLabelTextColor`, `bidLineColor` and
   `askLineColor`. Themes color them too, so a light theme no longer gets grey-on-dark axis labels.
+- `ctx.registerTheme(theme)` works now. Gated on `theme:register`, removed on uninstall, and an
+  extension's theme survives a hot reload without the chart dropping to the default.
 
 ### Changed
 - `theme:change` carries the whole `ThemeDef` instead of `'light' | 'dark'`.

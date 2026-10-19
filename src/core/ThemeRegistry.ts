@@ -37,8 +37,11 @@ export class ThemeRegistry {
         return () => {
             if (this.themes.get(theme.id) !== theme || theme.id === DEFAULT_THEME_ID) return;
             this.themes.delete(theme.id);
-            // never leave the chart on a theme that's gone
-            if (theme.id === this.currentId) this.set(DEFAULT_THEME_ID);
+            if (theme.id !== this.currentId) return;
+
+            queueMicrotask(() => {
+                if (theme.id === this.currentId && !this.themes.has(theme.id)) this.set(DEFAULT_THEME_ID);
+            });
         };
     }
 
