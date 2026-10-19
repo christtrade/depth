@@ -37,8 +37,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   step over a card.
 - `brand-50` to `brand-950`, the accent as a theme token scale (`--brand-<shade>`, rgb channels so
   `/60` works). Blue by default, so nothing changes unless the host sets its own.
+- Themes: `chart.registerTheme()`, `setTheme()`, `getTheme()` and `getThemes()`, and a `theme`
+  chart option to start on. Registering an id again replaces it, and unregistering the theme the
+  chart is on falls back to `dark`. `BUILTIN_THEMES` and `DEFAULT_THEME_ID` exported.
+- `ThemeDef.dark`, defaults to true.
+- `ThemeDef.chart`: the canvas colors a theme draws with - candles, grid, background, crosshair,
+  price line, heatmap. A color still at its default follows the theme, one the user picked wins,
+  so switching theme never overwrites a choice. `themedSettings()`, `CHART_COLOR_KEYS` and
+  `ChartColors` exported for hosts with their own settings UI.
 
 ### Changed
+- `theme:change` carries the whole `ThemeDef` instead of `'light' | 'dark'`.
+- `lifecycle.onThemeChange` callbacks get the theme as a second arg, after the mode.
+- The chart settings dialog shows the colors the chart draws with, theme included.
 - "Plugins" title becomes "Plugin Manager" in the plugin manager dropdown.
 - Adding or removing an overlay repaints the chart.
 - `after-background` hooks draw on the background layer, and only repaint when it's dirty, on
@@ -60,6 +71,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ever called with. It's an alias of `DrawHook` now.
 
 ### Fixed
+- `lifecycle.onThemeChange` never fired. Nothing emitted `theme:change`.
+- Tick-data playback painted the base layer outside the render loop on every tick, skipping
+  overlays, so plugin overlays flickered. It goes through the render loop now.
+- The console manifest was missing `render-engine:destroyed` and the extension-params events, so
+  `npm run dist` failed its manifest check.
 - The order panel's tab indicator ignored its easing. An arbitrary `ease-[..]` is ambiguous with
   tailwindcss-animate and generates nothing.
 - Hot reloading an extension left its old overlays painting unless the teardown removed them.

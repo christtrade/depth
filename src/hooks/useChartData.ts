@@ -331,7 +331,6 @@ export interface UseChartDataParams {
     updateSettingsBarPosRef: MutableRefObject<(id: string | null) => void>;
     resetViewRef: MutableRefObject<() => void>;
     syncPixelLayoutsRef: MutableRefObject<(panes?: ChartPane[]) => void>;
-    doBaseRedrawRef: MutableRefObject<() => void>;
     // Direct callbacks
     setIndicators: (inds: Indicator[]) => void;
     setPanes: (updater: ((prev: ChartPane[]) => ChartPane[]) | ChartPane[]) => void;
@@ -2149,8 +2148,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             }
             runHorizonAdvance(horizon);
             p.pushDrawParamsRef.current();
-            if (tradesRef.current.length > 0) p.doBaseRedrawRef.current();
-            else p.renderEngineRef.current?.markDirty('base');
+            p.renderEngineRef.current?.markDirty('base');
             p.renderEngineRef.current?.markDirty('drawings');
             return;
         }

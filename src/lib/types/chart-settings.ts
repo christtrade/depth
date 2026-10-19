@@ -206,3 +206,39 @@ export function diffChartSettings(settings: ChartSettings): Partial<ChartSetting
 export function mergeChartSettings(diff?: Partial<ChartSettings>): ChartSettings {
     return { ...DEFAULT_CHART_SETTINGS, ...(diff ?? {}) };
 }
+
+// Theme colors
+
+/** The settings a theme can color. */
+export const CHART_COLOR_KEYS = [
+    'upBodyColor',
+    'downBodyColor',
+    'upWickColor',
+    'downWickColor',
+    'upBorderColor',
+    'downBorderColor',
+    'gridHorizontalColor',
+    'gridVerticalColor',
+    'crosshairColor',
+    'breaksColor',
+    'backgroundColor',
+    'axisBackgroundColor',
+    'heatmapColorBid',
+    'heatmapColorAsk',
+    'priceLineColor',
+    'sessionHighlightColor',
+] as const satisfies readonly (keyof ChartSettings)[];
+
+export type ChartColorKey = (typeof CHART_COLOR_KEYS)[number];
+export type ChartColors = Pick<ChartSettings, ChartColorKey>;
+
+export function themedSettings(settings: ChartSettings, colors?: Partial<ChartColors>): ChartSettings {
+    if (!colors) return settings;
+    let out: ChartSettings | null = null;
+    for (const key of CHART_COLOR_KEYS) {
+        const themed = colors[key];
+        if (themed === undefined || settings[key] !== DEFAULT_CHART_SETTINGS[key]) continue;
+        (out ??= { ...settings })[key] = themed;
+    }
+    return out ?? settings;
+}

@@ -21,6 +21,7 @@ import { ActiveDrawingTool, Anchor, Drawing } from '../lib/types/drawing-types';
 import { TradeLineHitMap } from '../lib/renderers/drawTradeLines';
 import type { TradeLine } from '../lib/types';
 import type { StyleField } from '../components/drawings/drawing-settings-dialog';
+import type { ThemeDef } from '../interfaces/plugins/IChartPlugin';
 import { FootprintBar } from '../lib/types/footprint';
 import { ChartPane, Indicator } from '../lib/types/indicator-types';
 import { SerialTrade } from '../lib/types';
@@ -61,7 +62,8 @@ export interface ChartEvents {
     'chart:set-symbol-focused': { symbol: string };
     'chart:open-symbol-select': {};
     'chart:set-type': { old: string; new: string };
-    'theme:change': 'light' | 'dark';
+
+    'theme:change': ThemeDef;
     'chart:focused': { id: number };
     'chart:blurred': void;
     'chart:change-layout': {

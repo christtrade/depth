@@ -9,6 +9,7 @@ import type { RenderEngine, DrawHook, DrawPhase } from '../../core/RenderEngine'
 import type { ExecutionEngine } from '../../core/ExecutionEngine';
 import type { GlobalChartBus } from '../../core/GlobalChartBus';
 import type { LiveTransformer } from '../ICoordinateTransformer';
+import type { ChartColors } from '../../lib/types/chart-settings';
 import type { DataLevel, OhlcvBar, SymbolInfo, TickEvent } from '../IDataAdapter';
 import type { SerialTrade, PriceHistory } from '../../lib/types';
 import type { FootprintBar } from '../../lib/types/footprint';
@@ -85,8 +86,16 @@ export interface ContextMenuItem {
 export interface ThemeDef {
     id: string;
     name: string;
+    /** Dark surfaces or light ones - what `onThemeChange` reports. Defaults to dark. */
+    dark?: boolean;
     /** CSS variables to inject - keys are var names without the leading '--'. */
     vars: Record<string, string>;
+    /**
+     * Canvas colors: candles, grid, background, crosshair and the rest. Each one
+     * only applies where the user hasn't picked their own; leave a key out to keep
+     * the default.
+     */
+    chart?: Partial<ChartColors>;
 }
 
 // Settings schema
@@ -176,7 +185,7 @@ export interface PluginExecutionSurface {
 export interface PluginLifecycle {
     onSymbolChange(cb: (symbol: string) => void): () => void;
     onTimeframeChange(cb: (tf: string) => void): () => void;
-    onThemeChange(cb: (theme: 'light' | 'dark') => void): () => void;
+    onThemeChange(cb: (mode: 'light' | 'dark', theme: ThemeDef) => void): () => void;
     onFocus(cb: (id: number) => void): () => void;
     onBlur(cb: () => void): () => void;
 }

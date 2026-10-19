@@ -160,8 +160,8 @@ export type { TradePoint, PriceHistory, ViewBounds, OhlcvBarMs } from '../lib/ty
 export type { Timeframe } from '../lib/timeframes';
 export type { DrawingTool } from '../lib/types/drawing-types';
 export type { FootprintBar, FootprintOptions } from '../lib/types/footprint';
-export type { ChartSettings } from '../lib/types/chart-settings';
-export { DEFAULT_CHART_SETTINGS } from '../lib/types/chart-settings';
+export type { ChartColorKey, ChartColors, ChartSettings } from '../lib/types/chart-settings';
+export { CHART_COLOR_KEYS, DEFAULT_CHART_SETTINGS, themedSettings } from '../lib/types/chart-settings';
 
 // Matching engine
 export type { PlaceOrderRequest, L3EngineOptions, FeeSchedule, BookDepth, BookLevel } from '../lib/matchingEngine';
@@ -372,6 +372,7 @@ export type {
     ThemeDef,
     ToolbarItem,
 } from '../interfaces/plugins/IChartPlugin';
+export { BUILTIN_THEMES, DEFAULT_THEME_ID } from './ThemeRegistry';
 export type {
     ChartTypeActiveContext,
     ChartTypeKeyEvent,

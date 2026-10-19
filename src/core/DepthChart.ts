@@ -62,6 +62,8 @@ import { DataSourceRegistry, type PluginDataSource } from './DataSourceRegistry'
 import { PlaybackStateRegistry } from './PlaybackStateRegistry';
 import { PluginScheduleImpl } from './PluginSchedule';
 import { CellEngines } from './CellEngines';
+import { BUILTIN_THEMES, ThemeRegistry } from './ThemeRegistry';
+import type { ThemeDef } from '../interfaces/plugins/IChartPlugin';
 import type { StyleField } from '../components/drawings/drawing-settings-dialog';
 import { toast } from 'sonner';
 import type { NotifyOptions, PluginExecutionSurface, PluginStateSnapshot } from './PluginRegistry';
@@ -190,6 +192,9 @@ export interface ChartOptions {
     restore?: ChartSaveState;
 
     toolbar?: (chart: DepthChart) => React.ReactNode[];
+
+    /** Theme id to start on. Register custom ones with `chart.registerTheme()` first. */
+    theme?: string;
 }
 
 /** Bump when the save document shape changes incompatibly; handled in migrate(). */
@@ -309,6 +314,7 @@ type PlaybackAPI<T> = {
 export class DepthChart {
     readonly id: string;
     readonly eventBus: TypedEventBus;
+    private readonly _themes: ThemeRegistry;
     readonly executionEngine: ExecutionEngine;
     private readonly dataEngine: DataEngine;
     readonly transformer: LiveTransformer;
@@ -359,6 +365,7 @@ export class DepthChart {
     constructor(private readonly options: ChartOptions) {
         this.id = `chart:${nanoid(6)}`;
         this.eventBus = new TypedEventBus();
+        this._themes = new ThemeRegistry(this.eventBus, BUILTIN_THEMES, options.theme);
         this.transformer = new LiveTransformer();
         this.executionEngine = new ExecutionEngine();
         this.executionEngine.setEventBus(this.eventBus);
@@ -427,6 +434,9 @@ export class DepthChart {
         });
         this.eventBus.on('render-engine:destroyed', ({ engine }) => this._engines.detach(engine));
         this.eventBus.on('chart:focused', ({ id }) => this._engines.focus(id));
+        this.eventBus.on('theme:change', (theme) => {
+            for (const engine of this._engines.all.values()) engine.setThemeColors(theme.chart);
+        });
 
         this.eventBus.on('data:open-bar-provider', ({ cellId, get }) => {
             if (get) this._openBarProviders.set(cellId, get);
@@ -1363,11 +1373,38 @@ export class DepthChart {
         return this._toolbarRegistry;
     }
 
+    /** The theme the chart is on. */
+    getTheme(): ThemeDef {
+        return this._themes.current;
+    }
+
+    /** Every theme it can switch to, built-in and registered. */
+    getThemes(): ThemeDef[] {
+        return this._themes.list();
+    }
+
+    /**
+     * Switch theme. Emits `theme:change`. False for an id that isn't registered,
+     * and the chart stays where it was.
+     */
+    setTheme(id: string): boolean {
+        return this._themes.set(id);
+    }
+
+    /**
+     * Add a theme, or replace one with the same id. Returns the unregister - if
+     * the chart is on that theme, it falls back to the default.
+     */
+    registerTheme(theme: ThemeDef): () => void {
+        return this._themes.register(theme);
+    }
+
     getBottomBarRegistry(): ReadonlyMap<string, BottomBarItem> {
         return this._bottomBarRegistry;
     }
 
     attachRenderEngine(engine: RenderEngine): void {
+        engine.setThemeColors(this._themes.current.chart);
         this._engines.attach(engine);
         this.pluginRegistry.notifyRenderEngineReady(engine);
     }

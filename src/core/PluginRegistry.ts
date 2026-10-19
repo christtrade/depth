@@ -178,7 +178,9 @@ export class PluginRegistry {
                 return eventBus.on('chart:set-timeframe', ({ tf }) => cb(tf as any));
             },
             onThemeChange(cb) {
-                return eventBus.on('theme:change' as any, (theme: any) => cb(theme));
+                return eventBus.on('theme:change', (theme) =>
+                    cb(theme.dark === false ? 'light' : 'dark', theme),
+                );
             },
             onFocus(cb) {
                 return eventBus.on('chart:focused', ({ id }) => cb(id));

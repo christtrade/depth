@@ -15,6 +15,7 @@ import { TimeframeSelector } from './components/toolbar/timeframe-selector';
 import { ChartTypeSelector } from './components/toolbar/chart-type-selector';
 import { ScrollStrip } from './components/ui/scroll-strip';
 import { loadCustomTimeframes, saveCustomTimeframes, type Timeframe } from './lib/timeframes';
+import { themedSettings } from './lib/types/chart-settings';
 import {
     ChartSettings,
     ChartSettingsDialog,
@@ -280,6 +281,8 @@ export default function Depth({
     // a display mirror kept in sync with the focused pane's ChartModel (which
     // ChartInner mirrors its live settings into), re-tracking on focus change.
     const [chartSettings, setChartSettings] = useState<ChartSettings>(DEFAULT_CHART_SETTINGS);
+    const [themeColors, setThemeColors] = useState(() => _chart.getTheme().chart);
+    useEffect(() => eventBus.on('theme:change', (theme) => setThemeColors(theme.chart)), [eventBus]);
     const [indicators, setIndicators] = useState<any[]>([]);
     const [activeTool, setActiveTool] = useState<ActiveDrawingTool>(CURSOR_TOOL);
     const [chartSettingsOpen, setChartSettingsOpen] = useState(false);
@@ -1715,7 +1718,7 @@ export default function Depth({
 
                 {chartSettingsOpen && (
                     <ChartSettingsDialog
-                        settings={chartSettings}
+                        settings={themedSettings(chartSettings, themeColors)}
                         horizon={sharedHorizonRef.current}
                         pluginChartType={activePluginChartType}
                         onUpdate={(patch) => {

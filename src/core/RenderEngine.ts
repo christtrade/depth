@@ -12,7 +12,7 @@ import type { ChartPane, Rect } from '../lib/types/indicator-types';
 import type { Indicator } from '../lib/types/indicator-types';
 import type { TradePoint, PriceHistory, ViewBounds } from '../lib/types';
 import type { FootprintBar } from '../lib/types/footprint';
-import type { ChartSettings } from '../lib/types/chart-settings';
+import { themedSettings, type ChartColors, type ChartSettings } from '../lib/types/chart-settings';
 import type { Crosshair } from '../lib/renderers/renderer';
 import type { Drawing, DraftDrawing, DrawingAnchorId, ActiveDrawingTool } from '../lib/types/drawing-types';
 import type { TradeLine } from '../lib/types';
@@ -214,6 +214,8 @@ export class RenderEngine {
 
     // the data snapshot the draw functions read
     private drawParams: DrawParams | null = null;
+    private rawDrawParams: DrawParams | null = null;
+    private themeColors: Partial<ChartColors> | undefined;
     private view: ViewBounds | null = null;
 
     // Eases the live price line / pills toward new values (opt-in, see drawUILayer).
@@ -354,9 +356,18 @@ export class RenderEngine {
 
     // called before marking dirty
     setDrawParams(params: DrawParams): void {
-        this.drawParams = params;
-        if (params.chartSettings.backgroundColor !== this.paintedBackgroundColor)
-            this.dirty.background = true;
+        this.rawDrawParams = params;
+        const chartSettings = themedSettings(params.chartSettings, this.themeColors);
+        this.drawParams = chartSettings === params.chartSettings ? params : { ...params, chartSettings };
+        if (chartSettings.backgroundColor !== this.paintedBackgroundColor) this.dirty.background = true;
+    }
+
+    /** Set by the chart. Colors the user didn't pick come from here. */
+    setThemeColors(colors: Partial<ChartColors> | undefined): void {
+        if (colors === this.themeColors) return;
+        this.themeColors = colors;
+        if (this.rawDrawParams) this.setDrawParams(this.rawDrawParams);
+        this.markAllDirty();
     }
 
     setView(v: ViewBounds): void {

@@ -791,7 +791,6 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
     const updateSettingsBarPosRef = useRef<(id: string | null) => void>(() => {});
     const resetViewRef = useRef<() => void>(() => {});
     const syncPixelLayoutsRef = useRef<(panes?: ChartPane[]) => void>(() => {});
-    const doBaseRedrawRef = useRef<() => void>(() => {});
 
     const {
         layoutsCacheRef,
@@ -834,7 +833,6 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         updateSettingsBarPosRef,
         resetViewRef,
         syncPixelLayoutsRef,
-        doBaseRedrawRef,
         setIndicators,
         setPanes,
         getPanel: () => null,
@@ -868,7 +866,6 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         candleCacheRef,
         heatmapBitmapRef,
         heatmapBitmapOffsetsRef,
-        cacheBoundsRef,
         liveBookRef,
         horizonScrollAnimRef,
         _internalDomPanelRef,
@@ -906,7 +903,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
 
     const drawingsCanvasRef = useRef<HTMLCanvasElement>(null);
 
-    const { doBaseRedraw: _doBaseRedraw } = useRenderEngine({
+    useRenderEngine({
         renderEngineRef,
         baseCanvasRef,
         drawingsCanvasRef,
@@ -914,26 +911,6 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         eventBus,
         chartId: _id,
         viewRef,
-        priceScaleWidthRef,
-        tradesRef,
-        getLayouts,
-        heatmapBitmapRef,
-        cacheBoundsRef,
-        heatmapBitmapOffsetsRef,
-        panesRef,
-        indicatorsRef,
-        priceHistoryRef,
-        footprintBarsRef,
-        activeTimeframeRef,
-        chartSettingsRef,
-        horizonRef,
-        candleCacheRef,
-        openBarRef,
-        dataLevelRef,
-        ohlcvBarsRef,
-        previewBarsRef,
-        transformer,
-        hideTimeScale,
     });
 
     const {
@@ -1781,7 +1758,6 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
 
     updateSettingsBarPosRef.current = updateSettingsBarPos;
     syncPixelLayoutsRef.current = syncPixelLayouts;
-    doBaseRedrawRef.current = _doBaseRedraw;
 
     // Bottom control-menu actions (zoom / pan)
     // Shared post-update step: refit axes, request more data if we've scrolled
