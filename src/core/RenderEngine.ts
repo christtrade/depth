@@ -1,12 +1,6 @@
 
 import { TypedEventBus } from './TypedEventBus';
-import {
-    COLORS,
-    drawBackground,
-    drawBaseLayer,
-    drawUILayer,
-    X_AXIS_HEIGHT,
-} from '../lib/renderers/renderer';
+import { drawBackground, drawBaseLayer, drawUILayer, X_AXIS_HEIGHT } from '../lib/renderers/renderer';
 import { drawDrawingsLayer } from '../lib/renderers/drawings-renderer';
 import type { ChartPane, Rect } from '../lib/types/indicator-types';
 import type { Indicator } from '../lib/types/indicator-types';
@@ -418,7 +412,7 @@ export class RenderEngine {
             dpr,
             plot: { x: 0, y: 0, w: plot.width, h: plot.height },
             panes: p.layouts,
-            background: p.chartSettings.backgroundColor ?? COLORS.background,
+            background: p.chartSettings.backgroundColor,
             time,
             cell: this.chartId,
             focused: this.focused,

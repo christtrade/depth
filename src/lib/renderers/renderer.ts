@@ -44,17 +44,6 @@ export const X_AXIS_HEIGHT = 30;
 
 export const TRADE_SNAP_RADIUS = 12;
 
-export const COLORS = {
-    background: '#16181d', //0c0d11
-    buyLine: '#00e676',
-    sellLine: '#ff1744',
-    grid: '#282a2e',
-    label: '#888888',
-    axisBg: '#16181d',
-    crosshair: '#aaaaaa',
-    crosshairBg: '#23272f',
-    crosshairText: '#FFFFFF',
-};
 
 /** Font used for the price-axis tick labels. */
 const PRICE_AXIS_FONT = '11px "Inter"';
@@ -399,7 +388,7 @@ export function drawBaseLayer(
     // background only - drawUILayer draws every label, so the labels and the grid
     // lines always come off the same bounds snapshot
     drawAxesBackgrounds(ctx, cssW, cssH, chartW, cssH - xAxisHeight, chartSettings);
-    drawPaneYAxisLabels(ctx, canvas, panes, layouts, bounds, chartW);
+    drawPaneYAxisLabels(ctx, canvas, panes, layouts, bounds, chartW, chartSettings);
     drawPaneDividers(ctx, panes, layouts, chartW);
 }
 
@@ -531,7 +520,7 @@ export function drawUILayer(
         }
     }
 
-    !hidePriceScale && drawPaneYAxisLabels(ctx, canvas, panes, layouts, bounds, chartW);
+    !hidePriceScale && drawPaneYAxisLabels(ctx, canvas, panes, layouts, bounds, chartW, chartSettings);
 
     if (chartSettings.showFills) {
         drawTradeArrows(
@@ -1773,11 +1762,12 @@ function drawPaneYAxisLabels(
     layouts: Record<string, Rect>,
     bounds: ViewBounds,
     chartW: number,
+    chartSettings: ChartSettings,
 ) {
     ctx.font = '11px "Inter"';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = COLORS.label;
+    ctx.fillStyle = chartSettings.axisTextColor;
 
     for (const pane of panes) {
         if (pane.isMain) continue;
@@ -2128,7 +2118,7 @@ export function drawBackground(
     cssH: number,
     chartSettings: ChartSettings,
 ) {
-    ctx.fillStyle = chartSettings.backgroundColor ?? COLORS.background;
+    ctx.fillStyle = chartSettings.backgroundColor;
     ctx.fillRect(0, 0, cssW, cssH);
 }
 
@@ -2146,10 +2136,10 @@ function drawAxesBackgrounds(
     const sw = snapToDevicePx(w);
     const sh = snapToDevicePx(h);
 
-    ctx.fillStyle = chartSettings.axisBackgroundColor ?? COLORS.axisBg;
+    ctx.fillStyle = chartSettings.axisBackgroundColor;
     ctx.fillRect(sw, 0, cssW - sw, cssH);
     ctx.fillRect(0, sh, cssW, cssH - sh);
-    ctx.strokeStyle = COLORS.grid;
+    ctx.strokeStyle = chartSettings.axisBorderColor;
     ctx.lineWidth = 2;
     ctx.setLineDash([]);
     ctx.beginPath();
@@ -2181,7 +2171,7 @@ function drawDynamicLabels(
 ) {
     const pH = priceAxisH ?? h;
     ctx.save();
-    ctx.fillStyle = COLORS.label;
+    ctx.fillStyle = chartSettings.axisTextColor;
     ctx.font = '11px "Inter"';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
@@ -2628,7 +2618,7 @@ function drawTradeDetail(
     rows.forEach(([label, value], i) => {
         const rowY = boxY + 10 + i * rowH + rowH / 2;
 
-        ctx.fillStyle = COLORS.label;
+        ctx.fillStyle = chartSettings.axisTextColor;
         ctx.textAlign = 'left';
         ctx.fillText(label, boxX + 10, rowY);
 
@@ -3017,12 +3007,12 @@ function drawCrosshair(
 
         ctx.font = `11px "Inter"`;
         const tWidth = ctx.measureText(dateStr + '   ' + timeStr).width + 16;
-        ctx.fillStyle = COLORS.crosshairBg;
+        ctx.fillStyle = chartSettings.crosshairLabelColor;
         // Clamp label so it never overflows left or right edge of the chart area
         const labelX = snapToDevicePx(Math.max(0, Math.min(w - tWidth, snappedX - tWidth / 2)));
         const labelY = snapToDevicePx(totalH);
         ctx.fillRect(labelX, labelY, tWidth, 20);
-        ctx.fillStyle = COLORS.crosshairText;
+        ctx.fillStyle = chartSettings.crosshairLabelTextColor;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(dateStr + '   ' + timeStr, labelX + tWidth / 2, labelY + 10);
@@ -3049,9 +3039,9 @@ function drawCrosshair(
         );
 
         const pillY = snapToDevicePx(_y);
-        ctx.fillStyle = COLORS.crosshairBg;
+        ctx.fillStyle = chartSettings.crosshairLabelColor;
         ctx.fillRect(snapToDevicePx(w), pillY - 10, rightScaleWidth, 20);
-        ctx.fillStyle = COLORS.crosshairText;
+        ctx.fillStyle = chartSettings.crosshairLabelTextColor;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText(valueStr, w + 6, pillY);
@@ -3187,7 +3177,7 @@ function drawPriceLabel(
             ctx.rect(0, yOffset, w, h);
             ctx.clip();
             ctx.beginPath();
-            ctx.strokeStyle = COLORS.sellLine;
+            ctx.strokeStyle = chartSettings.askLineColor;
             ctx.moveTo(0, askY);
             ctx.lineTo(w, askY);
             ctx.stroke();
@@ -3196,8 +3186,8 @@ function drawPriceLabel(
             pills.push({
                 idealY: askY,
                 actualY: askY,
-                fillColor: COLORS.sellLine,
-                textColor: COLORS.crosshairBg,
+                fillColor: chartSettings.askLineColor,
+                textColor: chartSettings.priceLabelTextColor,
                 label: formatPrice(askDisp, symbolInfo),
                 filled: true,
             });
@@ -3209,7 +3199,7 @@ function drawPriceLabel(
             ctx.rect(0, yOffset, w, h);
             ctx.clip();
             ctx.beginPath();
-            ctx.strokeStyle = COLORS.buyLine;
+            ctx.strokeStyle = chartSettings.bidLineColor;
             ctx.moveTo(0, bidY);
             ctx.lineTo(w, bidY);
             ctx.stroke();
@@ -3218,8 +3208,8 @@ function drawPriceLabel(
             pills.push({
                 idealY: bidY,
                 actualY: bidY,
-                fillColor: COLORS.buyLine,
-                textColor: COLORS.crosshairBg,
+                fillColor: chartSettings.bidLineColor,
+                textColor: chartSettings.priceLabelTextColor,
                 label: formatPrice(bidDisp, symbolInfo),
                 filled: true,
             });
@@ -3300,7 +3290,7 @@ function drawPriceLabel(
                     idealY: priceY,
                     actualY: priceY,
                     fillColor: makeOpaque(color),
-                    textColor: COLORS.crosshairBg,
+                    textColor: chartSettings.priceLabelTextColor,
                     label: formatPrice(closeDisp, symbolInfo),
                     filled: true,
                 });
@@ -3321,8 +3311,8 @@ function drawPriceLabel(
                 pills.push({
                     idealY: histAskY,
                     actualY: histAskY,
-                    fillColor: COLORS.sellLine,
-                    textColor: COLORS.sellLine,
+                    fillColor: chartSettings.askLineColor,
+                    textColor: chartSettings.askLineColor,
                     label: formatPrice(price.bestAsk, symbolInfo),
                     filled: false,
                 });
@@ -3331,8 +3321,8 @@ function drawPriceLabel(
                 pills.push({
                     idealY: histBidY,
                     actualY: histBidY,
-                    fillColor: COLORS.buyLine,
-                    textColor: COLORS.buyLine,
+                    fillColor: chartSettings.bidLineColor,
+                    textColor: chartSettings.bidLineColor,
                     label: formatPrice(price.bestBid, symbolInfo),
                     filled: false,
                 });
@@ -3350,8 +3340,8 @@ function drawPriceLabel(
                     pills.push({
                         idealY: histAskY,
                         actualY: histAskY,
-                        fillColor: COLORS.sellLine,
-                        textColor: COLORS.sellLine,
+                        fillColor: chartSettings.askLineColor,
+                        textColor: chartSettings.askLineColor,
                         label: formatPrice(price.ask, symbolInfo),
                         filled: false,
                     });
@@ -3360,8 +3350,8 @@ function drawPriceLabel(
                     pills.push({
                         idealY: histBidY,
                         actualY: histBidY,
-                        fillColor: COLORS.buyLine,
-                        textColor: COLORS.buyLine,
+                        fillColor: chartSettings.bidLineColor,
+                        textColor: chartSettings.bidLineColor,
                         label: formatPrice(price.bid, symbolInfo),
                         filled: false,
                     });
@@ -3619,7 +3609,7 @@ function drawPriceChart(
                     bounds,
                     w,
                     h,
-                    COLORS.buyLine,
+                    chartSettings.bidLineColor,
                     'bid',
                     chartSettings,
                     horizon,
@@ -3633,7 +3623,7 @@ function drawPriceChart(
                     bounds,
                     w,
                     h,
-                    COLORS.sellLine,
+                    chartSettings.askLineColor,
                     'ask',
                     chartSettings,
                     horizon,
@@ -3678,7 +3668,7 @@ function drawPriceChart(
                         bounds,
                         w,
                         h,
-                        COLORS.buyLine,
+                        chartSettings.bidLineColor,
                         'bid',
                         chartSettings,
                         horizon,
@@ -3692,7 +3682,7 @@ function drawPriceChart(
                         bounds,
                         w,
                         h,
-                        COLORS.sellLine,
+                        chartSettings.askLineColor,
                         'ask',
                         chartSettings,
                         horizon,
@@ -3804,7 +3794,7 @@ function drawPriceChart(
                 bounds,
                 w,
                 h,
-                COLORS.buyLine,
+                chartSettings.bidLineColor,
                 'bid',
                 chartSettings,
                 horizon,
@@ -3819,7 +3809,7 @@ function drawPriceChart(
                 bounds,
                 w,
                 h,
-                COLORS.sellLine,
+                chartSettings.askLineColor,
                 'ask',
                 chartSettings,
                 horizon,
@@ -4092,7 +4082,7 @@ function drawCandleChart(
             bounds,
             w,
             h,
-            COLORS.buyLine,
+            chartSettings.bidLineColor,
             'bid',
             chartSettings,
             horizon,
@@ -4105,7 +4095,7 @@ function drawCandleChart(
             bounds,
             w,
             h,
-            COLORS.sellLine,
+            chartSettings.askLineColor,
             'ask',
             chartSettings,
             horizon,

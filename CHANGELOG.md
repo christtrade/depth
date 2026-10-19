@@ -45,6 +45,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   price line, heatmap. A color still at its default follows the theme, one the user picked wins,
   so switching theme never overwrites a choice. `themedSettings()`, `CHART_COLOR_KEYS` and
   `ChartColors` exported for hosts with their own settings UI.
+- Chart settings for the colors that were fixed in the renderer: `axisTextColor`, `axisBorderColor`,
+  `crosshairLabelColor`, `crosshairLabelTextColor`, `priceLabelTextColor`, `bidLineColor` and
+  `askLineColor`. Themes color them too, so a light theme no longer gets grey-on-dark axis labels.
 
 ### Changed
 - `theme:change` carries the whole `ThemeDef` instead of `'light' | 'dark'`.

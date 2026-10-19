@@ -54,6 +54,9 @@ export type ChartSettings = {
     gridVerticalColor: string;
     crosshairMode: 'normal' | 'magnet' | 'hidden';
     crosshairColor: string;
+    /** The time and price boxes on the crosshair. */
+    crosshairLabelColor: string;
+    crosshairLabelTextColor: string;
     crosshairWidth: number;
     crosshairDash: number[];
     showBreaks: boolean;
@@ -70,9 +73,17 @@ export type ChartSettings = {
     // Chart
     backgroundColor: string;
     axisBackgroundColor: string;
+    /** Tick labels on the price and time axis. */
+    axisTextColor: string;
+    /** The line between the plot and the axes. */
+    axisBorderColor: string;
+    /** Text on the colored price pills on the price axis. */
+    priceLabelTextColor: string;
     // Overlays
     showBidLine: boolean;
     showAskLine: boolean;
+    bidLineColor: string;
+    askLineColor: string;
     showMidLine: boolean;
     showLastTradeLine: boolean;
     showFills: boolean;
@@ -148,6 +159,8 @@ export const DEFAULT_CHART_SETTINGS: ChartSettings = {
     gridVerticalColor: '#ffffff0d',
     crosshairMode: 'normal',
     crosshairColor: '#758696',
+    crosshairLabelColor: '#23272f',
+    crosshairLabelTextColor: '#ffffff',
     crosshairWidth: 1,
     crosshairDash: [6, 6],
     showBreaks: false,
@@ -162,8 +175,13 @@ export const DEFAULT_CHART_SETTINGS: ChartSettings = {
     statusLineFontSize: 12,
     backgroundColor: '#16181d',
     axisBackgroundColor: '#16181d',
+    axisTextColor: '#888888',
+    axisBorderColor: '#282a2e',
+    priceLabelTextColor: '#23272f',
     showBidLine: true,
     showAskLine: true,
+    bidLineColor: '#00e676',
+    askLineColor: '#ff1744',
     showMidLine: false,
     showLastTradeLine: false,
     showFills: true,
@@ -220,9 +238,16 @@ export const CHART_COLOR_KEYS = [
     'gridHorizontalColor',
     'gridVerticalColor',
     'crosshairColor',
+    'crosshairLabelColor',
+    'crosshairLabelTextColor',
     'breaksColor',
     'backgroundColor',
     'axisBackgroundColor',
+    'axisTextColor',
+    'axisBorderColor',
+    'priceLabelTextColor',
+    'bidLineColor',
+    'askLineColor',
     'heatmapColorBid',
     'heatmapColorAsk',
     'priceLineColor',
