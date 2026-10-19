@@ -1,11 +1,9 @@
 import type { ThemeDef } from '../interfaces/plugins/IChartPlugin';
 import type { TypedEventBus } from './TypedEventBus';
+import { BUILTIN_THEMES } from './builtin-themes';
 
+export { BUILTIN_THEMES };
 export const DEFAULT_THEME_ID = 'dark';
-
-export const BUILTIN_THEMES: readonly ThemeDef[] = [
-    { id: DEFAULT_THEME_ID, name: 'Dark', dark: true, vars: {} },
-];
 
 export class ThemeRegistry {
     private readonly themes = new Map<string, ThemeDef>();
