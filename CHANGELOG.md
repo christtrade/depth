@@ -45,6 +45,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   price line, heatmap. A color still at its default follows the theme, one the user picked wins,
   so switching theme never overwrites a choice. `themedSettings()`, `CHART_COLOR_KEYS` and
   `ChartColors` exported for hosts with their own settings UI.
+- A theme's `vars` are applied to depth's own elements (`.depth-root`, portaled panels and
+  tooltips included), so an app with no CSS of its own still gets themed toolbars and dialogs. A
+  theme with no `vars` leaves the host's CSS in charge. Names and values that could break out of
+  the rule are dropped.
 - Chart settings for the colors that were fixed in the renderer: `axisTextColor`, `axisBorderColor`,
   `crosshairLabelColor`, `crosshairLabelTextColor`, `priceLabelTextColor`, `bidLineColor` and
   `askLineColor`. Themes color them too, so a light theme no longer gets grey-on-dark axis labels.
@@ -74,6 +78,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ever called with. It's an alias of `DrawHook` now.
 
 ### Fixed
+- Tooltip text was invisible on themes with a dark `primary-foreground`, like Rosé Pine. Tooltips
+  took their text color from the primary button ink while nearly every caller swapped the
+  background for a surface. They're a bordered `popover` surface by default now.
 - `lifecycle.onThemeChange` never fired. Nothing emitted `theme:change`.
 - Tick-data playback painted the base layer outside the render loop on every tick, skipping
   overlays, so plugin overlays flickered. It goes through the render loop now.

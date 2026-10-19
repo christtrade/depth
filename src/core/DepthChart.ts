@@ -63,6 +63,7 @@ import { PlaybackStateRegistry } from './PlaybackStateRegistry';
 import { PluginScheduleImpl } from './PluginSchedule';
 import { CellEngines } from './CellEngines';
 import { BUILTIN_THEMES, ThemeRegistry } from './ThemeRegistry';
+import { ThemeStyle } from './theme-style';
 import type { ThemeDef } from '../interfaces/plugins/IChartPlugin';
 import type { StyleField } from '../components/drawings/drawing-settings-dialog';
 import { toast } from 'sonner';
@@ -315,6 +316,7 @@ export class DepthChart {
     readonly id: string;
     readonly eventBus: TypedEventBus;
     private readonly _themes: ThemeRegistry;
+    private readonly _themeStyle: ThemeStyle;
     readonly executionEngine: ExecutionEngine;
     private readonly dataEngine: DataEngine;
     readonly transformer: LiveTransformer;
@@ -366,6 +368,7 @@ export class DepthChart {
         this.id = `chart:${nanoid(6)}`;
         this.eventBus = new TypedEventBus();
         this._themes = new ThemeRegistry(this.eventBus, BUILTIN_THEMES, options.theme);
+        this._themeStyle = new ThemeStyle(this.id);
         this.transformer = new LiveTransformer();
         this.executionEngine = new ExecutionEngine();
         this.executionEngine.setEventBus(this.eventBus);
@@ -434,7 +437,9 @@ export class DepthChart {
         });
         this.eventBus.on('render-engine:destroyed', ({ engine }) => this._engines.detach(engine));
         this.eventBus.on('chart:focused', ({ id }) => this._engines.focus(id));
+        this._themeStyle.apply(this._themes.current);
         this.eventBus.on('theme:change', (theme) => {
+            this._themeStyle.apply(theme);
             for (const engine of this._engines.all.values()) engine.setThemeColors(theme.chart);
         });
 
@@ -1728,6 +1733,7 @@ export class DepthChart {
     destroy(): void {
         if (this.destroyed) return;
         this.destroyed = true;
+        this._themeStyle.remove();
         this._console?.dispose();
         globalChartBus.unregisterChart(this.id);
         this.dataEngine.destroy();
