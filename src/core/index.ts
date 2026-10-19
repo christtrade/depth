@@ -372,7 +372,7 @@ export type {
     ThemeDef,
     ToolbarItem,
 } from '../interfaces/plugins/IChartPlugin';
-export { BUILTIN_THEMES, DEFAULT_THEME_ID } from './ThemeRegistry';
+export { BASE_DARK_VARS, BUILTIN_THEMES, DEFAULT_THEME_ID } from './ThemeRegistry';
 export type {
     ChartTypeActiveContext,
     ChartTypeKeyEvent,

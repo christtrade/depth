@@ -1,8 +1,8 @@
 import type { ThemeDef } from '../interfaces/plugins/IChartPlugin';
 import type { TypedEventBus } from './TypedEventBus';
-import { BUILTIN_THEMES } from './builtin-themes';
+import { BASE_DARK_VARS, BUILTIN_THEMES } from './builtin-themes';
 
-export { BUILTIN_THEMES };
+export { BASE_DARK_VARS, BUILTIN_THEMES };
 export const DEFAULT_THEME_ID = 'dark';
 
 export class ThemeRegistry {

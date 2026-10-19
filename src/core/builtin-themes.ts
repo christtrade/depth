@@ -15,7 +15,11 @@ const ORANGE = brand(['255 247 237', '255 237 213', '254 215 170', '253 186 116'
 const PURPLE = brand(['250 245 255', '243 232 255', '233 213 255', '216 180 254', '192 132 252', '168 85 247', '147 51 234', '126 34 206', '107 33 168', '88 28 135', '59 7 100']);
 const ROSE = brand(['255 241 242', '255 241 242', '255 228 230', '254 205 211', '253 164 175', '251 113 133', '244 63 94', '225 29 72', '190 18 60', '159 18 57', '76 5 25']);
 
-const DARK_UI: Record<string, string> = {
+/**
+ * What every built-in dark theme starts from. Spread it and override what's
+ * different: `vars: { ...BASE_DARK_VARS, primary: '207 82% 66%' }`.
+ */
+export const BASE_DARK_VARS: Readonly<Record<string, string>> = {
     background: '220 14% 10%',
     foreground: '0 0% 100%',
     sunken: '220 14% 7%',
@@ -81,7 +85,7 @@ export const BUILTIN_THEMES: readonly ThemeDef[] = [
         name: 'One Dark',
         dark: true,
         vars: {
-            ...DARK_UI,
+            ...BASE_DARK_VARS,
             background: '220 13% 15%',
             foreground: '219 14% 85%',
             sunken: '220 13% 12%',
@@ -114,7 +118,7 @@ export const BUILTIN_THEMES: readonly ThemeDef[] = [
         name: 'Midnight',
         dark: true,
         vars: {
-            ...DARK_UI,
+            ...BASE_DARK_VARS,
             background: '0 0% 0%',
             sunken: '0 0% 0%',
             raised: '220 12% 8%',
@@ -135,7 +139,7 @@ export const BUILTIN_THEMES: readonly ThemeDef[] = [
         name: 'Nord',
         dark: true,
         vars: {
-            ...DARK_UI,
+            ...BASE_DARK_VARS,
             background: '220 16% 22%',
             foreground: '218 27% 94%',
             sunken: '220 16% 18%',
@@ -168,7 +172,7 @@ export const BUILTIN_THEMES: readonly ThemeDef[] = [
         name: 'Catppuccin',
         dark: true,
         vars: {
-            ...DARK_UI,
+            ...BASE_DARK_VARS,
             background: '240 21% 15%',
             foreground: '226 64% 88%',
             sunken: '240 21% 12%',
@@ -201,7 +205,7 @@ export const BUILTIN_THEMES: readonly ThemeDef[] = [
         name: 'Tokyo Night',
         dark: true,
         vars: {
-            ...DARK_UI,
+            ...BASE_DARK_VARS,
             background: '235 19% 13%',
             foreground: '229 73% 86%',
             sunken: '240 16% 10%',
@@ -234,7 +238,7 @@ export const BUILTIN_THEMES: readonly ThemeDef[] = [
         name: 'Gruvbox',
         dark: true,
         vars: {
-            ...DARK_UI,
+            ...BASE_DARK_VARS,
             background: '0 0% 16%',
             foreground: '43 59% 81%',
             sunken: '195 6% 12%',
@@ -267,7 +271,7 @@ export const BUILTIN_THEMES: readonly ThemeDef[] = [
         name: 'Dracula',
         dark: true,
         vars: {
-            ...DARK_UI,
+            ...BASE_DARK_VARS,
             background: '231 15% 18%',
             foreground: '60 30% 96%',
             sunken: '234 14% 15%',
@@ -300,7 +304,7 @@ export const BUILTIN_THEMES: readonly ThemeDef[] = [
         name: 'Rosé Pine',
         dark: true,
         vars: {
-            ...DARK_UI,
+            ...BASE_DARK_VARS,
             background: '249 22% 12%',
             foreground: '245 50% 91%',
             sunken: '249 22% 9%',

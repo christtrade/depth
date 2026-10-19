@@ -59,6 +59,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   extension's theme survives a hot reload without the chart dropping to the default.
 - `theme:list` event, every theme, fired when one's registered, replaced or unregistered.
   Pickers can follow plugin themes without polling `getThemes()`.
+- `BASE_DARK_VARS`, the vars every built-in dark theme starts from. Spread it and override what's
+  different, instead of copying 30-odd tokens to change the accent.
 
 ### Changed
 - `theme:change` carries the whole `ThemeDef` instead of `'light' | 'dark'`.
