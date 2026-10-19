@@ -87,6 +87,18 @@ describe('ThemeRegistry', () => {
         ]);
     });
 
+    it('theme:list carries every theme on register, replace and unregister', () => {
+        const { bus, themes } = setup();
+        const lists: string[][] = [];
+        bus.on('theme:list', (all) => lists.push(all.map((t) => t.id)));
+        const builtins = themes.list().map((t) => t.id);
+        const paper: ThemeDef = { id: 'paper', name: 'Paper', vars: {} };
+        themes.register(paper);
+        const off = themes.register({ ...paper, name: 'Paper 2' });
+        off();
+        assert.deepEqual(lists, [[...builtins, 'paper'], [...builtins, 'paper'], builtins]);
+    });
+
     it("the default can't be unregistered", () => {
         const { themes } = setup();
         const off = themes.register({ id: DEFAULT_THEME_ID, name: 'Mine', vars: {} });

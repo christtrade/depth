@@ -19,6 +19,7 @@ export const EVENTS: EventSpec[] = [
     {"event":"chart:open-symbol-select","kind":"command","spread":true,"args":[]},
     {"event":"chart:set-type","kind":"command","spread":true,"args":[{"name":"old","type":{"kind":"string"}},{"name":"new","type":{"kind":"string"}}]},
     {"event":"theme:change","kind":"event","args":[{"name":"value","type":{"kind":"named","name":"ThemeDef"}}]},
+    {"event":"theme:list","kind":"event","args":[{"name":"value","type":{"kind":"list","of":{"kind":"named","name":"ThemeDef"}}}],"doc":"A theme was registered, replaced or unregistered. Carries every theme, built-ins first."},
     {"event":"chart:focused","kind":"event","spread":true,"args":[{"name":"id","type":{"kind":"number"}}]},
     {"event":"chart:blurred","kind":"event","args":[]},
     {"event":"chart:change-layout","kind":"event","spread":true,"args":[{"name":"preset","type":{"kind":"json"}}]},

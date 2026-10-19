@@ -57,6 +57,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `askLineColor`. Themes color them too, so a light theme no longer gets grey-on-dark axis labels.
 - `ctx.registerTheme(theme)` works now. Gated on `theme:register`, removed on uninstall, and an
   extension's theme survives a hot reload without the chart dropping to the default.
+- `theme:list` event, every theme, fired when one's registered, replaced or unregistered.
+  Pickers can follow plugin themes without polling `getThemes()`.
 
 ### Changed
 - `theme:change` carries the whole `ThemeDef` instead of `'light' | 'dark'`.

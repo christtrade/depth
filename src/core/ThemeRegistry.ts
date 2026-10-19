@@ -33,10 +33,12 @@ export class ThemeRegistry {
     /** Same id replaces, so a hot-reloaded theme updates in place. Returns the unregister. */
     register(theme: ThemeDef): () => void {
         this.themes.set(theme.id, theme);
+        this.bus.emit('theme:list', this.list());
         if (theme.id === this.currentId) this.bus.emit('theme:change', theme);
         return () => {
             if (this.themes.get(theme.id) !== theme || theme.id === DEFAULT_THEME_ID) return;
             this.themes.delete(theme.id);
+            this.bus.emit('theme:list', this.list());
             if (theme.id !== this.currentId) return;
 
             queueMicrotask(() => {

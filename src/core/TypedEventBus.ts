@@ -64,6 +64,7 @@ export interface ChartEvents {
     'chart:set-type': { old: string; new: string };
 
     'theme:change': ThemeDef;
+    'theme:list': ThemeDef[];
     'chart:focused': { id: number };
     'chart:blurred': void;
     'chart:change-layout': {
