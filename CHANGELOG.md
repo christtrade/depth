@@ -8,6 +8,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Internal `BarStore` - OHLCV bars as Float64Array columns. Nothing uses it yet.
+
 ### Fixed
 - Status line copied every loaded bar twice and filtered then again on each mouse move, causing
   panning to get slow as more history was loaded. Just uses a binary search now.
