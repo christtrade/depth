@@ -125,9 +125,9 @@ export function aggregateOhlcvBars(
 }
 
 /**
- * Incrementally prepend newly fetched bars to an existing aggregated display array.
- * O(new_bars) instead of O(total_bars) - only re-aggregates the new chunk.
- * Handles the boundary bucket that might straddle the old/new data boundary.
+ * Prepend fetched bars to an aggregated display array, merging the bucket that
+ * straddles the boundary. Only the new bars get aggregated, the join is still
+ * one copy of the whole array.
  */
 export function prependAggregatedOhlcvBars(
     newBars: OhlcvBarMs[],
@@ -153,10 +153,12 @@ export function prependAggregatedOhlcvBars(
             close: firstExisting.close,
             volume: lastNew.volume + firstExisting.volume,
         };
-        return [...newDisplay.slice(0, -1), merged, ...existingDisplay.slice(1)];
+        const out = newDisplay.concat(existingDisplay);
+        out.splice(newDisplay.length - 1, 2, merged);
+        return out;
     }
 
-    return [...newDisplay, ...existingDisplay];
+    return newDisplay.concat(existingDisplay);
 }
 
 export function autoFitPriceAxis(
@@ -1684,7 +1686,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 p.sessionMapperRef.current,
             );
 
-            ohlcvBarsRef.current.bars = [...newBars, ...ohlcvBarsRef.current.bars];
+            ohlcvBarsRef.current.bars = newBars.concat(ohlcvBarsRef.current.bars);
             ohlcvBarsRef.current.barNs = _prependTargetBarNs;
             ohlcvBarsRef.current.display = newDisplay;
             datasetStartRef.current = ds;

@@ -14,6 +14,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Magnet snapping searched every loaded bar on each mouse move while drawing. Binary search too.
 - Fit Y axis, reset view and switching timeframe copied every loaded bar first, for no reason
   unless a fetch was still in flight.
+- Every page of history loaded while panning back joined the arrays with spreads. Uses `concat` now
+  (~31ms at 1M bars -> ~3ms)
 
 ## [0.19.0] - 2026-10-19
 
