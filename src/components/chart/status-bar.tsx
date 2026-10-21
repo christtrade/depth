@@ -12,6 +12,17 @@ type CandleCache = Map<
     { open: number; high: number; low: number; close: number; volume: number; delta: number }
 >;
 
+function firstAtOrAfter(bars: OhlcvBarMs[], ms: number, end: number): number {
+    let lo = 0,
+        hi = end;
+    while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        if (bars[mid].time < ms) lo = mid + 1;
+        else hi = mid;
+    }
+    return lo;
+}
+
 function computeStatusFromEvent(
     crosshairX: number,
     priceHistory: PriceHistory[],
@@ -103,26 +114,31 @@ function computeStatusFromEvent(
                   volume: openBar.totalVol,
               }
             : null;
-        const filteredBars = [
-            ...bars.filter((b) => b.time < horizonMsSnapped),
-            ...(openBarMs ? [openBarMs] : []),
-        ];
+        const cut = firstAtOrAfter(bars, horizonMsSnapped, bars.length);
+        const n = cut + (openBarMs ? 1 : 0);
+        const at = (i: number) => (i < cut ? bars[i] : openBarMs!);
 
         let lo = 0,
-            hi = filteredBars.length - 1,
-            idx = filteredBars.length - 1;
+            hi = n - 1,
+            idx = n - 1;
         while (lo <= hi) {
             const mid = (lo + hi) >>> 1;
-            if (filteredBars[mid].time <= snappedTs) {
+            if (at(mid).time <= snappedTs) {
                 idx = mid;
                 lo = mid + 1;
             } else hi = mid - 1;
         }
-        const bar = filteredBars[idx];
-        if (!bar) return null;
+        if (idx < 0) return null;
+        const bar = at(idx);
 
         const dayStart = Math.floor(bar.time / (1000 * 60 * 60 * 24)) * (1000 * 60 * 60 * 24);
-        const sessionOpen = filteredBars.filter((b) => b.time >= dayStart)[0]?.open ?? bar.open;
+        const first = firstAtOrAfter(bars, dayStart, cut);
+        const sessionOpen =
+            first < cut
+                ? bars[first].open
+                : openBarMs && openBarMs.time >= dayStart
+                  ? openBarMs.open
+                  : bar.open;
         const change = bar.close - sessionOpen;
         const changePct = sessionOpen !== 0 ? (change / sessionOpen) * 100 : 0;
         return {
