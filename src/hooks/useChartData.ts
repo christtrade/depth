@@ -27,6 +27,7 @@ import { type ChartSettings } from '../lib/types/chart-settings';
 import { type TypedEventBus } from '../core/TypedEventBus';
 import { type RenderEngine } from '../core/RenderEngine';
 import { type SessionMapper } from '../core/SessionMapper';
+import { BarStore } from '../core/BarStore';
 import { ohlcvBucketRange } from '../lib/bar-grid';
 import { getSessionStatus, type SessionStatus } from '../core/SessionUtils';
 import { type HeatmapRequest } from '../lib/types/heatmap-types';
@@ -43,10 +44,10 @@ export function aggregateOhlcvBars(
     bars: OhlcvBarMs[],
     targetBarNs: bigint,
     sessionMapper?: SessionMapper | null,
-): OhlcvBarMs[] {
-    if (bars.length === 0 || targetBarNs <= 0n) return bars;
+): BarStore {
+    if (bars.length === 0 || targetBarNs <= 0n) return BarStore.from(bars);
     const barMs = Number(targetBarNs / 1_000_000n);
-    if (barMs <= 0) return bars;
+    if (barMs <= 0) return BarStore.from(bars);
 
     // ohlcvBucketRange's rule, in ms and without the per-bar BigInt: bars arrive
     // time-ordered, so the containing session segment only has to be looked up
@@ -80,7 +81,7 @@ export function aggregateOhlcvBars(
         return Math.floor(timeMs / barMs) * barMs;
     };
 
-    const result: OhlcvBarMs[] = [];
+    const result = new BarStore();
     let currentBucket = getBucket(bars[0].time);
     let o = bars[0].open,
         h = bars[0].high,
@@ -92,14 +93,7 @@ export function aggregateOhlcvBars(
         const bar = bars[i];
         const bucket = getBucket(bar.time);
         if (bucket !== currentBucket) {
-            result.push({
-                time: currentBucket,
-                open: o,
-                high: h,
-                low: l,
-                close: c,
-                volume: v,
-            });
+            result.appendRow(currentBucket, o, h, l, c, v);
             currentBucket = bucket;
             o = bar.open;
             h = bar.high;
@@ -113,59 +107,45 @@ export function aggregateOhlcvBars(
             v += bar.volume;
         }
     }
-    result.push({
-        time: currentBucket,
-        open: o,
-        high: h,
-        low: l,
-        close: c,
-        volume: v,
-    });
+    result.appendRow(currentBucket, o, h, l, c, v);
     return result;
 }
 
 /**
- * Prepend fetched bars to an aggregated display array, merging the bucket that
- * straddles the boundary. Only the new bars get aggregated, the join is still
- * one copy of the whole array.
+ * Prepend fetched bars to an aggregated display store in place, merging the
+ * bucket that straddles the boundary. Costs the new bars only.
  */
 export function prependAggregatedOhlcvBars(
     newBars: OhlcvBarMs[],
-    existingDisplay: OhlcvBarMs[],
+    display: BarStore,
     targetBarNs: bigint,
     sessionMapper?: SessionMapper | null,
-): OhlcvBarMs[] {
-    if (newBars.length === 0) return existingDisplay;
-    const newDisplay = aggregateOhlcvBars(newBars, targetBarNs, sessionMapper);
-    if (newDisplay.length === 0) return existingDisplay;
-    if (existingDisplay.length === 0) return newDisplay;
+): BarStore {
+    if (newBars.length === 0) return display;
+    const fresh = aggregateOhlcvBars(newBars, targetBarNs, sessionMapper).toArray();
+    if (fresh.length === 0) return display;
 
-    // If the last new bucket and the first existing bucket share the same time,
-    // they represent the same bar - merge them.
-    const lastNew = newDisplay[newDisplay.length - 1];
-    const firstExisting = existingDisplay[0];
-    if (lastNew.time === firstExisting.time) {
-        const merged: OhlcvBarMs = {
-            time: lastNew.time,
-            open: lastNew.open,
-            high: Math.max(lastNew.high, firstExisting.high),
-            low: Math.min(lastNew.low, firstExisting.low),
-            close: firstExisting.close,
-            volume: lastNew.volume + firstExisting.volume,
-        };
-        const out = newDisplay.concat(existingDisplay);
-        out.splice(newDisplay.length - 1, 2, merged);
-        return out;
+    const last = fresh[fresh.length - 1];
+    if (display.length && last.time === display.time[0]) {
+        display.set(0, {
+            time: last.time,
+            open: last.open,
+            high: Math.max(last.high, display.high[0]),
+            low: Math.min(last.low, display.low[0]),
+            close: display.close[0],
+            volume: last.volume + display.volume[0],
+        });
+        fresh.pop();
     }
-
-    return newDisplay.concat(existingDisplay);
+    display.prepend(fresh);
+    return display;
 }
 
 export function autoFitPriceAxis(
     view: ViewBounds,
     priceHistory: PriceHistory[],
     trades: TradePoint[],
-    bars: OhlcvBarMs[],
+    bars: BarStore,
     openBar: FootprintBar | null,
     settings: ChartSettings,
     horizon: bigint,
@@ -198,17 +178,20 @@ export function autoFitPriceAxis(
         }
     };
 
-    // Binary search helpers for the sorted bars array.
-    const barsStartIdx = (() => {
-        let blo = 0,
-            bhi = bars.length - 1;
-        while (blo <= bhi) {
-            const mid = (blo + bhi) >>> 1;
-            if (bars[mid].time < tMinMs) blo = mid + 1;
-            else bhi = mid - 1;
+    const barsStartIdx = bars.lowerBound(tMinMs);
+    const { time: bTime, high: bHigh, low: bLow } = bars;
+    const scanBars = () => {
+        for (let i = barsStartIdx; i < bTime.length; i++) {
+            if (bTime[i] >= tMaxMs) break;
+            if (bTime[i] >= scanEndMs) break;
+            if (bHigh[i] > hi) hi = bHigh[i];
+            if (bLow[i] < lo) lo = bLow[i];
+            if (!found) {
+                view.pRef = bHigh[i];
+                found = true;
+            }
         }
-        return blo;
-    })();
+    };
 
     if (
         settings.chartType === 'area' ||
@@ -227,17 +210,7 @@ export function autoFitPriceAxis(
                 }
             }
         } else if (dataLevel === 'ohlcv') {
-            for (let i = barsStartIdx; i < bars.length; i++) {
-                const bar = bars[i];
-                if (bar.time >= tMaxMs) break;
-                if (bar.time >= scanEndMs) break;
-                if (bar.high > hi) hi = bar.high;
-                if (bar.low < lo) lo = bar.low;
-                if (!found) {
-                    view.pRef = bar.high;
-                    found = true;
-                }
-            }
+            scanBars();
             foldOpenBar();
         }
     }
@@ -262,17 +235,7 @@ export function autoFitPriceAxis(
                 }
             }
         }
-        for (let i = barsStartIdx; i < bars.length; i++) {
-            const bar = bars[i];
-            if (bar.time >= tMaxMs) break;
-            if (bar.time >= scanEndMs) break;
-            if (bar.high > hi) hi = bar.high;
-            if (bar.low < lo) lo = bar.low;
-            if (!found) {
-                view.pRef = bar.high;
-                found = true;
-            }
-        }
+        scanBars();
         foldOpenBar();
     }
     if (!found) return;
@@ -358,8 +321,8 @@ export interface ChartDataResult {
     priceHistoryRef: MutableRefObject<PriceHistory[]>;
     allPriceHistoryRef: MutableRefObject<PriceHistory[]>;
     footprintBarsRef: MutableRefObject<FootprintBar[]>;
-    ohlcvBarsRef: MutableRefObject<{ barNs: bigint; bars: OhlcvBarMs[]; display: OhlcvBarMs[] }>;
-    previewBarsRef: MutableRefObject<OhlcvBarMs[]>;
+    ohlcvBarsRef: MutableRefObject<{ barNs: bigint; bars: OhlcvBarMs[]; display: BarStore }>;
+    previewBarsRef: MutableRefObject<BarStore>;
     openBarRef: MutableRefObject<FootprintBar | null>;
     openBarTsRef: MutableRefObject<bigint>;
     openBarTradeCountRef: MutableRefObject<number>;
@@ -455,12 +418,12 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
     const priceHistoryRef = useRef<PriceHistory[]>([]);
     const allPriceHistoryRef = useRef<PriceHistory[]>([]);
     const footprintBarsRef = useRef<FootprintBar[]>([]);
-    const ohlcvBarsRef = useRef<{ barNs: bigint; bars: OhlcvBarMs[]; display: OhlcvBarMs[] }>({
+    const ohlcvBarsRef = useRef<{ barNs: bigint; bars: OhlcvBarMs[]; display: BarStore }>({
         barNs: 0n,
         bars: [],
-        display: [],
+        display: new BarStore(),
     });
-    const previewBarsRef = useRef<OhlcvBarMs[]>([]);
+    const previewBarsRef = useRef<BarStore>(new BarStore());
     const openBarRef = useRef<FootprintBar | null>(null);
     const openBarTsRef = useRef<bigint>(0n);
     const openBarTradeCountRef = useRef<number>(0);
@@ -889,17 +852,8 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             // Last display bar strictly before this bucket. display is time-sorted, so
             // binary-search for the insertion point rather than filtering the whole array.
             const disp = ohlcvBarsRef.current.display;
-            let flo = 0,
-                fhi = disp.length - 1,
-                prevIdx = -1;
-            while (flo <= fhi) {
-                const fmid = (flo + fhi) >>> 1;
-                if (disp[fmid].time < barTimeMs) {
-                    prevIdx = fmid;
-                    flo = fmid + 1;
-                } else fhi = fmid - 1;
-            }
-            const bar = prevIdx >= 0 ? disp[prevIdx] : undefined;
+            const prevIdx = disp.lowerBound(barTimeMs) - 1;
+            const bar = prevIdx >= 0 ? disp.at(prevIdx) : undefined;
             if (!bar) return;
             openBarRef.current = {
                 ts: BigInt(bar.time * 1_000_000),
@@ -1280,7 +1234,11 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 volume: bar.volume,
                 time: bar.time,
             }));
-            ohlcvBarsRef.current = { barNs: _activeTfBarNs, bars: _mappedOhlcvBars, display: [] };
+            ohlcvBarsRef.current = {
+                barNs: _activeTfBarNs,
+                bars: _mappedOhlcvBars,
+                display: new BarStore(),
+            };
             const ds = BigInt(payload.dataStart) * 1_000_000n;
             const de = BigInt(payload.dataEnd) * 1_000_000n;
             datasetStartRef.current = ds;
@@ -1520,16 +1478,21 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                         p.sessionMapperRef.current,
                     );
                 } else {
-                    const lastBucketTime = disp[disp.length - 1].time;
+                    const lastBucketTime = disp.time[disp.length - 1];
                     let ri = bars.length;
                     while (ri > 0 && bars[ri - 1].time >= lastBucketTime) ri--;
                     const tail = aggregateOhlcvBars(
                         bars.slice(ri),
                         _appendTargetBarNs,
                         p.sessionMapperRef.current,
-                    );
-                    disp.pop();
-                    for (const d of tail) disp.push(d);
+                    ).toArray();
+                    // the last bucket gets replaced by the tail's first
+                    if (tail.length) {
+                        disp.set(disp.length - 1, tail[0]);
+                        disp.append(tail.slice(1));
+                    } else {
+                        disp.replaceRange(lastBucketTime, lastBucketTime, []);
+                    }
                 }
             }
             // Only jump the horizon to the new edge when we're idle AND already
@@ -2356,22 +2319,22 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             p.eventBus.on('playback:pause', () => (isPlayingRef.current = false)),
             p.eventBus.on('data:load', (payload) => {
                 if (payload.symbol !== cellSymbol) return;
-                previewBarsRef.current = [];
+                previewBarsRef.current = new BarStore();
                 ohlcvBarsRef.current.bars = [];
-                ohlcvBarsRef.current.display = [];
+                ohlcvBarsRef.current.display = new BarStore();
                 p.pushDrawParamsRef.current();
                 const safeBuf = (payload.compactBuf as ArrayBuffer).slice(0);
                 ingestLoadedData({ ...(payload as any), compactBuf: safeBuf });
             }),
             p.eventBus.on('data:append', (payload) => {
                 if (payload.symbol !== cellSymbol) return;
-                previewBarsRef.current = [];
+                previewBarsRef.current = new BarStore();
                 p.pushDrawParamsRef.current();
                 ingestAppendedData(payload as any);
             }),
             p.eventBus.on('data:prepend', (payload) => {
                 if (payload.symbol !== cellSymbol) return;
-                previewBarsRef.current = [];
+                previewBarsRef.current = new BarStore();
                 ingestPrependedData(payload as any);
             }),
             p.eventBus.on('data:refine', (payload) => {
@@ -2409,7 +2372,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             }),
             p.eventBus.on('data:preview', (payload) => {
                 if (payload.symbol !== cellSymbol) return;
-                previewBarsRef.current = payload.bars;
+                previewBarsRef.current = BarStore.from(payload.bars);
                 if (p.isYAxisAutoRef.current)
                     autoFitPriceAxis(
                         p.viewRef.current!,

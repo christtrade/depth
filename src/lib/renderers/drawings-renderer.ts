@@ -1,6 +1,7 @@
 //  Renders committed drawings (with optional selection state) + draft ghost.
 // also exports the hit-testing, for hover and click detection
 import { Crosshair, snapPrice, snapTs } from './renderer';
+import { BarStore } from '../../core/BarStore';
 import { resolveTickSize, formatPrice } from '../priceFormat';
 import type { SymbolInfo } from '../../core';
 import type { ChartPane } from '../types/indicator-types';
@@ -50,6 +51,7 @@ export const X_AXIS_HEIGHT = 30;
 const HANDLE_RADIUS = 5; // selected anchor circle radius
 const HANDLE_RADIUS_HOVER = 5;
 const SELECTION_GLOW = 'rgba(255,255,255,0.18)';
+const NO_BARS = new BarStore();
 
 /**
  * Snap a timestamp to the nearest bar-open boundary.
@@ -2925,7 +2927,7 @@ export function drawDrawingsLayer(
                             chartSettings,
                             footprintBars,
                             priceHistory,
-                            [],
+                            NO_BARS,
                             'l3',
                             horizon,
                         )

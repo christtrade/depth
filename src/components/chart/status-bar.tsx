@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { TypedEventBus } from '../../core/TypedEventBus';
-import type { ChartType, PriceHistory, ViewBounds, OhlcvBarMs } from '../../lib/types';
+import type { ChartType, PriceHistory, ViewBounds } from '../../lib/types';
+import type { BarStore } from '../../core/BarStore';
 import type { DataLevel } from '../../interfaces/IDataAdapter';
 import type { LiveTransformer } from '../../interfaces/ICoordinateTransformer';
 import type { FootprintBar } from '../../lib/types/footprint';
@@ -12,12 +13,12 @@ type CandleCache = Map<
     { open: number; high: number; low: number; close: number; volume: number; delta: number }
 >;
 
-function firstAtOrAfter(bars: OhlcvBarMs[], ms: number, end: number): number {
+function firstAtOrAfter(time: Float64Array, ms: number, end: number): number {
     let lo = 0,
         hi = end;
     while (lo < hi) {
         const mid = (lo + hi) >>> 1;
-        if (bars[mid].time < ms) lo = mid + 1;
+        if (time[mid] < ms) lo = mid + 1;
         else hi = mid;
     }
     return lo;
@@ -26,7 +27,7 @@ function firstAtOrAfter(bars: OhlcvBarMs[], ms: number, end: number): number {
 function computeStatusFromEvent(
     crosshairX: number,
     priceHistory: PriceHistory[],
-    bars: OhlcvBarMs[],
+    bars: BarStore,
     openBar: FootprintBar,
     bounds: ViewBounds,
     chartW: number,
@@ -114,28 +115,29 @@ function computeStatusFromEvent(
                   volume: openBar.totalVol,
               }
             : null;
-        const cut = firstAtOrAfter(bars, horizonMsSnapped, bars.length);
+        const { time } = bars;
+        const cut = firstAtOrAfter(time, horizonMsSnapped, time.length);
         const n = cut + (openBarMs ? 1 : 0);
-        const at = (i: number) => (i < cut ? bars[i] : openBarMs!);
+        const timeAt = (i: number) => (i < cut ? time[i] : openBarMs!.time);
 
         let lo = 0,
             hi = n - 1,
             idx = n - 1;
         while (lo <= hi) {
             const mid = (lo + hi) >>> 1;
-            if (at(mid).time <= snappedTs) {
+            if (timeAt(mid) <= snappedTs) {
                 idx = mid;
                 lo = mid + 1;
             } else hi = mid - 1;
         }
         if (idx < 0) return null;
-        const bar = at(idx);
+        const bar = idx < cut ? bars.at(idx)! : openBarMs!;
 
         const dayStart = Math.floor(bar.time / (1000 * 60 * 60 * 24)) * (1000 * 60 * 60 * 24);
-        const first = firstAtOrAfter(bars, dayStart, cut);
+        const first = firstAtOrAfter(time, dayStart, cut);
         const sessionOpen =
             first < cut
-                ? bars[first].open
+                ? bars.open[first]
                 : openBarMs && openBarMs.time >= dayStart
                   ? openBarMs.open
                   : bar.open;

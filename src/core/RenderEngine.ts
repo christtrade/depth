@@ -15,6 +15,7 @@ import { ChartTypePlugin } from './PluginRegistry';
 import { getEffectiveDpr } from '../lib/dpr';
 import { PriceTransition } from '../lib/priceTransition';
 import { SessionMapper } from './SessionMapper';
+import type { BarStore } from './BarStore';
 import { AccountSnapshot, DataLevel, SymbolInfo } from '.';
 import type { CrosshairSync } from '../lib/types/layout-sync';
 
@@ -80,15 +81,7 @@ export interface DrawParams {
     horizon: bigint;
     candleCache: Map<bigint, any> | null;
     openBar: FootprintBar | null;
-    /** Bars to render as candles - OHLCV adapter data or loading-preview bars. */
-    ohlcvBars: {
-        time: number;
-        open: number;
-        high: number;
-        low: number;
-        close: number;
-        volume: number;
-    }[];
+    ohlcvBars: BarStore;
     // UI layer specific
     crosshair: Crosshair | null;
     drawings: Drawing[];

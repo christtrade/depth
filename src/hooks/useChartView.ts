@@ -3,6 +3,7 @@ import { type ViewBounds, type TradePoint, type PriceHistory, type OhlcvBarMs } 
 import { type ChartSettings } from '../lib/types/chart-settings';
 import { type DataLevel } from '../interfaces/IDataAdapter';
 import { type RenderEngine } from '../core/RenderEngine';
+import { BarStore } from '../core/BarStore';
 import { type ChartPane, type Indicator } from '../lib/types/indicator-types';
 import { autoFitPriceAxis } from './useChartData';
 import { FootprintBar } from '../core';
@@ -14,8 +15,8 @@ export interface UseChartViewParams {
     setChartSettings: (updater: ChartSettings | ((prev: ChartSettings) => ChartSettings)) => void;
     priceHistoryRef: MutableRefObject<PriceHistory[]>;
     tradesRef: MutableRefObject<TradePoint[]>;
-    previewBarsRef: MutableRefObject<OhlcvBarMs[]>;
-    ohlcvBarsRef: MutableRefObject<{ barNs: bigint; bars: OhlcvBarMs[]; display: OhlcvBarMs[] }>;
+    previewBarsRef: MutableRefObject<BarStore>;
+    ohlcvBarsRef: MutableRefObject<{ barNs: bigint; bars: OhlcvBarMs[]; display: BarStore }>;
     openBarRef: MutableRefObject<FootprintBar>;
     chartSettingsRef: MutableRefObject<ChartSettings>;
     horizonRef: MutableRefObject<bigint>;
@@ -117,7 +118,11 @@ export function useChartView(p: UseChartViewParams): UseChartViewResult {
             priceHistoryRef.current,
             tradesRef.current,
             previewBarsRef.current.length
-                ? [...previewBarsRef.current, ...ohlcvBarsRef.current.display]
+                ? BarStore.from(
+                      [...previewBarsRef.current, ...ohlcvBarsRef.current.display].sort(
+                          (a, b) => a.time - b.time,
+                      ),
+                  )
                 : ohlcvBarsRef.current.display,
             openBarRef.current,
             chartSettingsRef.current,

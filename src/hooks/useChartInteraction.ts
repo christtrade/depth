@@ -42,6 +42,7 @@ import type {
     ChartTypeKeyEvent,
 } from '../core/PluginRegistry';
 import { type RenderEngine } from '../core/RenderEngine';
+import { type BarStore } from '../core/BarStore';
 import { type TypedEventBus } from '../core/TypedEventBus';
 import { type SessionMapper } from '../core/SessionMapper';
 import { snapTsToBarGrid } from '../lib/bar-grid';
@@ -225,8 +226,8 @@ export interface UseChartInteractionParams {
     tradesRef: MutableRefObject<TradePoint[]>;
     priceHistoryRef: MutableRefObject<PriceHistory[]>;
     allPriceHistoryRef: MutableRefObject<PriceHistory[]>;
-    ohlcvBarsRef: MutableRefObject<{ barNs: bigint; bars: OhlcvBarMs[]; display: OhlcvBarMs[] }>;
-    previewBarsRef: MutableRefObject<OhlcvBarMs[]>;
+    ohlcvBarsRef: MutableRefObject<{ barNs: bigint; bars: OhlcvBarMs[]; display: BarStore }>;
+    previewBarsRef: MutableRefObject<BarStore>;
     dataLevelRef: MutableRefObject<DataLevel | null>;
     openBarRef: MutableRefObject<FootprintBar | null>;
     candleCacheRef: MutableRefObject<Map<bigint, any> | null>;
@@ -472,15 +473,9 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
         if (dataLevelRef.current === 'ohlcv') {
             const display = ohlcvBarsRef.current.display;
             const ms = Number(snappedTs / 1_000_000n);
-            let lo = 0,
-                hi = display.length;
-            while (lo < hi) {
-                const mid = (lo + hi) >>> 1;
-                if (display[mid].time < ms) lo = mid + 1;
-                else hi = mid;
-            }
-            const bar = display[lo];
-            if (!bar || bar.time !== ms) return rawPrice;
+            const i = display.lowerBound(ms);
+            const bar = i < display.length && display.time[i] === ms ? display.at(i) : undefined;
+            if (!bar) return rawPrice;
             const distances = [
                 Math.abs(bar.open - rawPrice),
                 Math.abs(bar.high - rawPrice),

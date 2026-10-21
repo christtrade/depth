@@ -11,6 +11,7 @@ import { ActiveDrawingTool, DraftDrawing, Drawing, DrawingAnchorId } from '../ty
 import { AccountSnapshot, DataLevel, LiveTransformer, OhlcvBar, SymbolInfo } from '../../core';
 import { DateTime } from 'luxon';
 import { SessionMapper } from '../../core/SessionMapper';
+import type { BarStore } from '../../core/BarStore';
 import { snapTsToBarGrid } from '../bar-grid';
 import { getEffectiveDpr, snapToDevicePx } from '../dpr';
 import { formatPrice, resolveTickSize } from '../priceFormat';
@@ -202,14 +203,7 @@ export function drawBaseLayer(
     candleCache: CandleCache | null = null,
     /** Live incrementally-built open bar - overrides the cache for the current bucket. */
     openBar: { ts: bigint; open: number; high: number; low: number; close: number } | null = null,
-    ohlcvBars: {
-        time: number;
-        open: number;
-        high: number;
-        low: number;
-        close: number;
-        volume: number;
-    }[],
+    ohlcvBars: BarStore,
     transformer: LiveTransformer,
     isPluginChartType = false,
     sessionMapper?: SessionMapper,
@@ -409,14 +403,7 @@ export function drawUILayer(
     chartSettings: ChartSettings,
     horizon: bigint = 0n,
     candleCache: CandleCache | null = null,
-    ohlcvBars: {
-        time: number;
-        open: number;
-        high: number;
-        low: number;
-        close: number;
-        volume: number;
-    }[],
+    ohlcvBars: BarStore,
     openBar: OhlcvBar,
     tradeLines: TradeLine[],
     tradeLineInteraction: any,
@@ -1800,6 +1787,7 @@ type ArrowGeomCache = {
     boundsKey: string;
     fillsRef: unknown;
     barsRef: unknown;
+    barsVersion: number;
     openBarRef: unknown;
     barNs: bigint;
     horizon: bigint;
@@ -1853,14 +1841,7 @@ function drawTradeArrows(
     crosshair: Crosshair,
     transformer: LiveTransformer,
     accountSnapshot: AccountSnapshot | null | undefined,
-    ohlcvBars: {
-        time: number;
-        open: number;
-        high: number;
-        low: number;
-        close: number;
-        volume: number;
-    }[],
+    ohlcvBars: BarStore,
     openBar: any,
     symbol: string
 ) {
@@ -1886,6 +1867,7 @@ function drawTradeArrows(
         cache.boundsKey === boundsKey &&
         cache.fillsRef === fills &&
         cache.barsRef === ohlcvBars &&
+        cache.barsVersion === ohlcvBars.version &&
         cache.openBarRef === openBar &&
         cache.barNs === barNs &&
         cache.horizon === horizon &&
@@ -1907,16 +1889,8 @@ function drawTradeArrows(
         const barAt = (tsMs: number) => {
             if (tsMs === openBarMs && openBar) return openBar;
             if (tsMs >= horizonMs) return undefined;
-            let lo = 0;
-            let hi = ohlcvBars.length - 1;
-            while (lo <= hi) {
-                const mid = (lo + hi) >>> 1;
-                const t = ohlcvBars[mid].time;
-                if (t === tsMs) return ohlcvBars[mid];
-                if (t < tsMs) lo = mid + 1;
-                else hi = mid - 1;
-            }
-            return undefined;
+            const i = ohlcvBars.lowerBound(tsMs);
+            return i < ohlcvBars.length && ohlcvBars.time[i] === tsMs ? ohlcvBars.at(i) : undefined;
         };
 
         const tMinMs = Number(bounds.tMin / 1_000_000n);
@@ -1999,6 +1973,7 @@ function drawTradeArrows(
             boundsKey,
             fillsRef: fills,
             barsRef: ohlcvBars,
+            barsVersion: ohlcvBars.version,
             openBarRef: openBar,
             barNs,
             horizon,
@@ -2257,14 +2232,7 @@ function drawTradeLine(
     horizon: bigint = 0n,
     barNs: bigint,
     transformer: LiveTransformer,
-    ohlcvBars?: {
-        time: number;
-        open: number;
-        high: number;
-        low: number;
-        close: number;
-        volume: number;
-    }[],
+    ohlcvBars?: BarStore,
     openBar?: any,
 ) {
     const tsToXFn = transformer.makeTsToXFn(w);
@@ -2274,41 +2242,30 @@ function drawTradeLine(
         if (!ohlcvBars.length) return;
         const cutTs = Number(((horizon / barNs) * barNs) / 1_000_000n);
         const target = Number(bounds.tMin / 1_000_000n);
+        const { time, close } = ohlcvBars;
 
         ctx.beginPath();
         ctx.strokeStyle = color;
         ctx.lineWidth = 1;
         ctx.lineJoin = 'miter';
 
-        let lo = 0;
-        let hi = ohlcvBars.length - 1;
-        let result = -1;
-        while (lo <= hi) {
-            const mid = (lo + hi) >>> 1;
-            if (ohlcvBars[mid].time <= target) {
-                result = mid;
-                lo = mid + 1;
-            } else {
-                hi = mid - 1;
-            }
-        }
-        const startIdx = result;
+        const startIdx = Math.max(0, ohlcvBars.upperBound(target) - 1);
         let isFirstPoint = true;
         let idx = startIdx;
 
-        for (let i = startIdx; i < ohlcvBars.length; i++) {
-            if (ohlcvBars[i].time >= cutTs) break;
-            const val = ohlcvBars[i].close;
+        for (let i = startIdx; i < time.length; i++) {
+            if (time[i] >= cutTs) break;
+            const val = close[i];
             if (val === 0) continue;
 
-            const x = tsToXFn(BigInt(ohlcvBars[i].time * 1_000_000));
+            const x = tsToXFn(BigInt(time[i] * 1_000_000));
             const y = priceToYFn(val);
 
             if (isFirstPoint) {
                 ctx.moveTo(x, y);
                 isFirstPoint = false;
             } else {
-                const prevVal = ohlcvBars[i - 1].close;
+                const prevVal = close[i - 1];
                 const prevY = priceToYFn(prevVal !== 0 ? prevVal : val);
                 ctx.lineTo(x, prevY);
                 ctx.lineTo(x, y);
@@ -2317,7 +2274,7 @@ function drawTradeLine(
 
             if (x > w + 100) break;
         }
-        ctx.lineTo(tsToXFn(openBar.ts), priceToYFn(ohlcvBars[idx].close));
+        ctx.lineTo(tsToXFn(openBar.ts), priceToYFn(close[idx]));
         ctx.lineTo(tsToXFn(openBar.ts), priceToYFn(openBar.close));
         ctx.stroke();
     } else {
@@ -2638,14 +2595,7 @@ export const snapPrice = (
     chartSettings: ChartSettings,
     footprintBars: FootprintBar[],
     priceHistory: PriceHistory[],
-    ohlcvBars: {
-        time: number;
-        open: number;
-        high: number;
-        low: number;
-        close: number;
-        volume: number;
-    }[],
+    ohlcvBars: BarStore,
     dataLevel: DataLevel,
     horizon: bigint,
 ): number => {
@@ -2657,21 +2607,8 @@ export const snapPrice = (
         // drawing tool is armed, and the array it was scanning end-to-end is the
         // whole loaded history.
         const targetMs = Number(snappedTs / 1_000_000n);
-        let bar: (typeof ohlcvBars)[number] | undefined;
-        {
-            let lo = 0;
-            let hi = ohlcvBars.length - 1;
-            while (lo <= hi) {
-                const mid = (lo + hi) >>> 1;
-                const t = ohlcvBars[mid].time;
-                if (t === targetMs) {
-                    bar = ohlcvBars[mid];
-                    break;
-                }
-                if (t < targetMs) lo = mid + 1;
-                else hi = mid - 1;
-            }
-        }
+        const i = ohlcvBars.lowerBound(targetMs);
+        const bar = i < ohlcvBars.length && ohlcvBars.time[i] === targetMs ? ohlcvBars.at(i) : undefined;
         if (!bar) return rawPrice;
         const distances = [
             Math.abs(bar.open - rawPrice),
@@ -2809,18 +2746,7 @@ function drawCrosshair(
     activeTfBarNs?: bigint | null,
     footprintBars?: FootprintBar[] | null,
     priceHistory?: PriceHistory[] | null,
-    bars?:
-        | {
-              time: number;
-              open: number;
-              high: number;
-              low: number;
-              close: number;
-              volume: number;
-              bid?: number;
-              ask?: number;
-          }[]
-        | null,
+    bars?: BarStore | null,
     drawings?: Drawing[] | null,
     draft?: DraftDrawing | null,
     transformer?: LiveTransformer,
@@ -3061,18 +2987,7 @@ function drawPriceLabel(
     barNs: bigint,
     horizon: bigint = 0n,
     candleCache: CandleCache | null = null,
-    bars:
-        | {
-              time: number;
-              open: number;
-              high: number;
-              low: number;
-              close: number;
-              volume: number;
-              bid?: number;
-              ask?: number;
-          }[]
-        | null = null,
+    bars: BarStore | null = null,
     openBar: any = null,
     yOffset: number = 0,
     transformer: LiveTransformer,
@@ -3106,33 +3021,13 @@ function drawPriceLabel(
     } else if (dataLevel === 'ohlcv' && bars.length) {
         const tMaxMs = Number(bounds.tMax / 1_000_000n) - Number(barNs / 1_000_000n / 2n);
         const horizonMs = Number(horizon / 1_000_000n);
-        let idx = 0;
-        {
-            let lo = 0,
-                hi = bars.length - 1;
-            while (lo <= hi) {
-                const mid = (lo + hi) >>> 1;
-                if (bars[mid].time < tMaxMs) lo = mid + 1;
-                else hi = mid - 1;
-            }
-            idx = lo;
-        }
-        let hIdx = 0;
-        {
-            let lo = 0,
-                hi = bars.length - 1;
-            while (lo <= hi) {
-                const mid = (lo + hi) >>> 1;
-                if (bars[mid].time < horizonMs) lo = mid + 1;
-                else hi = mid - 1;
-            }
-            hIdx = lo;
-        }
+        const idx = bars.lowerBound(tMaxMs);
+        const hIdx = bars.lowerBound(horizonMs);
 
-        price = bars[Math.min(idx, bars.length - 1)];
-        currPrice = bars[hIdx];
+        price = bars.at(Math.min(idx, bars.length - 1));
+        currPrice = bars.at(hIdx);
 
-        if (bars[hIdx]?.bid && bars[hIdx]?.ask) {
+        if (currPrice?.bid && currPrice?.ask) {
             hasBidAsk = true;
         }
     }
@@ -3490,19 +3385,12 @@ function drawPriceChart(
     horizon: bigint = 0n,
     candleCache: CandleCache | null = null,
     openBar: { ts: bigint; open: number; high: number; low: number; close: number } | null = null,
-    ohlcvBars: {
-        time: number;
-        open: number;
-        high: number;
-        low: number;
-        close: number;
-        volume: number;
-    }[],
+    ohlcvBars: BarStore,
     transformer: LiveTransformer,
     dataLevel: DataLevel,
     symbolInfo?: SymbolInfo,
 ) {
-    const hasBidAsk = dataLevel === 'ohlcv' && (ohlcvBars?.[0] as any)?.bid ? true : false;
+    const hasBidAsk = dataLevel === 'ohlcv' && !!ohlcvBars?.bid?.[0];
     if (chartType === 'footprint') {
         drawFootprintChart(
             ctx,
@@ -3851,14 +3739,7 @@ function drawSmoothLine(
     horizon: bigint = 0n,
     barNs: bigint,
     transformer: LiveTransformer,
-    ohlcvBars?: {
-        time: number;
-        open: number;
-        high: number;
-        low: number;
-        close: number;
-        volume: number;
-    }[],
+    ohlcvBars?: BarStore,
     openBar?: any,
 ) {
     const tsToXFn = transformer.makeTsToXFn(w);
@@ -3868,31 +3749,19 @@ function drawSmoothLine(
         if (!ohlcvBars.length) return;
         const cutTs = Number(((horizon / barNs) * barNs) / 1_000_000n);
         const target = Number(bounds.tMin / 1_000_000n);
-
-        let lo = 0;
-        let hi = ohlcvBars.length - 1;
-        let result = -1;
-        while (lo <= hi) {
-            const mid = (lo + hi) >>> 1;
-            if (ohlcvBars[mid].time <= target) {
-                result = mid;
-                lo = mid + 1;
-            } else {
-                hi = mid - 1;
-            }
-        }
-        const startIdx = result;
+        const { time, close } = ohlcvBars;
+        const startIdx = Math.max(0, ohlcvBars.upperBound(target) - 1);
 
         ctx.beginPath();
         ctx.strokeStyle = color;
         ctx.lineWidth = 1.5;
         ctx.lineJoin = 'round';
         let first = true;
-        for (let i = startIdx; i < ohlcvBars.length; i++) {
-            if (ohlcvBars[i].time >= cutTs) break;
-            const val = ohlcvBars[i].close;
+        for (let i = startIdx; i < time.length; i++) {
+            if (time[i] >= cutTs) break;
+            const val = close[i];
             if (val === 0) continue;
-            const x = tsToXFn(BigInt(ohlcvBars[i].time * 1_000_000));
+            const x = tsToXFn(BigInt(time[i] * 1_000_000));
             const y = priceToYFn(val);
             if (first) {
                 ctx.moveTo(x, y);
@@ -3938,14 +3807,7 @@ function drawAreaChart(
     horizon: bigint = 0n,
     barNs: bigint,
     transformer: LiveTransformer,
-    ohlcvBars?: {
-        time: number;
-        open: number;
-        high: number;
-        low: number;
-        close: number;
-        volume: number;
-    }[],
+    ohlcvBars?: BarStore,
     openBar?: any,
 ) {
     const tsToXFn = transformer.makeTsToXFn(w);
@@ -3955,27 +3817,16 @@ function drawAreaChart(
         if (!ohlcvBars.length) return;
         const cutTs = Number(((horizon / barNs) * barNs) / 1_000_000n);
         const lineColor = '#1190b0';
-        let lo = 0;
-        let hi = ohlcvBars.length - 1;
-        let result = -1;
-        while (lo <= hi) {
-            const mid = (lo + hi) >>> 1;
-            if (ohlcvBars[mid].time <= Number(bounds.tMin / 1_000_000n)) {
-                result = mid;
-                lo = mid + 1;
-            } else {
-                hi = mid - 1;
-            }
-        }
-        const startIdx = Math.max(0, result);
+        const { time, close } = ohlcvBars;
+        const startIdx = Math.max(0, ohlcvBars.upperBound(Number(bounds.tMin / 1_000_000n)) - 1);
 
         const pts: { x: number; y: number }[] = [];
-        for (let i = startIdx; i < ohlcvBars.length; i++) {
-            if (ohlcvBars[i].time >= cutTs) break;
-            const val = ohlcvBars[i].close;
+        for (let i = startIdx; i < time.length; i++) {
+            if (time[i] >= cutTs) break;
+            const val = close[i];
             if (val === 0) continue;
             pts.push({
-                x: tsToXFn(BigInt(ohlcvBars[i].time * 1_000_000)),
+                x: tsToXFn(BigInt(time[i] * 1_000_000)),
                 y: priceToYFn(val),
             });
             if (pts[pts.length - 1].x > w + 100) break;
@@ -4065,14 +3916,7 @@ function drawCandleChart(
     horizon: bigint = 0n,
     candleCache: CandleCache | null = null,
     openBar: { ts: bigint; open: number; high: number; low: number; close: number } | null = null,
-    ohlcvBars: {
-        time: number;
-        open: number;
-        high: number;
-        low: number;
-        close: number;
-        volume: number;
-    }[],
+    ohlcvBars: BarStore,
     transformer: LiveTransformer,
 ) {
     if (barNs === 0n) {
@@ -4226,26 +4070,16 @@ function drawCandleChart(
         // Include one barNs of look-back so the bucket straddling tMin gets the
         // correct open price from its first input bar.
         const tMinMs = Number((bounds.tMin > barNs ? bounds.tMin - barNs : 0n) / 1_000_000n);
-        let startIdx = 0;
-        {
-            let lo = 0,
-                hi = ohlcvBars.length - 1;
-            while (lo <= hi) {
-                const mid = (lo + hi) >>> 1;
-                if (ohlcvBars[mid].time < tMinMs) lo = mid + 1;
-                else hi = mid - 1;
-            }
-            startIdx = lo;
-        }
+        const startIdx = ohlcvBars.lowerBound(tMinMs);
+        const { time, open, high, low, close, volume } = ohlcvBars;
 
         // Upper bound: tMax + one bar so the last visible bucket gets all its input bars,
         // but we never scan the entire loaded history when horizon/cutMs is in the future.
         const viewEndMs = Number((bounds.tMax + barNs) / 1_000_000n);
         const loopEndMs = Math.min(cutMs, viewEndMs);
 
-        for (let i = startIdx; i < ohlcvBars.length; i++) {
-            const bar = ohlcvBars[i];
-            const tsMs = bar.time; // already Number ms - no BigInt conversion needed
+        for (let i = startIdx; i < time.length; i++) {
+            const tsMs = time[i];
             if (tsMs >= loopEndMs) break;
 
             let bucketMs: number;
@@ -4261,18 +4095,18 @@ function drawCandleChart(
             const existing = bucketMap.get(bucketMs);
             if (!existing) {
                 bucketMap.set(bucketMs, {
-                    open: bar.open,
-                    high: bar.high,
-                    low: bar.low,
-                    close: bar.close,
-                    volume: bar.volume,
+                    open: open[i],
+                    high: high[i],
+                    low: low[i],
+                    close: close[i],
+                    volume: volume[i],
                 });
                 bucketOrderMs.push(bucketMs);
             } else {
-                if (bar.high > existing.high) existing.high = bar.high;
-                if (bar.low < existing.low) existing.low = bar.low;
-                existing.close = bar.close;
-                existing.volume += bar.volume;
+                if (high[i] > existing.high) existing.high = high[i];
+                if (low[i] < existing.low) existing.low = low[i];
+                existing.close = close[i];
+                existing.volume += volume[i];
             }
         }
 
@@ -4430,14 +4264,7 @@ function aggregateCandles(
     horizon: bigint,
     candleCache: CandleCache | null,
     openBar: { ts: bigint; open: number; high: number; low: number; close: number } | null,
-    ohlcvBars: {
-        time: number;
-        open: number;
-        high: number;
-        low: number;
-        close: number;
-        volume: number;
-    }[],
+    ohlcvBars: BarStore,
     transformer: LiveTransformer,
 ): AggCandle[] {
     const out: AggCandle[] = [];
@@ -4478,24 +4305,14 @@ function aggregateCandles(
         const bucketOrderMs: number[] = [];
 
         const tMinMs = Number((bounds.tMin > barNs ? bounds.tMin - barNs : 0n) / 1_000_000n);
-        let startIdx = 0;
-        {
-            let lo = 0,
-                hi = ohlcvBars.length - 1;
-            while (lo <= hi) {
-                const mid = (lo + hi) >>> 1;
-                if (ohlcvBars[mid].time < tMinMs) lo = mid + 1;
-                else hi = mid - 1;
-            }
-            startIdx = lo;
-        }
+        const startIdx = ohlcvBars.lowerBound(tMinMs);
+        const { time, open, high, low, close } = ohlcvBars;
 
         const viewEndMs = Number((bounds.tMax + barNs) / 1_000_000n);
         const loopEndMs = Math.min(cutMs, viewEndMs);
 
-        for (let i = startIdx; i < ohlcvBars.length; i++) {
-            const bar = ohlcvBars[i];
-            const tsMs = bar.time;
+        for (let i = startIdx; i < time.length; i++) {
+            const tsMs = time[i];
             if (tsMs >= loopEndMs) break;
 
             let bucketMs: number;
@@ -4509,16 +4326,16 @@ function aggregateCandles(
             const existing = bucketMap.get(bucketMs);
             if (!existing) {
                 bucketMap.set(bucketMs, {
-                    open: bar.open,
-                    high: bar.high,
-                    low: bar.low,
-                    close: bar.close,
+                    open: open[i],
+                    high: high[i],
+                    low: low[i],
+                    close: close[i],
                 });
                 bucketOrderMs.push(bucketMs);
             } else {
-                if (bar.high > existing.high) existing.high = bar.high;
-                if (bar.low < existing.low) existing.low = bar.low;
-                existing.close = bar.close;
+                if (high[i] > existing.high) existing.high = high[i];
+                if (low[i] < existing.low) existing.low = low[i];
+                existing.close = close[i];
             }
         }
 
@@ -4824,14 +4641,7 @@ function drawBaselineChart(
     horizon: bigint = 0n,
     barNs: bigint,
     transformer: LiveTransformer,
-    ohlcvBars?: {
-        time: number;
-        open: number;
-        high: number;
-        low: number;
-        close: number;
-        volume: number;
-    }[],
+    ohlcvBars?: BarStore,
     openBar?: any,
 ) {
     const tsToXFn = transformer.makeTsToXFn(w);
@@ -4849,33 +4659,22 @@ function drawBaselineChart(
 
         // Default baseline: the first real price of the whole series - a stable
         // anchor that doesn't drift while panning.
+        const { time, close } = ohlcvBars;
         if (baselinePrice == null) {
-            for (let i = 0; i < ohlcvBars.length; i++) {
-                if (ohlcvBars[i].close !== 0) {
-                    baselinePrice = ohlcvBars[i].close;
+            for (let i = 0; i < close.length; i++) {
+                if (close[i] !== 0) {
+                    baselinePrice = close[i];
                     break;
                 }
             }
         }
 
         const target = Number(bounds.tMin / 1_000_000n);
-        let lo = 0,
-            hi = ohlcvBars.length - 1,
-            result = -1;
-        while (lo <= hi) {
-            const mid = (lo + hi) >>> 1;
-            if (ohlcvBars[mid].time <= target) {
-                result = mid;
-                lo = mid + 1;
-            } else {
-                hi = mid - 1;
-            }
-        }
-        for (let i = Math.max(0, result); i < ohlcvBars.length; i++) {
-            if (ohlcvBars[i].time >= cutTs) break;
-            const val = ohlcvBars[i].close;
+        for (let i = Math.max(0, ohlcvBars.upperBound(target) - 1); i < time.length; i++) {
+            if (time[i] >= cutTs) break;
+            const val = close[i];
             if (val === 0) continue;
-            pts.push({ x: tsToXFn(BigInt(ohlcvBars[i].time * 1_000_000)), price: val });
+            pts.push({ x: tsToXFn(BigInt(time[i] * 1_000_000)), price: val });
             if (pts[pts.length - 1].x > w + 100) break;
         }
         if (openBar && Number(openBar.ts / 1_000_000n) < cutTs) {
@@ -4990,7 +4789,7 @@ type SeriesCacheEntry = { sig: string; series: PricePoint[] };
 const _closeSeriesCache = new WeakMap<object, SeriesCacheEntry>();
 
 function getCloseSeries(
-    ohlcvBars: { time: number; close: number }[] | undefined,
+    ohlcvBars: BarStore | undefined,
     candleCache: CandleCache | null,
     trades: TradePoint[],
     _barNs: bigint,
@@ -5004,12 +4803,13 @@ function getCloseSeries(
     };
 
     if (ohlcvBars && ohlcvBars.length) {
-        const last = ohlcvBars[ohlcvBars.length - 1];
-        return memo(ohlcvBars, `o:${ohlcvBars.length}:${last.time}`, () => {
+        // version, not length + last time: the store mutates in place
+        return memo(ohlcvBars, `o:${ohlcvBars.version}`, () => {
+            const { time, close } = ohlcvBars;
             const s: PricePoint[] = [];
-            for (const b of ohlcvBars) {
-                if (b.close === 0) continue;
-                s.push({ ts: BigInt(b.time * 1_000_000), price: b.close });
+            for (let i = 0; i < time.length; i++) {
+                if (close[i] === 0) continue;
+                s.push({ ts: BigInt(time[i] * 1_000_000), price: close[i] });
             }
             return s;
         });
@@ -5066,7 +4866,7 @@ export function isOrdinalChartType(t: ChartType): boolean {
 export function getOrdinalModel(
     chartType: ChartType,
     chartSettings: ChartSettings,
-    ohlcvBars: { time: number; close: number }[] | undefined,
+    ohlcvBars: BarStore | undefined,
     candleCache: CandleCache | null,
     trades: TradePoint[],
     barNs: bigint,

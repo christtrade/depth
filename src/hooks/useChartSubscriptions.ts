@@ -2,6 +2,7 @@ import { useEffect, type MutableRefObject } from 'react';
 import { type ChartTypePlugin, type ChartTypeActiveContext } from '../core/PluginRegistry';
 import { type AccountManager } from '../core/AccountManager';
 import { type RenderEngine } from '../core/RenderEngine';
+import { type BarStore } from '../core/BarStore';
 import { type TypedEventBus } from '../core/TypedEventBus';
 import { type ChartPane, type Indicator } from '../lib/types/indicator-types';
 import { type ChartSettings } from '../lib/types/chart-settings';
@@ -38,9 +39,9 @@ export interface UseChartSubscriptionsParams {
     chartSettingsRef: MutableRefObject<ChartSettings>;
     pluginChartTypeComputedRef: MutableRefObject<Map<string, unknown>>;
     dataLevelRef: MutableRefObject<DataLevel | null>;
-    previewBarsRef: MutableRefObject<OhlcvBarMs[]>;
+    previewBarsRef: MutableRefObject<BarStore>;
     candleCacheRef: MutableRefObject<Map<bigint, any> | null>;
-    ohlcvBarsRef: MutableRefObject<{ barNs: bigint; bars: OhlcvBarMs[]; display: OhlcvBarMs[] }>;
+    ohlcvBarsRef: MutableRefObject<{ barNs: bigint; bars: OhlcvBarMs[]; display: BarStore }>;
     openBarRef: MutableRefObject<FootprintBar | null>;
     viewRef: MutableRefObject<ViewBounds | null>;
     accountSnapRef: MutableRefObject<any>;
@@ -391,18 +392,9 @@ export function useChartSubscriptions(p: UseChartSubscriptionsParams): void {
                     const display = ohlcvBarsRef.current.display;
                     // Binary-search the first in-window bar so we skip (not scan)
                     // all the off-screen history - keeps this O(window), not O(total).
-                    let lo = 0,
-                        hi = display.length - 1,
-                        start = display.length;
-                    while (lo <= hi) {
-                        const mid = (lo + hi) >>> 1;
-                        if (display[mid].time >= winStartMs) {
-                            start = mid;
-                            hi = mid - 1;
-                        } else lo = mid + 1;
-                    }
+                    const start = display.lowerBound(winStartMs);
                     for (let i = start; i < display.length; i++) {
-                        const bar = display[i];
+                        const bar = display.at(i)!;
                         if (bar.time > winEndMs) break;
                         if (bar.time >= formingBarMs && openBarRef.current) {
                             ohlcv.push({

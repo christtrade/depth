@@ -30,6 +30,7 @@ import { Fill, Order, Position, PositionClose, TradingEvent } from '../lib/types
 import { PriceHistory, TradePoint, type ViewBounds } from '../lib/types';
 import { BottomBarItem, ChartTypePlugin, ToolbarItem } from './PluginRegistry';
 import { RenderEngine } from './RenderEngine';
+import type { BarStore } from './BarStore';
 import { PlaybackMode } from '../hooks/usePlaybackEngine';
 import type { CrosshairSync, TimeRangeSync } from '../lib/types/layout-sync';
 import type { PlaceOrderRequest } from '../lib/matchingEngine';
@@ -118,14 +119,7 @@ export interface ChartEvents {
                 delta: number;
             }
         > | null;
-        bars: {
-            time: number;
-            open: number;
-            high: number;
-            low: number;
-            close: number;
-            volume: number;
-        }[];
+        bars: BarStore;
         openBar: FootprintBar;
         horizon: bigint;
         dataLevel: DataLevel;

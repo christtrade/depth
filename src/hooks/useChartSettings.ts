@@ -4,6 +4,7 @@ import { type FootprintBar } from '../lib/types/footprint';
 import { type ChartSettings, DEFAULT_CHART_SETTINGS } from '../lib/types/chart-settings';
 import { type DataLevel } from '../interfaces/IDataAdapter';
 import { type RenderEngine } from '../core/RenderEngine';
+import { type BarStore } from '../core/BarStore';
 import { type CompactBuffer } from '../lib/compact-buffer';
 import { StorageKey, readJSON, writeJSON } from '../lib/storage';
 import { autoFitPriceAxis } from './useChartData';
@@ -15,8 +16,8 @@ export interface UseChartSettingsParams {
     priceHistoryRef: MutableRefObject<PriceHistory[]>;
     tradesRef: MutableRefObject<TradePoint[]>;
     dataLevelRef: MutableRefObject<DataLevel | null>;
-    ohlcvBarsRef: MutableRefObject<{ barNs: bigint; bars: OhlcvBarMs[]; display: OhlcvBarMs[] }>;
-    previewBarsRef: MutableRefObject<OhlcvBarMs[]>;
+    ohlcvBarsRef: MutableRefObject<{ barNs: bigint; bars: OhlcvBarMs[]; display: BarStore }>;
+    previewBarsRef: MutableRefObject<BarStore>;
     openBarRef: MutableRefObject<FootprintBar | null>;
     horizonRef: MutableRefObject<bigint>;
     compactBufRef: MutableRefObject<CompactBuffer>;

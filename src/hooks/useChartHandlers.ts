@@ -13,6 +13,7 @@ import {
 } from '../lib/types';
 import { type Timeframe, tfViewSpan } from '../lib/timeframes';
 import { type RenderEngine } from '../core/RenderEngine';
+import { type BarStore } from '../core/BarStore';
 import { type LiveTransformer } from '../interfaces/ICoordinateTransformer';
 import { type DataLevel } from '../interfaces/IDataAdapter';
 import { type CompactBuffer } from '../lib/compact-buffer';
@@ -34,7 +35,7 @@ export interface UseChartHandlersParams {
     panesRef: MutableRefObject<ChartPane[]>;
 
     // Data refs
-    ohlcvBarsRef: MutableRefObject<{ barNs: bigint; bars: OhlcvBarMs[]; display: OhlcvBarMs[] }>;
+    ohlcvBarsRef: MutableRefObject<{ barNs: bigint; bars: OhlcvBarMs[]; display: BarStore }>;
     sessionMapperRef: MutableRefObject<SessionMapper>;
     activeTimeframeRef: MutableRefObject<Timeframe>;
     horizonRef: MutableRefObject<bigint>;
@@ -48,7 +49,7 @@ export interface UseChartHandlersParams {
     isYAxisAutoRef: MutableRefObject<boolean>;
     priceHistoryRef: MutableRefObject<PriceHistory[]>;
     dataLevelRef: MutableRefObject<DataLevel | null>;
-    previewBarsRef: MutableRefObject<OhlcvBarMs[]>;
+    previewBarsRef: MutableRefObject<BarStore>;
     chartSettingsRef: MutableRefObject<ChartSettings>;
     tradeLinesRef: MutableRefObject<TradeLine[]>;
     hoveringLegend: MutableRefObject<boolean>;

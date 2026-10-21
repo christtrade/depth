@@ -9,9 +9,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
-- Internal `BarStore` - OHLCV bars as Float64Array columns. Nothing uses it yet.
+- Internal `BarStore` - OHLCV bars as Float64Array columns.
+
+### Changed
+- The bars a chart draws are a `BarStore` now, not an array of objects: ~48 bytes a bar instead of
+  ~176 and nothing for the GC to walk. Paging history in prepends in place instead of copying
+  what's loaded. The raw bars and the data engine's copy are still arrays, for now.
+- `status:compute`'s `bars` is a `BarStore`.
 
 ### Fixed
+- Line and step charts threw on every frame while the view started before the first loaded bar.
 - Status line copied every loaded bar twice and filtered then again on each mouse move, causing
   panning to get slow as more history was loaded. Just uses a binary search now.
 - Magnet snapping searched every loaded bar on each mouse move while drawing. Binary search too.
