@@ -11,6 +11,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - Status line copied every loaded bar twice and filtered then again on each mouse move, causing
   panning to get slow as more history was loaded. Just uses a binary search now.
+- Magnet snapping searched every loaded bar on each mouse move while drawing. Binary search too.
+- Fit Y axis, reset view and switching timeframe copied every loaded bar first, for no reason
+  unless a fetch was still in flight.
 
 ## [0.19.0] - 2026-10-19
 

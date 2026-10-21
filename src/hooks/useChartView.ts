@@ -116,7 +116,9 @@ export function useChartView(p: UseChartViewParams): UseChartViewResult {
             view,
             priceHistoryRef.current,
             tradesRef.current,
-            [...previewBarsRef.current, ...ohlcvBarsRef.current.display],
+            previewBarsRef.current.length
+                ? [...previewBarsRef.current, ...ohlcvBarsRef.current.display]
+                : ohlcvBarsRef.current.display,
             openBarRef.current,
             chartSettingsRef.current,
             horizonRef.current,

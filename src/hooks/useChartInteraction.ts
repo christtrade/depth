@@ -470,10 +470,17 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
         if (snappedTs > horizonRef.current) return rawPrice;
         const chartType = chartSettingsRef.current.chartType;
         if (dataLevelRef.current === 'ohlcv') {
-            const bar = ohlcvBarsRef.current.display.find(
-                (bar) => bar.time === Number(snappedTs / 1_000_000n),
-            );
-            if (!bar) return rawPrice;
+            const display = ohlcvBarsRef.current.display;
+            const ms = Number(snappedTs / 1_000_000n);
+            let lo = 0,
+                hi = display.length;
+            while (lo < hi) {
+                const mid = (lo + hi) >>> 1;
+                if (display[mid].time < ms) lo = mid + 1;
+                else hi = mid;
+            }
+            const bar = display[lo];
+            if (!bar || bar.time !== ms) return rawPrice;
             const distances = [
                 Math.abs(bar.open - rawPrice),
                 Math.abs(bar.high - rawPrice),
