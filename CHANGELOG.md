@@ -8,6 +8,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-10-22
+
+Bars are a `BarStore` everywhere the API hands them out. `ohlcvBars[i].close` becomes
+`bars.close[i]`, or `bars.toArray()` / `for (const bar of bars)` if you want objects. Read the
+columns off the store each time, they're swapped when it grows.
+
 ### Added
 - `BarStore`, exported: OHLCV bars as Float64Array columns, `bars.close[i]`. Has `lowerBound`,
   `at(i)`, `toArray()`, `clone()` and iterates as objects for when you want them.
@@ -18,22 +24,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and the perf guard, and how to run tests.
 
 ### Changed
-- The bars a chart draws are a `BarStore` now, not an array of objects: ~48 bytes a bar instead of
+- **Breaking:** `data:load` carries `bars: BarStore` instead of `ohlcvBars`. `data:append` and
+  `data:prepend` add `bars` and keep `ohlcvBars` as just the new bars, which is now `[]` at l3/tick
+  for append too.
+- **Breaking:** `IDrawingPlugin.snap` gets a `BarStore`.
+- **Breaking:** `status:compute`'s `bars` is a `BarStore`.
+- The bars a chart draws are a `BarStore`, not an array of objects: ~48 bytes a bar instead of
   ~176 and nothing for the GC to walk. Paging history in prepends in place instead of copying
-  what's loaded. Each chart's raw bars and the data engine's copy too.
-- The built-in matching engine keeps its bars as a `BarStore` now too, instead of a Bigint stamped
+  what's loaded. Same for each chart's raw bars and the data engine's copy.
+- The built-in matching engine keeps its bars in a `BarStore` too, instead of a Bigint stamped
   wrapper around every bar object - 72 bytes a bar on top of the objects before, now just 48. A
-  custom `IExecutionAdapter` still gets arrays
+  custom `IExecutionAdapter` still gets arrays.
 - Charts share the data engine's bars instead of keeping their own copy, and when the timeframe is
   the resolution the bars came in at, what's drawn is that same store, so one copy of each bar for
   every chart on a symbol, instead of one per chart plus one per timeframe.
-- **Breaking:** `data:load` carries `bars: BarStore` instead of `ohlcvBars` now. `data:append` and
-  `data:prepend` add `bars` and keep `ohlcvBars` as just the new bars, which is now `[]` at l3/tick
-  for append too.
-- **Breaking:** `IDrawingPlugin.snap` gets a `BarStore`
-- `status:compute`'s `bars` is a `BarStore`.
 - `free` reports what the bars really take, not a per-row guess. `plot` takes typed arrays, so
   `plot data.bars.close` works.
+
+### Deprecated
+- `getData().ohlcvBars`: now built from `bars` on first read, ~176 bytes a bar and a full copy.
+  Use `bars`.
 
 ### Fixed
 - `getData().bars` held the bar at the loaded edge twice for every forward page, since each one
@@ -45,7 +55,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fit Y axis, reset view and switching timeframe copied every loaded bar first, for no reason
   unless a fetch was still in flight.
 - Every page of history loaded while panning back joined the arrays with spreads. Uses `concat` now
-  (~31ms at 1M bars -> ~3ms)
+  (~31ms at 1M bars -> ~3ms).
 
 ## [0.19.0] - 2026-10-19
 
@@ -637,7 +647,8 @@ Not user-visible, but this is what the split out of the monorepo turned up:
 - 30 unused UI components were removed, taking `depth.css` from 147 KB to
   124 KB.
 
-[unreleased]: https://github.com/christtrade/depth/compare/v0.19.0...HEAD
+[unreleased]: https://github.com/christtrade/depth/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/christtrade/depth/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/christtrade/depth/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/christtrade/depth/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/christtrade/depth/compare/v0.16.2...v0.17.0
