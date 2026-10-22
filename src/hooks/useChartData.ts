@@ -40,16 +40,8 @@ import { nanoid } from 'nanoid';
 // Pure utility functions
 export { ohlcvBucketRange };
 
-export function aggregateOhlcvBars(
-    bars: BarStore,
-    targetBarNs: bigint,
-    sessionMapper?: SessionMapper | null,
-    from = 0,
-): BarStore {
-    if (from >= bars.length || targetBarNs <= 0n) return BarStore.from(bars.toArray(from));
-    const barMs = Number(targetBarNs / 1_000_000n);
-    if (barMs <= 0) return BarStore.from(bars.toArray(from));
-
+// bucket start for a bar time, in ms
+function bucketer(barMs: number, sessionMapper?: SessionMapper | null): (timeMs: number) => number {
     // ohlcvBucketRange's rule, in ms and without the per-bar BigInt: bars arrive
     // time-ordered, so the containing session segment only has to be looked up
     // when one is left behind. Deliberately the same arithmetic - anchor to the
@@ -65,7 +57,7 @@ export function aggregateOhlcvBars(
     let segEndMs = 0;
     let haveSeg = false;
 
-    const getBucket = (timeMs: number): number => {
+    return (timeMs: number): number => {
         if (useSession) {
             if (!haveSeg || timeMs < segStartMs || timeMs >= segEndMs) {
                 const seg = sessionMapper!.segmentAt(BigInt(timeMs) * 1_000_000n);
@@ -81,6 +73,18 @@ export function aggregateOhlcvBars(
         }
         return Math.floor(timeMs / barMs) * barMs;
     };
+}
+
+export function aggregateOhlcvBars(
+    bars: BarStore,
+    targetBarNs: bigint,
+    sessionMapper?: SessionMapper | null,
+    from = 0,
+): BarStore {
+    if (from >= bars.length || targetBarNs <= 0n) return BarStore.from(bars.toArray(from));
+    const barMs = Number(targetBarNs / 1_000_000n);
+    if (barMs <= 0) return BarStore.from(bars.toArray(from));
+    const getBucket = bucketer(barMs, sessionMapper);
 
     const { time, open, high, low, close, volume } = bars;
     const result = new BarStore();
@@ -110,6 +114,36 @@ export function aggregateOhlcvBars(
     }
     result.appendRow(currentBucket, o, h, l, c, v);
     return result;
+}
+
+export function isAggregated(
+    bars: BarStore,
+    targetBarNs: bigint,
+    sessionMapper?: SessionMapper | null,
+    from = 0,
+    to = bars.length,
+): boolean {
+    if (bars.bid || targetBarNs <= 0n) return false;
+    const barMs = Number(targetBarNs / 1_000_000n);
+    if (barMs <= 0) return false;
+    const getBucket = bucketer(barMs, sessionMapper);
+    const t = bars.time;
+    for (let i = from; i < to; i++) {
+        if (getBucket(t[i]) !== t[i]) return false;
+        if (i > 0 && !(t[i] > t[i - 1])) return false;
+    }
+    return !(to > 0 && to < t.length && !(t[to] > t[to - 1]));
+}
+
+// the raw store itself when it's already at targetBarNs, else an aggregated copy
+export function displayFor(
+    bars: BarStore,
+    targetBarNs: bigint,
+    sessionMapper?: SessionMapper | null,
+): BarStore {
+    return isAggregated(bars, targetBarNs, sessionMapper)
+        ? bars
+        : aggregateOhlcvBars(bars, targetBarNs, sessionMapper);
 }
 
 /**
@@ -1228,11 +1262,9 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             candleCacheRef.current = null;
             const _activeTfBarNs = p.activeTimeframeRef.current.barNs;
 
-            const raw = new BarStore(loaded.length);
-            const { time, open, high, low, close, volume } = loaded;
-            for (let i = 0; i < time.length; i++) {
-                raw.appendRow(time[i], open[i], high[i], low[i], close[i], volume[i]);
-            }
+            // the engines store thats shared. the engine grows it and this pane only reads it
+            // so every pane on a symbol holds one copy between them
+            const raw = loaded;
             ohlcvBarsRef.current = { barNs: _activeTfBarNs, bars: raw, display: new BarStore() };
             const ds = BigInt(payload.dataStart) * 1_000_000n;
             const de = BigInt(payload.dataEnd) * 1_000_000n;
@@ -1248,7 +1280,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             openBarTsRef.current = 0n;
             const PAD = 14n * 24n * 60n * 60n * 1_000_000_000n;
             p.sessionMapperRef.current.build(p.resolvedSessionRef.current, ds - PAD, de + PAD);
-            ohlcvBarsRef.current.display = aggregateOhlcvBars(
+            ohlcvBarsRef.current.display = displayFor(
                 raw,
                 _activeTfBarNs,
                 p.sessionMapperRef.current,
@@ -1458,20 +1490,24 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             // array and re-aggregating every forward chunk froze the UI as playback
             // accumulated data. Only the last display bucket can change.
             if (newBars.length > 0) {
+                // the engine already trimmed the resetn edge ebar and appended these 2 the shared store
                 const bars = ohlcvBarsRef.current.bars;
-                const firstNewTime = newBars[0].time;
-                // Drop trailing raw bars the chunk re-fetched (e.g. the forming bar
-                // at the loaded edge), then append the new ones.
-                bars.replaceRange(firstNewTime, Infinity, []);
-                bars.append(newBars);
+                const mapper = p.sessionMapperRef.current;
                 ohlcvBarsRef.current.barNs = _appendTargetBarNs;
                 const disp = ohlcvBarsRef.current.display;
-                if (disp.length === 0) {
-                    ohlcvBarsRef.current.display = aggregateOhlcvBars(
-                        bars,
-                        _appendTargetBarNs,
-                        p.sessionMapperRef.current,
-                    );
+                if (disp === bars) {
+                    // display is the store, so its already extended unless the new bars need aggregating
+                    // then it sstops being the store
+                    const from = bars.lowerBound(newBars[0].time);
+                    if (!isAggregated(bars, _appendTargetBarNs, mapper, from)) {
+                        ohlcvBarsRef.current.display = aggregateOhlcvBars(
+                            bars,
+                            _appendTargetBarNs,
+                            mapper,
+                        );
+                    }
+                } else if (disp.length === 0) {
+                    ohlcvBarsRef.current.display = displayFor(bars, _appendTargetBarNs, mapper);
                 } else {
                     const lastBucketTime = disp.time[disp.length - 1];
                     const tail = aggregateOhlcvBars(
@@ -1635,17 +1671,16 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             // rebuilding from scratch - O(new_range_minutes) vs O(total_range_minutes).
             p.sessionMapperRef.current.extendBackward(p.resolvedSessionRef.current, newRangeFrom);
 
-            // Aggregate only the new bars and prepend to existing display - O(new_bars).
-            const newDisplay = prependAggregatedOhlcvBars(
-                newBars,
-                ohlcvBarsRef.current.display,
-                _prependTargetBarNs,
-                p.sessionMapperRef.current,
-            );
-
-            ohlcvBarsRef.current.bars.prepend(newBars);
+            const raw = ohlcvBarsRef.current.bars;
+            const mapper = p.sessionMapperRef.current;
+            const display = ohlcvBarsRef.current.display;
+            ohlcvBarsRef.current.display =
+                display === raw
+                    ? isAggregated(raw, _prependTargetBarNs, mapper, 0, newBars.length)
+                        ? raw
+                        : aggregateOhlcvBars(raw, _prependTargetBarNs, mapper)
+                    : prependAggregatedOhlcvBars(newBars, display, _prependTargetBarNs, mapper);
             ohlcvBarsRef.current.barNs = _prependTargetBarNs;
-            ohlcvBarsRef.current.display = newDisplay;
             datasetStartRef.current = ds;
             p.eventBus.emit('data:bounds', {
                 start: ds,
@@ -2339,22 +2374,11 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 // bars with the refining symbol's - four charts, one instrument.
                 if (payload.symbol !== cellSymbol) return;
                 if (payload.dataLevel !== 'ohlcv') return;
-                const fromMs = new Date(payload.from).getTime();
-                const toMs = new Date(payload.to).getTime();
                 const activeBarNs = p.activeTimeframeRef.current.barNs;
-                const incomingBars: OhlcvBarMs[] = payload.ohlcvBars.map((bar: any) => ({
-                    open: bar.open,
-                    high: bar.high,
-                    low: bar.low,
-                    close: bar.close,
-                    volume: bar.volume,
-                    time: bar.time,
-                }));
-                const bars = ohlcvBarsRef.current.bars;
-                bars.replaceRange(fromMs, toMs, incomingBars);
+                // the engine already swapped the refetched bars into the shared store
                 ohlcvBarsRef.current.barNs = activeBarNs;
-                ohlcvBarsRef.current.display = aggregateOhlcvBars(
-                    bars,
+                ohlcvBarsRef.current.display = displayFor(
+                    ohlcvBarsRef.current.bars,
                     activeBarNs,
                     p.sessionMapperRef.current,
                 );

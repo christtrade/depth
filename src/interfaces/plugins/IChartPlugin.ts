@@ -205,7 +205,8 @@ export interface PluginDataSnapshot {
     /**
      * Every loaded bar, as columns: `bars.close[i]`. Always present - synthesised
      * from footprintBars when dataLevel is l3/tick. Read the columns off it each
-     * time; they're swapped as bars load.
+     * time; they're swapped as bars load. It's the store the chart draws from so
+     * read it, don't change it. `clone()` it for a copy of your own.
      */
     bars: BarStore;
     /**

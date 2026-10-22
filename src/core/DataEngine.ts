@@ -101,7 +101,8 @@ export interface ChartDataSnapshot {
     /**
      * Every loaded bar, at the fetch resolution. Populated for ohlcv, derived
      * from footprintBars for l3/tick, empty for l2. Read the columns off it each
-     * time - see `BarStore`.
+     * time - see `BarStore`. It's the store the chart draws from, so read it and
+     * don't change it. `clone()` it for your own copy.
      */
     readonly bars: BarStore;
     /**
@@ -1405,7 +1406,10 @@ export class DataEngine {
             }
             case 'ohlcv': {
                 const c = chunk as OhlcvDataChunk;
-                master.ohlcvBars.append(c.ohlcvBars);
+                if (c.ohlcvBars.length) {
+                    master.ohlcvBars.replaceRange(c.ohlcvBars[0].time, Infinity, []);
+                    master.ohlcvBars.append(c.ohlcvBars);
+                }
                 master.dataEnd = c.dataEnd > 0 ? c.dataEnd : master.dataEnd;
                 if (c.supplemental?.length) {
                     if (!master.supplemental) {

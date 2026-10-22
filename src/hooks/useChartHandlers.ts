@@ -20,7 +20,7 @@ import { type ChartSettings } from '../lib/types/chart-settings';
 import { type SessionMapper } from '../core/SessionMapper';
 import { type FootprintBar } from '../lib/types/footprint';
 import { type SerialTrade } from '../lib/types';
-import { autoFitPriceAxis, aggregateOhlcvBars } from './useChartData';
+import { autoFitPriceAxis, displayFor } from './useChartData';
 
 export interface UseChartHandlersParams {
     // Drawing refs
@@ -418,7 +418,7 @@ export function useChartHandlers(p: UseChartHandlersParams): UseChartHandlersRes
     const handleTimeframeChange = useCallback((tf: Timeframe) => {
         if (ohlcvBarsRef.current.bars.length) {
             ohlcvBarsRef.current.barNs = tf.barNs;
-            ohlcvBarsRef.current.display = aggregateOhlcvBars(
+            ohlcvBarsRef.current.display = displayFor(
                 ohlcvBarsRef.current.bars,
                 tf.barNs,
                 sessionMapperRef.current,

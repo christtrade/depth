@@ -193,9 +193,10 @@ describe('routing a claimed symbol', () => {
 
         const after = de.getSnapshot();
         assert.equal(after.bars, snap.bars, 'one store for the symbol, grown in place');
-        assert.equal(after.bars.length, 4);
+        assert.equal(after.bars.length, 3);
+        assert.ok(after.bars.time.every((t, i, a) => i === 0 || t > a[i - 1]), 'no duplicate bars');
         assert.notEqual(after.ohlcvBars, firstCopy, 'rebuilt once the bars changed');
-        assert.equal(after.ohlcvBars.length, 4);
+        assert.equal(after.ohlcvBars.length, 3);
     });
 
     it('resolves the symbol before the data, so the first frame is priced right', async () => {

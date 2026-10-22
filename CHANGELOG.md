@@ -20,6 +20,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The built-in matching engine keeps its bars as a `BarStore` now too, instead of a Bigint stamped
   wrapper around every bar object - 72 bytes a bar on top of the objects before, now just 48. A
   custom `IExecutionAdapter` still gets arrays
+- Charts share the data engine's bars instead of keeping their own copy, and when the timeframe is
+  the resolution the bars came in at, what's drawn is that same store, so one copy of each bar for
+  every chart on a symbol, instead of one per chart plus one per timeframe.
 - **Breaking:** `data:load` carries `bars: BarStore` instead of `ohlcvBars` now. `data:append` and
   `data:prepend` add `bars` and keep `ohlcvBars` as just the new bars, which is now `[]` at l3/tick
   for append too.
@@ -29,6 +32,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `plot data.bars.close` works.
 
 ### Fixed
+- `getData().bars` held the bar at the loaded edge twice for every forward page, since each one
+  starts on it.
 - Line and step charts threw on every frame while the view started before the first loaded bar.
 - Status line copied every loaded bar twice and filtered then again on each mouse move, causing
   panning to get slow as more history was loaded. Just uses a binary search now.
