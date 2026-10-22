@@ -14,6 +14,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `getData().bars`, every loaded bar as a `BarStore`.
 - `npm run perf:guard`, in CI too: fails if drawing, the status line, autofit, snapping or paging
   history in cost more than 5x at 1M bars than at 20k, or if a bar takes more than 72 bytes.
+- README rewritten: architecture (data levels, storage, rendering, workers), performance numbers
+  and the perf guard, and how to run tests.
 
 ### Changed
 - The bars a chart draws are a `BarStore` now, not an array of objects: ~48 bytes a bar instead of
