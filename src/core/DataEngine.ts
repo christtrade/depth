@@ -3,6 +3,7 @@
 // responses through the right processor, and emits on the bus so panes react.
 
 import { TypedEventBus } from './TypedEventBus';
+import { BarStore } from './BarStore';
 import type {
     IDataAdapter,
     BarResponse,
@@ -82,7 +83,7 @@ interface MasterBuffer {
     /** Populated for l3 and tick; empty for ohlcv and l2. */
     footprintBars: FootprintBar[];
     /** Populated for ohlcv; derived from footprintBars for l3/tick; empty for l2. */
-    ohlcvBars: OhlcvBar[];
+    ohlcvBars: BarStore;
     barNs: bigint;
     /** Unix ms timestamps */
     dataStart: number;
@@ -97,7 +98,16 @@ export interface ChartDataSnapshot {
     readonly trades: SerialTrade[];
     readonly footprintBars: FootprintBar[];
     readonly priceHistory: PriceHistory[];
-    /** Populated for ohlcv; derived from footprintBars for l3/tick; empty for l2. */
+    /**
+     * Every loaded bar, at the fetch resolution. Populated for ohlcv, derived
+     * from footprintBars for l3/tick, empty for l2. Read the columns off it each
+     * time - see `BarStore`.
+     */
+    readonly bars: BarStore;
+    /**
+     * `bars` as objects, built on first read and kept until the bars change.
+     * @deprecated ~176 bytes a bar and a full copy - use `bars`.
+     */
     readonly ohlcvBars: OhlcvBar[];
     /** Populated for tick and l3 (derived from trades). */
     readonly ticks: TickEvent[];
@@ -120,15 +130,12 @@ function _nsToIso(ns: bigint): string {
 }
 
 // l3 / tick path
-function _deriveOhlcvFromFootprint(footprintBars: FootprintBar[]): OhlcvBar[] {
-    return footprintBars.map((fb) => ({
-        time: Number(fb.ts / 1_000_000n),
-        open: fb.open,
-        high: fb.high,
-        low: fb.low,
-        close: fb.close,
-        volume: fb.totalVol,
-    }));
+function _deriveOhlcvFromFootprint(footprintBars: FootprintBar[]): BarStore {
+    const out = new BarStore(footprintBars.length);
+    for (const fb of footprintBars) {
+        out.appendRow(Number(fb.ts / 1_000_000n), fb.open, fb.high, fb.low, fb.close, fb.totalVol);
+    }
+    return out;
 }
 
 function _deriveTicksFromTrades(trades: SerialTrade[]): TickEvent[] {
@@ -185,7 +192,7 @@ function _chunkToMasterFields(
                 trades: [],
                 priceHistory: [],
                 footprintBars: [],
-                ohlcvBars: chunk.ohlcvBars,
+                ohlcvBars: BarStore.from(chunk.ohlcvBars),
                 dataStart: chunk.dataStart,
                 dataEnd: chunk.dataEnd,
                 supplemental: (chunk as any)?.supplemental ?? null,
@@ -197,7 +204,7 @@ function _chunkToMasterFields(
                 trades: [],
                 priceHistory: chunk.priceHistory,
                 footprintBars: [],
-                ohlcvBars: [],
+                ohlcvBars: new BarStore(),
                 dataStart: chunk.dataStart,
                 dataEnd: chunk.dataEnd,
             };
@@ -285,7 +292,7 @@ export class DataEngine {
         trades: SerialTrade[];
         priceHistory: PriceHistory[];
         footprintBars: FootprintBar[];
-        ohlcvBars: OhlcvBar[];
+        ohlcvBars: BarStore;
         barNs: bigint;
         dataStart: number;
         dataEnd: number;
@@ -306,7 +313,7 @@ export class DataEngine {
         trades: [],
         priceHistory: [],
         footprintBars: [],
-        ohlcvBars: [],
+        ohlcvBars: new BarStore(),
         barNs: 60_000_000_000n,
         dataStart: 0,
         dataEnd: 0,
@@ -778,6 +785,16 @@ export class DataEngine {
         };
     }
 
+    // getData().ohlcvBars, built once per store version
+    private readonly _arrays = new WeakMap<BarStore, { version: number; bars: OhlcvBar[] }>();
+    private readonly _barsAsArray = (store: BarStore): OhlcvBar[] => {
+        const hit = this._arrays.get(store);
+        if (hit && hit.version === store.version) return hit.bars;
+        const bars = store.toArray();
+        this._arrays.set(store, { version: store.version, bars });
+        return bars;
+    };
+
     getSnapshot(): ChartDataSnapshot {
         const master = this._states.get(this.activeSymbol)?.master ?? null;
         if (!master) {
@@ -786,6 +803,7 @@ export class DataEngine {
                 trades: [],
                 footprintBars: [],
                 priceHistory: [],
+                bars: new BarStore(),
                 ohlcvBars: [],
                 ticks: [],
                 barNs: 1_000_000_000n,
@@ -795,17 +813,21 @@ export class DataEngine {
             };
         }
 
-        const { dataLevel, trades, footprintBars, priceHistory, ohlcvBars } = master;
+        const { dataLevel, trades, footprintBars, priceHistory, ohlcvBars: bars } = master;
 
         const ticks: TickEvent[] =
             dataLevel === 'l3' || dataLevel === 'tick' ? _deriveTicksFromTrades(trades) : [];
 
+        const asArray = this._barsAsArray;
         return {
             dataLevel,
             trades,
             footprintBars,
             priceHistory,
-            ohlcvBars,
+            bars,
+            get ohlcvBars() {
+                return asArray(bars);
+            },
             ticks,
             barNs: master.barNs,
             dataStart: master.dataStart,
@@ -1383,9 +1405,7 @@ export class DataEngine {
             }
             case 'ohlcv': {
                 const c = chunk as OhlcvDataChunk;
-                // in place, instead of allocating a fresh array of the whole
-                // (growing) master on every forward chunk
-                for (const b of c.ohlcvBars) master.ohlcvBars.push(b);
+                master.ohlcvBars.append(c.ohlcvBars);
                 master.dataEnd = c.dataEnd > 0 ? c.dataEnd : master.dataEnd;
                 if (c.supplemental?.length) {
                     if (!master.supplemental) {
@@ -1454,7 +1474,7 @@ export class DataEngine {
             }
             case 'ohlcv': {
                 const c = chunk as OhlcvDataChunk;
-                master.ohlcvBars = c.ohlcvBars.concat(master.ohlcvBars);
+                master.ohlcvBars.prepend(c.ohlcvBars);
                 master.dataStart = c.dataStart > 0 ? c.dataStart : master.dataStart;
                 break;
             }
@@ -1591,7 +1611,7 @@ export class DataEngine {
             trades: master.trades,
             priceHistory: master.priceHistory,
             footprintBars: master.footprintBars,
-            ohlcvBars: master.ohlcvBars,
+            bars: master.ohlcvBars,
             barNs: master.barNs,
             dataStart: master.dataStart,
             dataEnd: master.dataEnd,
@@ -1617,13 +1637,12 @@ export class DataEngine {
         const master = st.master;
         if (!master) return;
         const ingestBufs = await this._runLoadIngest(master);
-        // for ohlcv send only the chunk's new bars so the consumer extends its
-        // arrays incrementally - it froze re-aggregating the full master each
-        // time. other levels read the full master from _buildPayload.
+        // ohlcvBars is only the chunk's new bars, so the consumer extends its own
+        // incrementally. `bars` is the whole master.
         this.eventBus.emit('data:append', {
             symbol: master.symbolInfo.symbol,
             ...this._buildPayload(master),
-            ohlcvBars: 'ohlcvBars' in chunk ? chunk.ohlcvBars : master.ohlcvBars,
+            ohlcvBars: 'ohlcvBars' in chunk ? chunk.ohlcvBars : [],
             session: st.session,
             ...ingestBufs,
         });
@@ -1647,6 +1666,7 @@ export class DataEngine {
             priceHistory: master.priceHistory,
             footprintBars: master.footprintBars,
             ohlcvBars: 'ohlcvBars' in chunk ? chunk.ohlcvBars : [],
+            bars: master.ohlcvBars,
             barNs: master.barNs,
             dataStart: master.dataStart,
             viewMin,
@@ -1719,13 +1739,7 @@ export class DataEngine {
                 if (st.master?.dataLevel === 'ohlcv') {
                     const fromMs = Number(seg.from / 1_000_000n);
                     const toMs = Number(seg.to / 1_000_000n);
-                    const kept = st.master.ohlcvBars.filter((b) => {
-                        const t = new Date(b.time).getTime();
-                        return t < fromMs || t > toMs;
-                    });
-                    st.master.ohlcvBars = [...kept, ...ohlcvBars].sort(
-                        (a, b) => new Date(a.time).getTime() - new Date(b.time).getTime(),
-                    );
+                    st.master.ohlcvBars.replaceRange(fromMs, toMs, ohlcvBars);
                     this._syncShared();
                 }
 

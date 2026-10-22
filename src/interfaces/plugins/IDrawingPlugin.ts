@@ -12,7 +12,7 @@
 import type { ChartPlugin } from './IChartPlugin';
 import type { Anchor } from '../../lib/types/drawing-types';
 import type { PluginDrawingRenderContext, PluginDrawingHitContext } from '../../core/DrawingRegistry';
-import type { OhlcvBar } from '../IDataAdapter';
+import type { BarStore } from '../../core/BarStore';
 
 // Pixel-space point (for cursor / preview coords)
 export interface Point {
@@ -69,7 +69,7 @@ export interface DrawingPlugin extends ChartPlugin {
     /**
      * Optionally snap an anchor to the nearest bar OHLC value during placement.
      */
-    snap?(anchor: Anchor, bars: OhlcvBar[]): Anchor;
+    snap?(anchor: Anchor, bars: BarStore): Anchor;
 
     /** Serialise anchor positions to a JSON-safe value for persistence. */
     serialize(anchors: Anchor[]): unknown;

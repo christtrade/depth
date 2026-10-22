@@ -9,14 +9,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
-- Internal `BarStore` - OHLCV bars as Float64Array columns.
+- `BarStore`, exported: OHLCV bars as Float64Array columns, `bars.close[i]`. Has `lowerBound`,
+  `at(i)`, `toArray()` and iterates as objects for when you want them.
+- `getData().bars`, every loaded bar as a `BarStore`.
 
 ### Changed
 - The bars a chart draws are a `BarStore` now, not an array of objects: ~48 bytes a bar instead of
   ~176 and nothing for the GC to walk. Paging history in prepends in place instead of copying
-  what's loaded. Each chart's raw bars too, so a refine, a live append or a timeframe switch no
-  longer copies them either. The data engine's copy is still an array, for now.
+  what's loaded. Each chart's raw bars and the data engine's copy too.
+- **Breaking:** `data:load` carries `bars: BarStore` instead of `ohlcvBars` now. `data:append` and
+  `data:prepend` add `bars` and keep `ohlcvBars` as just the new bars, which is now `[]` at l3/tick
+  for append too.
+- **Breaking:** `IDrawingPlugin.snap` gets a `BarStore`
 - `status:compute`'s `bars` is a `BarStore`.
+- `free` reports what the bars really take, not a per-row guess. `plot` takes typed arrays, so
+  `plot data.bars.close` works.
 
 ### Fixed
 - Line and step charts threw on every frame while the view started before the first loaded bar.

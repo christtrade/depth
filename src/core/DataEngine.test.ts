@@ -147,7 +147,7 @@ describe('routing a claimed symbol', () => {
 
         const loaded: number[] = [];
         const appended: number[] = [];
-        bus.on('data:load', (p) => loaded.push(p.ohlcvBars?.length ?? 0));
+        bus.on('data:load', (p) => loaded.push(p.bars?.length ?? 0));
         bus.on('data:append', (p) => appended.push(p.ohlcvBars?.length ?? 0));
 
         bus.emit('chart:set-symbol', { symbol: 'X:ONE', id: 0 });
@@ -157,9 +157,45 @@ describe('routing a claimed symbol', () => {
 
         assert.deepEqual(directions, ['initial', 'forward']);
         // the bars have to reach the payload, not just the response - an ohlcv
-        // data:load with an empty ohlcvBars draws nothing at all
         assert.deepEqual(loaded, [1]);
         assert.deepEqual(appended, [1]);
+    });
+
+    it('getData() hands out the store, with ohlcvBars kept as a cached copy', async () => {
+        const { bus, de, plugins } = engine();
+        plugins.register({
+            prefix: 'X:',
+            resolveSymbol: () => info('X:ONE'),
+            fetchBars: async (req) => {
+                const fromMs = Number(req.range.fromNs / 1_000_000n);
+                return {
+                    events: [],
+                    ohlcvBars: [
+                        { time: fromMs, open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 },
+                        { time: fromMs + 60_000, open: 1.5, high: 3, low: 1, close: 2.5, volume: 4 },
+                    ],
+                    hasMore: true,
+                };
+            },
+        });
+
+        bus.emit('chart:set-symbol', { symbol: 'X:ONE', id: 0 });
+        await new Promise((r) => setTimeout(r, 20));
+
+        const snap = de.getSnapshot();
+        const firstCopy = snap.ohlcvBars;
+        assert.equal(snap.bars.length, 2);
+        assert.deepEqual(firstCopy, snap.bars.toArray());
+        assert.equal(de.getSnapshot().ohlcvBars, firstCopy);
+
+        bus.emit('data:prefetch', { symbol: 'X:ONE' });
+        await new Promise((r) => setTimeout(r, 20));
+
+        const after = de.getSnapshot();
+        assert.equal(after.bars, snap.bars, 'one store for the symbol, grown in place');
+        assert.equal(after.bars.length, 4);
+        assert.notEqual(after.ohlcvBars, firstCopy, 'rebuilt once the bars changed');
+        assert.equal(after.ohlcvBars.length, 4);
     });
 
     it('resolves the symbol before the data, so the first frame is priced right', async () => {

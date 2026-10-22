@@ -16,6 +16,10 @@ function fieldOf(row: Record<string, unknown>): string | undefined {
 
 // seriesify it
 export function toSeries(v: unknown): Series[] {
+    if (ArrayBuffer.isView(v) && !(v instanceof DataView)) {
+        const xs = Array.from(v as unknown as ArrayLike<number | bigint>, num);
+        return xs.length ? [{ name: '', values: xs }] : [];
+    }
     if (Array.isArray(v) && v.length) {
         if (v.every((x) => typeof x === 'number' || typeof x === 'bigint')) return [{ name: '', values: v.map(num) }];
         if (v.every((x) => Array.isArray(x))) return v.flatMap((x, i) => toSeries(x).map((s) => ({ ...s, name: s.name || `#${i}` })));
@@ -122,14 +126,14 @@ export function plotCommand(con: Console): CommandDef {
         name: 'plot',
         dev: true,
         rest: true,
-        help: 'plot [-h rows] <js> - draw numbers as a chart: plot data.ohlcvBars, plot { a: xs, b: ys }',
+        help: 'plot [-h rows] <js> - draw numbers as a chart: plot data.bars.close, plot { a: xs, b: ys }',
         complete: (_i, _argv, current) => completePath(con, current),
         run: async ({ raw, print, error }) => {
             const m = /^-h\s+(\d+)\s+/.exec(raw);
             const rows = Math.max(4, Math.min(60, m ? Number(m[1]) : 12));
             
             const code = m ? raw.slice(m[0].length) : raw;
-            if (!code.trim()) throw new Error('plot what? e.g. plot data.ohlcvBars.map(b => b.close)');
+            if (!code.trim()) throw new Error('plot what? e.g. plot data.bars.close');
 
             try {
                 const { value } = await evaluate(con, code, print);

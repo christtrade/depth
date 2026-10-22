@@ -1215,7 +1215,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         supplementalBarsRef.current = payload.supplemental ?? null;
 
         if (payload.dataLevel === 'ohlcv') {
-            const ohlcvBars = payload.ohlcvBars ?? [];
+            const loaded: BarStore = payload.bars ?? new BarStore();
             if (payload.session !== undefined) {
                 p.resolvedSessionRef.current = payload.session;
             }
@@ -1227,9 +1227,11 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             footprintBarsRef.current = [];
             candleCacheRef.current = null;
             const _activeTfBarNs = p.activeTimeframeRef.current.barNs;
-            const raw = new BarStore(ohlcvBars.length);
-            for (const bar of ohlcvBars as OhlcvBarMs[]) {
-                raw.appendRow(bar.time, bar.open, bar.high, bar.low, bar.close, bar.volume);
+
+            const raw = new BarStore(loaded.length);
+            const { time, open, high, low, close, volume } = loaded;
+            for (let i = 0; i < time.length; i++) {
+                raw.appendRow(time[i], open[i], high[i], low[i], close[i], volume[i]);
             }
             ohlcvBarsRef.current = { barNs: _activeTfBarNs, bars: raw, display: new BarStore() };
             const ds = BigInt(payload.dataStart) * 1_000_000n;

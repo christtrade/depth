@@ -45,19 +45,18 @@ export function freeCommand(chart: DepthChart): CommandDef {
             print('');
             const data = chart.getData();
             print(ansi.bold(`${padEnd('chart data', 16)}${padStart('rows', 12)}${padStart('≈ size', 12)}`));
-            const sets: [string, readonly unknown[]][] = [
-                ['trades', data.trades],
-                ['bars', data.ohlcvBars],
-                ['footprint', data.footprintBars],
-                ['price history', data.priceHistory],
-                ['ticks', data.ticks],
+            const sets: [string, number, number][] = [
+                ['trades', data.trades.length, estimate(data.trades)],
+                ['bars', data.bars.length, data.bars.bytes],
+                ['footprint', data.footprintBars.length, estimate(data.footprintBars)],
+                ['price history', data.priceHistory.length, estimate(data.priceHistory)],
+                ['ticks', data.ticks.length, estimate(data.ticks)],
             ];
 
             let total = 0;
-            for (const [name, rows] of sets) {
-                const size = estimate(rows);
+            for (const [name, n, size] of sets) {
                 total += size;
-                if (rows.length) row(`  ${name}`, count(rows.length), bytes(size));
+                if (n) row(`  ${name}`, count(n), bytes(size));
             }
             row('  total', '', bytes(total));
             print(ansi.dim(`  ${data.dataLevel} data, active symbol only - each pane on another symbol holds its own`));

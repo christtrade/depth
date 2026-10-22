@@ -28,6 +28,7 @@ export type { DepthProps } from '../ChartOuter';
 export { ExecutionEngine } from './ExecutionEngine';
 export { DataEngine } from './DataEngine';
 export type { DataEngineConfig, ChartDataSnapshot } from './DataEngine';
+export { BarStore } from './BarStore';
 export { TypedEventBus } from './TypedEventBus';
 export type { ChartEvents } from './TypedEventBus';
 export type { AuditResult, AuditFnEntry } from './script-audit';

@@ -89,7 +89,7 @@ export function topCommand(chart: DepthChart): CommandDef {
 
                 const data = chart.getData();
                 out.push(
-                    `${ansi.dim('data')}    ${data.dataLevel}  bars ${count(data.ohlcvBars.length)}  trades ${count(data.trades.length)}  footprint ${count(data.footprintBars.length)}`,
+                    `${ansi.dim('data')}    ${data.dataLevel}  bars ${count(data.bars.length)}  trades ${count(data.trades.length)}  footprint ${count(data.footprintBars.length)}`,
                 );
                 out.push('');
 

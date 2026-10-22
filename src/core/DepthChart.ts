@@ -681,7 +681,7 @@ export class DepthChart {
      * The bar still being built at the playback horizon, on the focused pane, or
      * `null` before any data has arrived.
      *
-     * Unlike the tail of `getData().ohlcvBars` - which is the last bar that was
+     * Unlike the last of `getData().bars` - which is the last bar that was
      * *loaded*, at the fetch resolution and possibly past the horizon - this is
      * the candle the chart is actually drawing on the right edge.
      */

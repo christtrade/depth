@@ -13,6 +13,7 @@ import type { ChartColors } from '../../lib/types/chart-settings';
 import type { DataLevel, OhlcvBar, SymbolInfo, TickEvent } from '../IDataAdapter';
 import type { SerialTrade, PriceHistory } from '../../lib/types';
 import type { FootprintBar } from '../../lib/types/footprint';
+import type { BarStore } from '../../core/BarStore';
 import type { BracketAmendment } from '../../lib/types/trading-types';
 import type { PlaceOrderRequest } from '../../lib/matchingEngine';
 import type { CommandDef, CvarDef } from '../../console/Console';
@@ -201,7 +202,16 @@ export interface PluginDataSnapshot {
     trades: SerialTrade[];
     footprintBars: FootprintBar[];
     priceHistory: PriceHistory[];
-    /** Always present - synthesised from footprintBars when dataLevel is l3/tick. */
+    /**
+     * Every loaded bar, as columns: `bars.close[i]`. Always present - synthesised
+     * from footprintBars when dataLevel is l3/tick. Read the columns off it each
+     * time; they're swapped as bars load.
+     */
+    bars: BarStore;
+    /**
+     * `bars` as objects, built on first read and kept until the bars change.
+     * @deprecated ~176 bytes a bar and a full copy - use `bars`.
+     */
     ohlcvBars: OhlcvBar[];
     /** Populated when dataLevel is tick or l3. */
     ticks: TickEvent[];
@@ -249,7 +259,7 @@ export interface PluginContext {
      * data has arrived.
      *
      * This is the one you want for "what is the price right now". The last entry
-     * of `getData().ohlcvBars` is the last bar that was *loaded*, which during
+     * of `getData().bars` is the last bar that was *loaded*, which during
      * replay is somewhere in the future and at the fetch resolution rather than
      * the charted timeframe.
      *

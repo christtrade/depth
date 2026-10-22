@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { DEFAULT_CHART_SETTINGS } from '../lib/types/chart-settings';
+import { BarStore } from '../core/BarStore';
 import type { CommandContext, CommandDef, Screen } from './Console';
 import { scriptStats } from '../core/ScriptedPlugin';
 import { stripAnsi } from './values';
@@ -33,7 +34,7 @@ function fakeChart(opts: { trades?: boolean; book?: boolean } = {}) {
           }))
         : [];
     return {
-        getData: () => ({ dataLevel: opts.trades ? 'l3' : 'ohlcv', trades, ohlcvBars: [{ ts: 0n }], footprintBars: [], priceHistory: [], ticks: [] }),
+        getData: () => ({ dataLevel: opts.trades ? 'l3' : 'ohlcv', trades, bars: BarStore.from([{ time: 0, open: 1, high: 1, low: 1, close: 1, volume: 1 }]), footprintBars: [], priceHistory: [], ticks: [] }),
         getSymbol: () => 'ES',
         getTimeframe: () => '1m',
         getChart: () => ({ settings: { ...DEFAULT_CHART_SETTINGS, timezone: 'UTC' } }),
