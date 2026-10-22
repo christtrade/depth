@@ -41,13 +41,14 @@ import { nanoid } from 'nanoid';
 export { ohlcvBucketRange };
 
 export function aggregateOhlcvBars(
-    bars: OhlcvBarMs[],
+    bars: BarStore,
     targetBarNs: bigint,
     sessionMapper?: SessionMapper | null,
+    from = 0,
 ): BarStore {
-    if (bars.length === 0 || targetBarNs <= 0n) return BarStore.from(bars);
+    if (from >= bars.length || targetBarNs <= 0n) return BarStore.from(bars.toArray(from));
     const barMs = Number(targetBarNs / 1_000_000n);
-    if (barMs <= 0) return BarStore.from(bars);
+    if (barMs <= 0) return BarStore.from(bars.toArray(from));
 
     // ohlcvBucketRange's rule, in ms and without the per-bar BigInt: bars arrive
     // time-ordered, so the containing session segment only has to be looked up
@@ -81,30 +82,30 @@ export function aggregateOhlcvBars(
         return Math.floor(timeMs / barMs) * barMs;
     };
 
+    const { time, open, high, low, close, volume } = bars;
     const result = new BarStore();
-    let currentBucket = getBucket(bars[0].time);
-    let o = bars[0].open,
-        h = bars[0].high,
-        l = bars[0].low,
-        c = bars[0].close,
-        v = bars[0].volume;
+    let currentBucket = getBucket(time[from]);
+    let o = open[from],
+        h = high[from],
+        l = low[from],
+        c = close[from],
+        v = volume[from];
 
-    for (let i = 1; i < bars.length; i++) {
-        const bar = bars[i];
-        const bucket = getBucket(bar.time);
+    for (let i = from + 1; i < time.length; i++) {
+        const bucket = getBucket(time[i]);
         if (bucket !== currentBucket) {
             result.appendRow(currentBucket, o, h, l, c, v);
             currentBucket = bucket;
-            o = bar.open;
-            h = bar.high;
-            l = bar.low;
-            c = bar.close;
-            v = bar.volume;
+            o = open[i];
+            h = high[i];
+            l = low[i];
+            c = close[i];
+            v = volume[i];
         } else {
-            if (bar.high > h) h = bar.high;
-            if (bar.low < l) l = bar.low;
-            c = bar.close;
-            v += bar.volume;
+            if (high[i] > h) h = high[i];
+            if (low[i] < l) l = low[i];
+            c = close[i];
+            v += volume[i];
         }
     }
     result.appendRow(currentBucket, o, h, l, c, v);
@@ -122,7 +123,7 @@ export function prependAggregatedOhlcvBars(
     sessionMapper?: SessionMapper | null,
 ): BarStore {
     if (newBars.length === 0) return display;
-    const fresh = aggregateOhlcvBars(newBars, targetBarNs, sessionMapper).toArray();
+    const fresh = aggregateOhlcvBars(BarStore.from(newBars), targetBarNs, sessionMapper).toArray();
     if (fresh.length === 0) return display;
 
     const last = fresh[fresh.length - 1];
@@ -321,7 +322,7 @@ export interface ChartDataResult {
     priceHistoryRef: MutableRefObject<PriceHistory[]>;
     allPriceHistoryRef: MutableRefObject<PriceHistory[]>;
     footprintBarsRef: MutableRefObject<FootprintBar[]>;
-    ohlcvBarsRef: MutableRefObject<{ barNs: bigint; bars: OhlcvBarMs[]; display: BarStore }>;
+    ohlcvBarsRef: MutableRefObject<{ barNs: bigint; bars: BarStore; display: BarStore }>;
     previewBarsRef: MutableRefObject<BarStore>;
     openBarRef: MutableRefObject<FootprintBar | null>;
     openBarTsRef: MutableRefObject<bigint>;
@@ -418,9 +419,9 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
     const priceHistoryRef = useRef<PriceHistory[]>([]);
     const allPriceHistoryRef = useRef<PriceHistory[]>([]);
     const footprintBarsRef = useRef<FootprintBar[]>([]);
-    const ohlcvBarsRef = useRef<{ barNs: bigint; bars: OhlcvBarMs[]; display: BarStore }>({
+    const ohlcvBarsRef = useRef<{ barNs: bigint; bars: BarStore; display: BarStore }>({
         barNs: 0n,
-        bars: [],
+        bars: new BarStore(),
         display: new BarStore(),
     });
     const previewBarsRef = useRef<BarStore>(new BarStore());
@@ -1226,19 +1227,11 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             footprintBarsRef.current = [];
             candleCacheRef.current = null;
             const _activeTfBarNs = p.activeTimeframeRef.current.barNs;
-            const _mappedOhlcvBars: OhlcvBarMs[] = ohlcvBars.map((bar: any) => ({
-                open: bar.open,
-                high: bar.high,
-                low: bar.low,
-                close: bar.close,
-                volume: bar.volume,
-                time: bar.time,
-            }));
-            ohlcvBarsRef.current = {
-                barNs: _activeTfBarNs,
-                bars: _mappedOhlcvBars,
-                display: new BarStore(),
-            };
+            const raw = new BarStore(ohlcvBars.length);
+            for (const bar of ohlcvBars as OhlcvBarMs[]) {
+                raw.appendRow(bar.time, bar.open, bar.high, bar.low, bar.close, bar.volume);
+            }
+            ohlcvBarsRef.current = { barNs: _activeTfBarNs, bars: raw, display: new BarStore() };
             const ds = BigInt(payload.dataStart) * 1_000_000n;
             const de = BigInt(payload.dataEnd) * 1_000_000n;
             datasetStartRef.current = ds;
@@ -1254,7 +1247,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             const PAD = 14n * 24n * 60n * 60n * 1_000_000_000n;
             p.sessionMapperRef.current.build(p.resolvedSessionRef.current, ds - PAD, de + PAD);
             ohlcvBarsRef.current.display = aggregateOhlcvBars(
-                _mappedOhlcvBars,
+                raw,
                 _activeTfBarNs,
                 p.sessionMapperRef.current,
             );
@@ -1467,8 +1460,8 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 const firstNewTime = newBars[0].time;
                 // Drop trailing raw bars the chunk re-fetched (e.g. the forming bar
                 // at the loaded edge), then append the new ones.
-                while (bars.length && bars[bars.length - 1].time >= firstNewTime) bars.pop();
-                for (const b of newBars) bars.push(b);
+                bars.replaceRange(firstNewTime, Infinity, []);
+                bars.append(newBars);
                 ohlcvBarsRef.current.barNs = _appendTargetBarNs;
                 const disp = ohlcvBarsRef.current.display;
                 if (disp.length === 0) {
@@ -1479,12 +1472,11 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                     );
                 } else {
                     const lastBucketTime = disp.time[disp.length - 1];
-                    let ri = bars.length;
-                    while (ri > 0 && bars[ri - 1].time >= lastBucketTime) ri--;
                     const tail = aggregateOhlcvBars(
-                        bars.slice(ri),
+                        bars,
                         _appendTargetBarNs,
                         p.sessionMapperRef.current,
+                        bars.lowerBound(lastBucketTime),
                     ).toArray();
                     // the last bucket gets replaced by the tail's first
                     if (tail.length) {
@@ -1649,7 +1641,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 p.sessionMapperRef.current,
             );
 
-            ohlcvBarsRef.current.bars = newBars.concat(ohlcvBarsRef.current.bars);
+            ohlcvBarsRef.current.bars.prepend(newBars);
             ohlcvBarsRef.current.barNs = _prependTargetBarNs;
             ohlcvBarsRef.current.display = newDisplay;
             datasetStartRef.current = ds;
@@ -2320,7 +2312,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             p.eventBus.on('data:load', (payload) => {
                 if (payload.symbol !== cellSymbol) return;
                 previewBarsRef.current = new BarStore();
-                ohlcvBarsRef.current.bars = [];
+                ohlcvBarsRef.current.bars = new BarStore();
                 ohlcvBarsRef.current.display = new BarStore();
                 p.pushDrawParamsRef.current();
                 const safeBuf = (payload.compactBuf as ArrayBuffer).slice(0);
@@ -2356,14 +2348,11 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                     volume: bar.volume,
                     time: bar.time,
                 }));
-                const kept = ohlcvBarsRef.current.bars.filter(
-                    (b) => b.time < fromMs || b.time > toMs,
-                );
-                const merged = [...kept, ...incomingBars].sort((a, b) => a.time - b.time);
-                ohlcvBarsRef.current.bars = merged;
+                const bars = ohlcvBarsRef.current.bars;
+                bars.replaceRange(fromMs, toMs, incomingBars);
                 ohlcvBarsRef.current.barNs = activeBarNs;
                 ohlcvBarsRef.current.display = aggregateOhlcvBars(
-                    merged,
+                    bars,
                     activeBarNs,
                     p.sessionMapperRef.current,
                 );

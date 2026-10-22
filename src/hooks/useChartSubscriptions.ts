@@ -6,7 +6,7 @@ import { type BarStore } from '../core/BarStore';
 import { type TypedEventBus } from '../core/TypedEventBus';
 import { type ChartPane, type Indicator } from '../lib/types/indicator-types';
 import { type ChartSettings } from '../lib/types/chart-settings';
-import { type TradePoint, type OhlcvBarMs, type ViewBounds } from '../lib/types';
+import { type TradePoint, type ViewBounds } from '../lib/types';
 import { type DataLevel } from '../interfaces/IDataAdapter';
 import { type TickEvent } from '../interfaces/IDataAdapter';
 import { isCompatible } from '../core/processing/data-level';
@@ -41,7 +41,7 @@ export interface UseChartSubscriptionsParams {
     dataLevelRef: MutableRefObject<DataLevel | null>;
     previewBarsRef: MutableRefObject<BarStore>;
     candleCacheRef: MutableRefObject<Map<bigint, any> | null>;
-    ohlcvBarsRef: MutableRefObject<{ barNs: bigint; bars: OhlcvBarMs[]; display: BarStore }>;
+    ohlcvBarsRef: MutableRefObject<{ barNs: bigint; bars: BarStore; display: BarStore }>;
     openBarRef: MutableRefObject<FootprintBar | null>;
     viewRef: MutableRefObject<ViewBounds | null>;
     accountSnapRef: MutableRefObject<any>;

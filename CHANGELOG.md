@@ -14,7 +14,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - The bars a chart draws are a `BarStore` now, not an array of objects: ~48 bytes a bar instead of
   ~176 and nothing for the GC to walk. Paging history in prepends in place instead of copying
-  what's loaded. The raw bars and the data engine's copy are still arrays, for now.
+  what's loaded. Each chart's raw bars too, so a refine, a live append or a timeframe switch no
+  longer copies them either. The data engine's copy is still an array, for now.
 - `status:compute`'s `bars` is a `BarStore`.
 
 ### Fixed

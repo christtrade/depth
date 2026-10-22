@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
-import { type ViewBounds, type TradePoint, type PriceHistory, type OhlcvBarMs } from '../lib/types';
+import { type ViewBounds, type TradePoint, type PriceHistory } from '../lib/types';
 import { type FootprintBar } from '../lib/types/footprint';
 import { type ChartSettings, DEFAULT_CHART_SETTINGS } from '../lib/types/chart-settings';
 import { type DataLevel } from '../interfaces/IDataAdapter';
@@ -16,7 +16,7 @@ export interface UseChartSettingsParams {
     priceHistoryRef: MutableRefObject<PriceHistory[]>;
     tradesRef: MutableRefObject<TradePoint[]>;
     dataLevelRef: MutableRefObject<DataLevel | null>;
-    ohlcvBarsRef: MutableRefObject<{ barNs: bigint; bars: OhlcvBarMs[]; display: BarStore }>;
+    ohlcvBarsRef: MutableRefObject<{ barNs: bigint; bars: BarStore; display: BarStore }>;
     previewBarsRef: MutableRefObject<BarStore>;
     openBarRef: MutableRefObject<FootprintBar | null>;
     horizonRef: MutableRefObject<bigint>;

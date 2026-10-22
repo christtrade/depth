@@ -9,7 +9,6 @@ import {
     type TradeLine,
     type TradePoint,
     type PriceHistory,
-    type OhlcvBarMs,
 } from '../lib/types';
 import { type Timeframe, tfViewSpan } from '../lib/timeframes';
 import { type RenderEngine } from '../core/RenderEngine';
@@ -35,7 +34,7 @@ export interface UseChartHandlersParams {
     panesRef: MutableRefObject<ChartPane[]>;
 
     // Data refs
-    ohlcvBarsRef: MutableRefObject<{ barNs: bigint; bars: OhlcvBarMs[]; display: BarStore }>;
+    ohlcvBarsRef: MutableRefObject<{ barNs: bigint; bars: BarStore; display: BarStore }>;
     sessionMapperRef: MutableRefObject<SessionMapper>;
     activeTimeframeRef: MutableRefObject<Timeframe>;
     horizonRef: MutableRefObject<bigint>;

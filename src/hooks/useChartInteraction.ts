@@ -49,7 +49,7 @@ import { snapTsToBarGrid } from '../lib/bar-grid';
 import { type TradingSession, type DataLevel, type SymbolInfo } from '../interfaces/IDataAdapter';
 import { resolveTickSize } from '../lib/priceFormat';
 import { type LiveTransformer } from '../interfaces/ICoordinateTransformer';
-import { type ViewBounds, type PriceHistory, type TradePoint, type OhlcvBarMs } from '../lib/types';
+import { type ViewBounds, type PriceHistory, type TradePoint } from '../lib/types';
 import { MIN_TIME_SPAN, MAX_TIME_SPAN } from '../lib/constants';
 import { type FootprintBar } from '../lib/types/footprint';
 import { type ChartSettings } from '../lib/types/chart-settings';
@@ -226,7 +226,7 @@ export interface UseChartInteractionParams {
     tradesRef: MutableRefObject<TradePoint[]>;
     priceHistoryRef: MutableRefObject<PriceHistory[]>;
     allPriceHistoryRef: MutableRefObject<PriceHistory[]>;
-    ohlcvBarsRef: MutableRefObject<{ barNs: bigint; bars: OhlcvBarMs[]; display: BarStore }>;
+    ohlcvBarsRef: MutableRefObject<{ barNs: bigint; bars: BarStore; display: BarStore }>;
     previewBarsRef: MutableRefObject<BarStore>;
     dataLevelRef: MutableRefObject<DataLevel | null>;
     openBarRef: MutableRefObject<FootprintBar | null>;
