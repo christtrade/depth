@@ -34,6 +34,10 @@ jobs:
 
       - run: npm test
 
+      # per frame work has to stay flat as the history grows as it fails on a ratio
+      # and not a time. so a slow runner cant trip it
+      - run: npm run perf:guard
+
       # the published artifact is dist/, so verify that is what packs
       - name: Verify the tarball
         run: |
