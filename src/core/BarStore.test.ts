@@ -190,4 +190,18 @@ describe('BarStore', () => {
         s.prepend(bars(0, 10));
         assert.deepEqual(s.toArray(), bars(0, 20));
     });
+
+    it('clone is an independent copy, bid/ask included', () => {
+        const s = BarStore.from(bars(0, 5));
+        s.prepend([bar(-1, { bid: 1, ask: 2 })]);
+        const c = s.clone();
+        assert.deepEqual(c.toArray(), s.toArray());
+        assert.equal(c.bid![0], 1);
+        assert.ok(Number.isNaN(c.bid![1]));
+
+        s.append([bar(5)]);
+        c.set(0, bar(-1, { close: 42 }));
+        assert.equal(c.length, 6, 'growing the original leaves the clone alone');
+        assert.equal(s.close[0], 0, 'and the other way round');
+    });
 });

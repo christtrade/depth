@@ -608,8 +608,7 @@ export default function Depth({
                     // one, so it never settles against the part of the current bar
                     // that is still in the future.
                     // append carries the chunk, load only the whole store
-                    const bars =
-                        'ohlcvBars' in payload ? payload.ohlcvBars : payload.bars.toArray();
+                    const bars = 'ohlcvBars' in payload ? payload.ohlcvBars : payload.bars;
                     if (mode === 'append') eng.appendOhlcvBars(bars, payload.barNs, sym);
                     else eng.ingestOhlcvBars(bars, payload.barNs, sym);
 

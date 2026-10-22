@@ -56,6 +56,20 @@ export class BarStore {
         return s;
     }
 
+    /** An independent copy, bid/ask included. */
+    clone(): BarStore {
+        const s = new BarStore(this.length);
+        for (const c of COLS) s.buf[c].set(this[c]);
+        if (this.bid) {
+            s.addBidAsk();
+            s.bidBuf!.set(this.bid);
+            s.askBuf!.set(this.ask!);
+        }
+        s.length = this.length;
+        s.changed();
+        return s;
+    }
+
     /** Bytes held, including spare capacity. */
     get bytes(): number {
         const cols = COLS.length + (this.bidBuf ? 2 : 0);

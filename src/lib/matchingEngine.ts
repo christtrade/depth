@@ -17,6 +17,7 @@ import type { MboEvent, PriceHistory } from './types';
 import type { OhlcvBar, SymbolInfo } from '../interfaces/IDataAdapter';
 import type { SerialTrade } from './types';
 import { CompactBuffer, createCompactBuffer, getEvent, getTsNs } from './compact-buffer';
+import { BarStore } from '../core/BarStore';
 import { TypedEventBus } from '../core';
 import { notifyPositionClosed } from './notifications/tradeToast';
 // add an entry here to teach sanitizeMetadata about a new symbol
@@ -357,12 +358,12 @@ export interface L3MatchingEngine {
     /** L3 path: ingest a compact buffer and then use seekTo to replay. */
     ingestCompactBuf: (buf: ArrayBuffer) => void;
     /** OHLCV path: ingest bars; seekTo advances bar by bar. Resets the replay cursor. */
-    ingestOhlcvBars: (bars: OhlcvBar[], barNs?: bigint) => void;
+    ingestOhlcvBars: (bars: OhlcvBar[] | BarStore, barNs?: bigint) => void;
     /**
      * OHLCV path: extend the buffer forward without rewinding the replay.
      * What a stream-append must use - see appendOhlcvBars for why.
      */
-    appendOhlcvBars: (bars: OhlcvBar[], barNs?: bigint) => void;
+    appendOhlcvBars: (bars: OhlcvBar[] | BarStore, barNs?: bigint) => void;
     /** OHLCV path: ingest finer-resolution bars so seekTo uses accurate mark prices within the open bar. */
     ingestSupplementalBars?: (
         bars: Array<{
@@ -696,7 +697,7 @@ export function createL3MatchingEngine(
     type NonL3Mode =
         | {
               kind: 'ohlcv';
-              bars: Array<{ tsNs: bigint; bar: OhlcvBar }>;
+              bars: BarStore;
               suppBars: SuppBar[];
               /** Bar period in ns. Tells a completed bar from the forming one. */
               barNs: bigint;
@@ -711,20 +712,33 @@ export function createL3MatchingEngine(
     /** Last horizon passed to seekToOhlcv - drives rewind detection there. */
     let _nonL3LastSeekTs = 0n;
 
-    /**
-     * Bar period, inferred from the most common gap between consecutive bar
-     * opens. Used when the host doesn't pass one to ingestOhlcvBars. Returns 0n
-     * when there's too little data to tell, which the caller treats as "assume a
-     * bar is complete the moment it opens" - the pre-open-bar behaviour.
-     */
-    function inferBarNs(bars: Array<{ tsNs: bigint }>): bigint {
-        const counts = new Map<bigint, number>();
+    function ownBars(bars: OhlcvBar[] | BarStore): BarStore {
+        if (bars instanceof BarStore) {
+            const t = bars.time;
+            let sorted = true;
+            for (let i = 1; i < t.length && sorted; i++) sorted = t[i] >= t[i - 1];
+            if (sorted) return bars.clone();
+            bars = bars.toArray();
+        }
+        return BarStore.from(sortedByTime(bars));
+    }
+
+    function sortedByTime(bars: OhlcvBar[]): OhlcvBar[] {
         for (let i = 1; i < bars.length; i++) {
-            const gap = bars[i].tsNs - bars[i - 1].tsNs;
-            if (gap <= 0n) continue;
+            if (bars[i].time < bars[i - 1].time) return [...bars].sort((a, b) => a.time - b.time);
+        }
+        return bars;
+    }
+
+    function inferBarNs(bars: BarStore): bigint {
+        const t = bars.time;
+        const counts = new Map<number, number>();
+        for (let i = 1; i < t.length; i++) {
+            const gap = t[i] - t[i - 1];
+            if (gap <= 0) continue;
             counts.set(gap, (counts.get(gap) ?? 0) + 1);
         }
-        let best = 0n;
+        let best = 0;
         let bestCount = 0;
         for (const [gap, n] of counts) {
             if (n > bestCount) {
@@ -732,7 +746,7 @@ export function createL3MatchingEngine(
                 bestCount = n;
             }
         }
-        return best;
+        return BigInt(best) * 1_000_000n;
     }
 
     function syncPosition(position: Position): void {
@@ -2125,15 +2139,13 @@ export function createL3MatchingEngine(
         });
     }
     //  Non-L3 data ingestion
-    function ingestOhlcvBars(bars: OhlcvBar[], barNs?: bigint): void {
-        const sorted = bars
-            .map((b) => ({ tsNs: BigInt(b.time) * 1_000_000n, bar: b }))
-            .sort((a, b) => (a.tsNs < b.tsNs ? -1 : a.tsNs > b.tsNs ? 1 : 0));
+    function ingestOhlcvBars(bars: OhlcvBar[] | BarStore, barNs?: bigint): void {
+        const own = ownBars(bars);
         _nonL3 = {
             kind: 'ohlcv',
-            bars: sorted,
+            bars: own,
             suppBars: [],
-            barNs: barNs && barNs > 0n ? barNs : inferBarNs(sorted),
+            barNs: barNs && barNs > 0n ? barNs : inferBarNs(own),
         };
         _nonL3Cursor = 0;
         _nonL3SuppCursor = 0;
@@ -2155,28 +2167,23 @@ export function createL3MatchingEngine(
      * appended: the tail of the buffer is normally a bar that was still forming
      * when it was last handed over, and comes back complete.
      */
-    function appendOhlcvBars(bars: OhlcvBar[], barNs?: bigint): void {
+    function appendOhlcvBars(bars: OhlcvBar[] | BarStore, barNs?: bigint): void {
         if (_nonL3?.kind !== 'ohlcv' || bars.length === 0) {
             if (bars.length) ingestOhlcvBars(bars, barNs);
             return;
         }
         const data = _nonL3;
-        const incoming = bars
-            .map((b) => ({ tsNs: BigInt(b.time) * 1_000_000n, bar: b }))
-            .sort((a, b) => (a.tsNs < b.tsNs ? -1 : a.tsNs > b.tsNs ? 1 : 0));
+        const incoming = sortedByTime(bars instanceof BarStore ? bars.toArray() : bars);
 
         // reaching further back than what we hold means a different window, not
         // an extension - the cursor indexes into the old one, so rebuild
-        if (data.bars.length > 0 && incoming[0].tsNs < data.bars[0].tsNs) {
-            ingestOhlcvBars(bars, barNs);
+        if (data.bars.length > 0 && incoming[0].time < data.bars.time[0]) {
+            ingestOhlcvBars(incoming, barNs);
             return;
         }
 
-        const firstNewTs = incoming[0].tsNs;
-        let keep = data.bars.length;
-        while (keep > 0 && data.bars[keep - 1].tsNs >= firstNewTs) keep--;
-        data.bars.length = keep;
-        for (const b of incoming) data.bars.push(b);
+        data.bars.replaceRange(incoming[0].time, Infinity, []);
+        data.bars.append(incoming);
 
         // only reachable if the overlap swallowed bars the replay had already
         // consumed, i.e. the feed rewrote history behind the horizon
@@ -2322,7 +2329,7 @@ export function createL3MatchingEngine(
     function seekToOhlcv(tNs: bigint): void {
         const data = _nonL3 as {
             kind: 'ohlcv';
-            bars: Array<{ tsNs: bigint; bar: OhlcvBar }>;
+            bars: BarStore;
             suppBars: SuppBar[];
             barNs: bigint;
         };
@@ -2340,7 +2347,14 @@ export function createL3MatchingEngine(
         _nonL3LastSeekTs = tNs;
 
         while (_nonL3Cursor < data.bars.length) {
-            const { tsNs: barTsNs, bar } = data.bars[_nonL3Cursor];
+            // views read per bar: onTick runs listeners, which can grow the store
+            const { time, open, high, low, close, bid, ask } = data.bars;
+            const i = _nonL3Cursor;
+            const barTsNs = BigInt(time[i]) * 1_000_000n;
+            const bar = { open: open[i], high: high[i], low: low[i], close: close[i] };
+            // NaN where a bar had none, which `??` wouldn't catch
+            const barBid = bid && !Number.isNaN(bid[i]) ? bid[i] : undefined;
+            const barAsk = ask && !Number.isNaN(ask[i]) ? ask[i] : undefined;
             // a bar's ohlc only describes the past once it has closed. replaying
             // the bar containing tNs would settle orders against price action
             // that from the horizon's point of view hasnt happened yet - tps and
@@ -2351,10 +2365,10 @@ export function createL3MatchingEngine(
             _nonL3LastTs = barTsNs;
 
             const barTsMsNum = Number(barTsNs);
-            const openBid = bar.bid ?? bar.open - hs;
-            const openAsk = bar.ask ?? bar.open + hs;
-            const closeBid = bar.bid ?? bar.close - hs;
-            const closeAsk = bar.ask ?? bar.close + hs;
+            const openBid = barBid ?? bar.open - hs;
+            const openAsk = barAsk ?? bar.open + hs;
+            const closeBid = barBid ?? bar.close - hs;
+            const closeAsk = barAsk ?? bar.close + hs;
 
             // the open tick sets lastTick so market orders can fill, and triggers
             // any stop the bar opens at or through

@@ -10,13 +10,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - `BarStore`, exported: OHLCV bars as Float64Array columns, `bars.close[i]`. Has `lowerBound`,
-  `at(i)`, `toArray()` and iterates as objects for when you want them.
+  `at(i)`, `toArray()`, `clone()` and iterates as objects for when you want them.
 - `getData().bars`, every loaded bar as a `BarStore`.
 
 ### Changed
 - The bars a chart draws are a `BarStore` now, not an array of objects: ~48 bytes a bar instead of
   ~176 and nothing for the GC to walk. Paging history in prepends in place instead of copying
   what's loaded. Each chart's raw bars and the data engine's copy too.
+- The built-in matching engine keeps its bars as a `BarStore` now too, instead of a Bigint stamped
+  wrapper around every bar object - 72 bytes a bar on top of the objects before, now just 48. A
+  custom `IExecutionAdapter` still gets arrays
 - **Breaking:** `data:load` carries `bars: BarStore` instead of `ohlcvBars` now. `data:append` and
   `data:prepend` add `bars` and keep `ohlcvBars` as just the new bars, which is now `[]` at l3/tick
   for append too.

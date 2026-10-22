@@ -10,6 +10,10 @@ import type { BracketAmendment, Order, Position } from '../lib/types/trading-typ
 import type { MboEvent, PriceHistory } from '../lib/types';
 import type { OhlcvBar } from '../interfaces/IDataAdapter';
 import type { SerialTrade } from '../lib/types';
+import { BarStore } from './BarStore';
+
+const asArray = (bars: OhlcvBar[] | BarStore): OhlcvBar[] =>
+    bars instanceof BarStore ? bars.toArray() : bars;
 
 // wraps either the built-in L3MatchingEngines or a custom IExecutionAdapter.
 //
@@ -158,8 +162,9 @@ export class ExecutionEngine {
         this.targetFor(symbol)?.ingestCompactBuf(buf);
     }
 
-    ingestOhlcvBars(bars: OhlcvBar[], barNs?: bigint, symbol?: string): void {
-        this.targetFor(symbol)?.ingestOhlcvBars?.(bars, barNs);
+    ingestOhlcvBars(bars: OhlcvBar[] | BarStore, barNs?: bigint, symbol?: string): void {
+        if (this.custom) this.custom.ingestOhlcvBars?.(asArray(bars), barNs);
+        else this.builtInFor(symbol)?.ingestOhlcvBars(bars, barNs);
     }
 
     // extend an instrument's bars forward as the feed streams them. different
@@ -167,11 +172,14 @@ export class ExecutionEngine {
     // streaming through that path makes the engine re-walk its whole history on
     // every extension, and skipping the call entirely leaves it blind past the
     // initially loaded window, so nothing fills and the mark freezes at the edge
-    appendOhlcvBars(bars: OhlcvBar[], barNs?: bigint, symbol?: string): void {
-        const target = this.targetFor(symbol);
-        if (!target) return;
-        if (target.appendOhlcvBars) target.appendOhlcvBars(bars, barNs);
-        else target.ingestOhlcvBars?.(bars, barNs);
+    appendOhlcvBars(bars: OhlcvBar[] | BarStore, barNs?: bigint, symbol?: string): void {
+        if (this.custom) {
+            const arr = asArray(bars);
+            if (this.custom.appendOhlcvBars) this.custom.appendOhlcvBars(arr, barNs);
+            else this.custom.ingestOhlcvBars?.(arr, barNs);
+            return;
+        }
+        this.builtInFor(symbol)?.appendOhlcvBars(bars, barNs);
     }
 
     ingestSupplementalBars(
