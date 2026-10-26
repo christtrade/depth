@@ -25,8 +25,9 @@ export interface UseChartViewParams {
     activeTimeframeRef: MutableRefObject<{ barNs: bigint; label?: string }>;
     scheduleResample: () => void;
     pushDrawParams: () => void;
-    /** Publish this pane's visible time range to a time/date-range-synced layout. */
-    publishTimeRangeSync: () => void;
+    /** View settled - tells the data engine and a synced layout. Call after any
+     *  change to tMin/tMax. */
+    onViewSettled: () => void;
     renderEngineRef: MutableRefObject<RenderEngine | null>;
     updateSettingsBarPos: (id: string | null) => void;
     selectedDrawingIdRef: MutableRefObject<string | null>;
@@ -61,7 +62,7 @@ export function useChartView(p: UseChartViewParams): UseChartViewResult {
         activeTimeframeRef,
         scheduleResample,
         pushDrawParams,
-        publishTimeRangeSync,
+        onViewSettled,
         renderEngineRef,
         updateSettingsBarPos,
         selectedDrawingIdRef,
@@ -160,7 +161,7 @@ export function useChartView(p: UseChartViewParams): UseChartViewResult {
         }
         scheduleResample();
         pushDrawParams();
-        publishTimeRangeSync();
+        onViewSettled();
         renderEngineRef.current?.markDirty('base');
         renderEngineRef.current?.markDirty('drawings');
         updateSettingsBarPos(selectedDrawingIdRef.current);

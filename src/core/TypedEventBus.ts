@@ -310,14 +310,22 @@ export interface ChartEvents {
     'data:request-symbol-resolved': { symbol: string };
 
     /**
-     * A pane announcing which instrument it is showing and at what bar period,
-     * on mount and whenever either changes. Lets the engine fetch at the finest
-     * resolution anyone on screen needs rather than the focused pane's.
+     * A pane announcing the instrument, bar period and window it shows - on
+     * mount, on any change to them, and whenever a pan or zoom settles. Lets the
+     * engine fetch at the finest resolution anyone needs, over the span they
+     * actually look at.
      */
-    'data:pane-resolution': { id: number; symbol: string; barNs: bigint };
+    'data:pane-resolution': {
+        id: number;
+        symbol: string;
+        barNs: bigint;
+        /** Visible range (ns). Omitted before the pane has a view to report. */
+        viewFrom?: bigint;
+        viewTo?: bigint;
+    };
 
-    /** A loaded time segment was re-fetched at a finer resolution after a
-     *  timeframe scale-down. Consumers replace their stale bars with these. */
+    /** Part of a loaded segment - the part on screen, not the whole loaded
+     *  range - was re-fetched finer after a scale-down. Replace stale bars. */
     'data:refine': {
         symbol: string;
         dataLevel: DataLevel;
@@ -326,7 +334,7 @@ export interface ChartEvents {
         barNs: bigint;
         /** ISO - inclusive start of the replaced time range. */
         from: string;
-        /** ISO - inclusive end of the replaced time range. */
+        /** ISO - exclusive end of the replaced time range. */
         to: string;
     };
 

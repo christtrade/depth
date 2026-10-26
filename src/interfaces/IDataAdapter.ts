@@ -190,8 +190,10 @@ export interface SymbolInfo {
      *
      * DataEngine picks the coarsest supported resolution <= the active timeframe
      * for all fetches. When the active timeframe drops below a loaded segment's
-     * resolution, DataEngine re-fetches that segment at the finer resolution
-     * and emits `data:refine` so ChartInner can replace the stale bars.
+     * resolution, DataEngine re-fetches the part of it that is on screen (plus a
+     * pan margin) at the finer resolution and emits `data:refine`. History off
+     * screen keeps the resolution it came in at until the view reaches it, so
+     * expect a fetch per screenful panned, not one for the whole loaded range.
      *
      * Example: `[60_000_000_000n, 300_000_000_000n, 3_600_000_000_000n]`
      * declares native support for 1m, 5m, and 1h bars.

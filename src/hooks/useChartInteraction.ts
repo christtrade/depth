@@ -262,8 +262,9 @@ export interface UseChartInteractionParams {
 
     // Callbacks from ChartInner
     pushDrawParams: () => void;
-    /** Publish this pane's visible time range to a time/date-range-synced layout. */
-    publishTimeRangeSync: () => void;
+    /** View settled - tells the data engine and a synced layout. Call after any
+     *  change to tMin/tMax. */
+    onViewSettled: () => void;
     scheduleResample: () => void;
     runIndicatorWorker: (trades: SerialTrade[], barNs: bigint) => void;
     getTradesUpToHorizon: (horizon: bigint) => TradePoint[];
@@ -366,7 +367,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
         setTimeframeWindowInput,
         setPendingText,
         pushDrawParams,
-        publishTimeRangeSync,
+        onViewSettled,
         scheduleResample,
         runIndicatorWorker,
         getTradesUpToHorizon,
@@ -862,7 +863,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                 const pane = paneId ? panesRef.current.find((p) => p.id === paneId) : null;
                 panBy(view, vx * elapsed, vy * elapsed, cssW - priceScaleWidthRef.current, cssH, pane);
                 pushDrawParams();
-                publishTimeRangeSync();
+                onViewSettled();
                 renderEngineRef.current?.markDirty('ui');
                 if (view.tMin < datasetStartRef.current) {
                     eventBus.emit('data:request-backward', {
@@ -2093,7 +2094,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
 
             getPanel()?.update(liveBookRef.current);
             pushDrawParams();
-            publishTimeRangeSync();
+            onViewSettled();
             renderEngineRef.current?.markDirty('ui');
         };
 
@@ -2319,7 +2320,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             }
 
             pushDrawParams();
-            publishTimeRangeSync();
+            onViewSettled();
             renderEngineRef.current?.markDirty('ui');
         };
 
@@ -2724,7 +2725,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             transformer.setSession(resolvedSessionRef.current);
             scheduleResample();
             pushDrawParams();
-            publishTimeRangeSync();
+            onViewSettled();
             renderEngineRef.current?.markDirty('base');
             renderEngineRef.current?.markDirty('drawings');
             renderEngineRef.current?.markDirty('ui');

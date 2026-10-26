@@ -589,6 +589,28 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         eventBus.emit('layout:time-range', { id: _id, tMin: view.tMin, tMax: view.tMax });
     }
 
+    // What this pane needs fetched, and over what span. Without the resolution a
+    // pane on a finer timeframe is served the focused pane's bars (a 1m chart
+    // drawing hourly candles); without the window a scale-down refines every
+    // year ever panned through instead of the screen.
+    function announcePaneView() {
+        const symbol = cellSymbolRef.current;
+        if (!symbol) return;
+        const view = viewRef.current;
+        eventBus.emit('data:pane-resolution', {
+            id: _id,
+            symbol,
+            barNs: activeTimeframeRef.current.barNs,
+            ...(view ? { viewFrom: view.tMin, viewTo: view.tMax } : {}),
+        });
+    }
+
+    // every settled view change: pan, zoom, glide frame, axis reset, seek
+    function onViewSettled() {
+        announcePaneView();
+        publishTimeRangeSync();
+    }
+
     /**
      * Follow another cell's time axis.
      *
@@ -1210,7 +1232,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
             activeTimeframeRef,
             scheduleResample,
             pushDrawParams,
-            publishTimeRangeSync,
+            onViewSettled,
             renderEngineRef,
             updateSettingsBarPos,
             selectedDrawingIdRef,
@@ -1526,7 +1548,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         setTimeframeWindowInput,
         setPendingText,
         pushDrawParams,
-        publishTimeRangeSync,
+        onViewSettled,
         scheduleResample,
         runIndicatorWorker,
         getTradesUpToHorizon,
@@ -1547,18 +1569,9 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         lastInputTouchRef,
     });
 
-    // Tell the DataEngine what this pane needs fetched. Shared state only knows
-    // the focused pane's timeframe, so without this a pane on a finer one is
-    // served the focused pane's bars - a 1m chart drawing hourly candles, one
-    // per hour, with gaps between them. Fires on mount and on every symbol or
-    // timeframe change, which is exactly when the answer changes.
     useEffect(() => {
         if (!cellSymbol) return;
-        eventBus.emit('data:pane-resolution', {
-            id: _id,
-            symbol: cellSymbol,
-            barNs: activeTimeframe.barNs,
-        });
+        announcePaneView();
         // Withdraw the requirement when this pane goes away (or moves on), so a
         // closed 1m pane doesn't keep the whole layout fetching 1m bars.
         return () => {
@@ -1787,7 +1800,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         }
         scheduleResample();
         pushDrawParams();
-        publishTimeRangeSync();
+        onViewSettled();
         renderEngineRef.current?.markDirty('base');
         renderEngineRef.current?.markDirty('drawings');
         renderEngineRef.current?.markDirty('ui');

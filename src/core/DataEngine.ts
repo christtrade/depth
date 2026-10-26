@@ -219,6 +219,28 @@ interface LoadedSegment {
     fetchBarNs: bigint;
 }
 
+/** Pan headroom either side of a pane's window, in bars of the target resolution. */
+const REFINE_PAD_BARS = 300n;
+/** Windows snap out to this many bars, so a creeping pan re-asks for the same range. */
+const REFINE_BLOCK_BARS = 500n;
+/** Used when no pane has announced a window, anchored on the horizon. */
+const REFINE_FALLBACK_BARS = 1000n;
+const MAX_REFINES_IN_FLIGHT = 3;
+
+// bigint % is sign-preserving, so a pre-epoch stamp needs the extra block
+function _floorToBlock(ns: bigint, blockNs: bigint): bigint {
+    if (blockNs <= 0n) return ns;
+    const rem = ns % blockNs;
+    if (rem === 0n) return ns;
+    return rem > 0n ? ns - rem : ns - rem - blockNs;
+}
+
+function _ceilToBlock(ns: bigint, blockNs: bigint): bigint {
+    if (blockNs <= 0n) return ns;
+    const floor = _floorToBlock(ns, blockNs);
+    return floor === ns ? ns : floor + blockNs;
+}
+
 // one engine drives a grid of panes that may each show a different symbol, so
 // every symbol owns a state and paginates independently - a pan on one pane
 // never reloads or clobbers another's data
@@ -236,6 +258,7 @@ interface SymbolState {
     pendingBackwardViewMin: bigint | null;
     segments: LoadedSegment[];
     refiningSegments: Set<string>;
+    refineDeferred: boolean;
     /**
      * Finest supplemental resolution the adapter serving this symbol declares,
      * null for none. Per symbol because a plugin source and the host adapter
@@ -262,8 +285,12 @@ export class DataEngine {
     // carries one timeframe (the focused pane's) but a layout can hold the same
     // instrument at four different ones, and sizing fetches off the focused pane
     // hands a 1m pane hourly bars it can only draw with gaps. panes announce
-    // themselves here so the fetch resolution is the finest anyone needs.
-    private readonly paneResolutions = new Map<number, { symbol: string; barNs: bigint }>();
+    // themselves here so the fetch resolution is the finest anyone needs, and
+    // the window they report is what bounds refinement.
+    private readonly paneResolutions = new Map<
+        number,
+        { symbol: string; barNs: bigint; viewFrom: bigint | null; viewTo: bigint | null }
+    >();
     private fpOptions: FootprintOptions;
     private initialLoad: { start: string; end: string };
     private horizonIso: string;
@@ -357,6 +384,7 @@ export class DataEngine {
                 pendingBackwardViewMin: null,
                 segments: [],
                 refiningSegments: new Set(),
+                refineDeferred: false,
                 supplementalResolution: null,
             };
             this._states.set(symbol, st);
@@ -459,6 +487,7 @@ export class DataEngine {
         st.master = null;
         st.segments = [];
         st.refiningSegments.clear();
+        st.refineDeferred = false;
 
         this.eventBus.emit('data:status', { status: 'loading', symbol });
 
@@ -535,6 +564,7 @@ export class DataEngine {
         st.master = null;
         st.segments = [];
         st.refiningSegments.clear();
+        st.refineDeferred = false;
         this.horizonIso = _nsToIso(horizonNs);
 
         // jump-loads pass announceLoading=false since theyre quick re-centers -
@@ -1261,11 +1291,16 @@ export class DataEngine {
         return coarsest;
     }
 
-    // a pane announced the instrument + timeframe it shows, on mount and on every
-    // change to either. re-fetches whatever it holds at too coarse a resolution,
-    // which on a fresh load is what closes the gap between the focused pane's
-    // timeframe and what this pane actually needs
-    private _onPaneResolution(id: number, symbol: string, barNs: bigint): void {
+    // a pane announced the instrument, timeframe and window it shows - on mount,
+    // on every change to any of them, and whenever a pan or zoom settles.
+    // re-fetches whatever it holds too coarse *within that window*
+    private _onPaneResolution(
+        id: number,
+        symbol: string,
+        barNs: bigint,
+        viewFrom?: bigint,
+        viewTo?: bigint,
+    ): void {
         if (this.destroyed) return;
 
         // barNs 0 is a withdrawal - the pane unmounted or moved off this symbol
@@ -1276,9 +1311,16 @@ export class DataEngine {
             return;
         }
 
+        const nextFrom = viewFrom ?? null;
+        const nextTo = viewTo ?? null;
         const prev = this.paneResolutions.get(id);
-        if (prev?.symbol === symbol && prev.barNs === barNs) return;
-        this.paneResolutions.set(id, { symbol, barNs });
+        const unchanged =
+            prev?.symbol === symbol &&
+            prev.barNs === barNs &&
+            prev.viewFrom === nextFrom &&
+            prev.viewTo === nextTo;
+        if (unchanged) return;
+        this.paneResolutions.set(id, { symbol, barNs, viewFrom: nextFrom, viewTo: nextTo });
 
         const st = this._states.get(symbol);
         if (!st?.symbolInfo) return; // not loaded yet, the load will size itself
@@ -1532,8 +1574,8 @@ export class DataEngine {
                 this._fetchBackward(this._targetSymbol(symbol), viewMin);
             }),
             this.eventBus.on('data:rehydrate', () => this.rehydrate()),
-            this.eventBus.on('data:pane-resolution', ({ id, symbol, barNs }) =>
-                this._onPaneResolution(id, symbol, barNs),
+            this.eventBus.on('data:pane-resolution', ({ id, symbol, barNs, viewFrom, viewTo }) =>
+                this._onPaneResolution(id, symbol, barNs, viewFrom, viewTo),
             ),
             this.eventBus.on('data:rebuild-footprint', ({ barNs, fpOptions }) =>
                 this.rebuildFootprint(barNs, fpOptions),
@@ -1716,34 +1758,121 @@ export class DataEngine {
         }
     }
 
+    /**
+     * One span per pane this segment is too coarse for, merged where they
+     * overlap. One *per pane*, not one around the lot of them: two cells a
+     * decade apart are two screens, not a decade.
+     */
+    private _refineWindows(
+        st: SymbolState,
+        seg: LoadedSegment,
+        fetchBarNs: bigint,
+    ): Array<{ from: bigint; to: bigint }> {
+        if (fetchBarNs <= 0n || !st.symbolInfo) return [];
+        const symbol = st.symbolInfo.symbol;
+
+        const lookbackNs = BigInt(this.maxLookbackBars) * fetchBarNs;
+        const padNs = REFINE_PAD_BARS * fetchBarNs;
+        const blockNs = REFINE_BLOCK_BARS * fetchBarNs;
+
+        // block edge, then whole coarse bars - ending mid-daily-bar would leave
+        // that bar across the fine ones covering the same hours
+        const snap = (from: bigint, to: bigint) => ({
+            from: _floorToBlock(_floorToBlock(from, blockNs), seg.fetchBarNs),
+            to: _ceilToBlock(_ceilToBlock(to, blockNs), seg.fetchBarNs),
+        });
+
+        let announced = false;
+        const windows: Array<{ from: bigint; to: bigint }> = [];
+
+        for (const pane of this.paneResolutions.values()) {
+            if (pane.symbol !== symbol) continue;
+            if (pane.viewFrom === null || pane.viewTo === null) continue;
+            if (pane.viewTo <= pane.viewFrom) continue;
+            announced = true;
+            if (pane.barNs >= seg.fetchBarNs) continue; // already served
+
+            // a screen either side, capped - a pane zoomed out to years would
+            // otherwise pad in years
+            const pad = bigMin(pane.viewTo - pane.viewFrom, padNs);
+            windows.push(snap(pane.viewFrom - pad - lookbackNs, pane.viewTo + pad));
+        }
+
+        if (windows.length === 0) {
+            if (announced) return []; // panes reported, none wants this finer
+
+            // headless host, or the first load before any pane has painted
+            const anchor = isoToNs(this.horizonIso);
+            const budgetNs = REFINE_FALLBACK_BARS * fetchBarNs;
+            windows.push(snap(anchor - budgetNs - lookbackNs, anchor + budgetNs));
+        }
+
+        // overlapping fetches would replace each other's bars
+        windows.sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
+        const merged: Array<{ from: bigint; to: bigint }> = [];
+        for (const win of windows) {
+            const prev = merged[merged.length - 1];
+            if (prev && win.from <= prev.to) {
+                if (win.to > prev.to) prev.to = win.to;
+                continue;
+            }
+            merged.push({ ...win });
+        }
+        return merged;
+    }
+
+    // only the parts somebody is looking at - the rest keeps the resolution it
+    // came in at until the view reaches it
     private _refineSegment(st: SymbolState, seg: LoadedSegment, newFetchBarNs: bigint): void {
+        if (this.destroyed || !st.symbolInfo) return;
+
+        for (const win of this._refineWindows(st, seg, newFetchBarNs)) {
+            const from = seg.from > win.from ? seg.from : win.from;
+            const to = seg.to < win.to ? seg.to : win.to;
+            if (from >= to) continue; // window is off this segment
+            this._refineRange(st, from, to, newFetchBarNs);
+        }
+    }
+
+    private _refineRange(st: SymbolState, from: bigint, to: bigint, newFetchBarNs: bigint): void {
         if (this.destroyed || !st.symbolInfo) return;
         const adapter = this._adapterFor(st.symbolInfo.symbol);
         if (!adapter) return;
-        const key = `${seg.from}:${seg.to}`;
+
+        const key = `${from}:${to}:${newFetchBarNs}`;
         if (st.refiningSegments.has(key)) return;
+        if (st.refiningSegments.size >= MAX_REFINES_IN_FLIGHT) {
+            st.refineDeferred = true;
+            return;
+        }
         st.refiningSegments.add(key);
 
         adapter
             .fetchBars({
                 symbolInfo: st.symbolInfo,
-                range: makeTimeRange(seg.from, seg.to),
+                range: makeTimeRange(from, to),
                 timeframe: timeframeFromBarNs(newFetchBarNs),
                 direction: 'initial',
             })
             .then((response) => {
                 if (this.destroyed) return;
 
-                const idx = st.segments.findIndex((s) => s.from === seg.from && s.to === seg.to);
-                if (idx !== -1) st.segments[idx].fetchBarNs = newFetchBarNs;
+                // before the empty check: an adapter with nothing to say here
+                // wont next time either, and stale re-asks on every pan
+                this._markRefined(st, from, to, newFetchBarNs);
 
-                const ohlcvBars = response.ohlcvBars ?? [];
+                const fromMs = Number(from / 1_000_000n);
+                const toMs = Number(to / 1_000_000n);
+                // half-open: the coarse bar sitting exactly on `to` covers time
+                // this fetch doesnt, and beside a fine bar at the same stamp it
+                // would double the volume
+                const ohlcvBars = (response.ohlcvBars ?? []).filter(
+                    (b) => b.time >= fromMs && b.time < toMs,
+                );
                 if (ohlcvBars.length === 0) return;
 
                 if (st.master?.dataLevel === 'ohlcv') {
-                    const fromMs = Number(seg.from / 1_000_000n);
-                    const toMs = Number(seg.to / 1_000_000n);
-                    st.master.ohlcvBars.replaceRange(fromMs, toMs, ohlcvBars);
+                    st.master.ohlcvBars.replaceRange(fromMs, toMs - 1, ohlcvBars);
                     this._syncShared();
                 }
 
@@ -1752,8 +1881,8 @@ export class DataEngine {
                     dataLevel: st.master?.dataLevel ?? this.sharedData.dataLevel,
                     ohlcvBars,
                     barNs: newFetchBarNs,
-                    from: _nsToIso(seg.from),
-                    to: _nsToIso(seg.to),
+                    from: _nsToIso(from),
+                    to: _nsToIso(to),
                 });
             })
             .catch((err) => {
@@ -1761,7 +1890,47 @@ export class DataEngine {
             })
             .finally(() => {
                 st.refiningSegments.delete(key);
+                // a slot freed - re-ask against where the view is *now*
+                if (st.refineDeferred && !this.destroyed) {
+                    st.refineDeferred = false;
+                    this._refineStaleSegments(st);
+                }
             });
+    }
+
+    /**
+     * Split the coarse segment covering [from, to] so the parts outside it stay
+     * stale. Matched by range, not identity - the segment may have been merged
+     * into a neighbour while the fetch was in flight.
+     */
+    private _markRefined(st: SymbolState, from: bigint, to: bigint, fetchBarNs: bigint): void {
+        const idx = st.segments.findIndex(
+            (s) => s.from <= from && s.to >= to && s.fetchBarNs > fetchBarNs,
+        );
+        if (idx === -1) return; // a reload replaced the segments under us
+
+        const seg = st.segments[idx];
+        const parts: LoadedSegment[] = [];
+        if (from > seg.from) parts.push({ from: seg.from, to: from, fetchBarNs: seg.fetchBarNs });
+        parts.push({ from, to, fetchBarNs });
+        if (to < seg.to) parts.push({ from: to, to: seg.to, fetchBarNs: seg.fetchBarNs });
+        st.segments.splice(idx, 1, ...parts);
+        this._coalesceSegments(st);
+    }
+
+    // merge neighbours that agree on resolution. segments are kept in time
+    // order, so one pass does it
+    private _coalesceSegments(st: SymbolState): void {
+        const merged: LoadedSegment[] = [];
+        for (const seg of st.segments) {
+            const prev = merged[merged.length - 1];
+            if (prev && prev.fetchBarNs === seg.fetchBarNs && seg.from <= prev.to) {
+                if (seg.to > prev.to) prev.to = seg.to;
+                continue;
+            }
+            merged.push({ ...seg });
+        }
+        st.segments = merged;
     }
 
     // Helpers

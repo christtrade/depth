@@ -8,6 +8,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- Scaling down to a finer timeframe re-fetched every segment ever loaded, so a chart panned back
+  to 2000 on the daily asked for 26 years of 1m bars to fill one screen. Refines what the panes
+  are showing now, and the rest when the view reaches it.
+
 ## [0.20.0] - 2026-10-22
 
 Bars are a `BarStore` everywhere the API hands them out. `ohlcvBars[i].close` becomes
