@@ -12,7 +12,7 @@ import { AccountSnapshot, DataLevel, LiveTransformer, OhlcvBar, SymbolInfo } fro
 import { DateTime } from 'luxon';
 import { SessionMapper } from '../../core/SessionMapper';
 import type { BarStore } from '../../core/BarStore';
-import { snapTsToBarGrid } from '../bar-grid';
+import { ohlcvBucketRange, snapTsToBarGrid } from '../bar-grid';
 import { getEffectiveDpr, snapToDevicePx } from '../dpr';
 import { formatPrice, resolveTickSize } from '../priceFormat';
 import { PriceTransition } from '../priceTransition';
@@ -428,6 +428,7 @@ export function drawUILayer(
     rightScaleWidth?: number,
     priceTransition?: PriceTransition,
     syncCrosshair?: CrosshairSync | null,
+    isRequestingSelectBar?: boolean,
 ) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -570,7 +571,7 @@ export function drawUILayer(
 
     const paintedCrosshair = ownsPointer ? crosshair : mirrored?.point;
 
-    if (paintedCrosshair && hoveredDividerIdx === -1 && !suspendCrosshair) {
+    if (paintedCrosshair && hoveredDividerIdx === -1 && !suspendCrosshair && !isRequestingSelectBar) {
         drawCrosshair(
             ctx,
             canvas,
@@ -682,6 +683,18 @@ export function drawUILayer(
             chartSettings,
             transformer,
             symbolInfo,
+        );
+    }
+
+    if (isRequestingSelectBar) {
+        drawRequestSelectBarOverlay(
+            ctx,
+            chartW,
+            mainPaneH,
+            crosshair,
+            barNs,
+            transformer,
+            chartSettings,
         );
     }
 
@@ -5059,4 +5072,46 @@ function drawLineBreak(
         chartSettings.downBodyColor ?? '#ff1744',
         chartSettings.downBorderColor ?? '#ff1744',
     );
+}
+
+// Bar-pick mode. Everything left of the cursor is dimmed, and the column a
+// click would take is outlined, so the bar being picked is never a guess.
+function drawRequestSelectBarOverlay(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    crosshair: Crosshair,
+    barNs: bigint,
+    transformer: LiveTransformer,
+    settings: ChartSettings,
+) {
+    ctx.save();
+    ctx.fillStyle = settings.crosshairColor;
+
+    // no pointer on this pane yet - dim the lot, it is waiting on a click
+    if (!crosshair) {
+        ctx.globalAlpha = 0.12;
+        ctx.fillRect(0, 0, w, h);
+        ctx.restore();
+        return;
+    }
+
+    const x = Math.max(0, Math.min(crosshair.x, w));
+    ctx.globalAlpha = 0.12;
+    ctx.fillRect(0, 0, x, h);
+
+    // the same snap the click uses, so the outlined column is the one picked
+    const sm = transformer.getSessionMapper();
+    const ts = snapTsToBarGrid(transformer.xToTs(x, w), barNs, sm);
+    const { start, end } = ohlcvBucketRange(ts, barNs, sm);
+    const left = transformer.tsToX(start, w);
+    const right = transformer.tsToX(end, w);
+    if (right > left) {
+        ctx.globalAlpha = 0.9;
+        ctx.strokeStyle = settings.crosshairColor;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(Math.round(left) + 0.5, 0.5, Math.max(1, Math.round(right - left) - 1), h - 1);
+    }
+
+    ctx.restore();
 }

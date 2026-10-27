@@ -46,7 +46,7 @@ import { type BarStore } from '../core/BarStore';
 import { type TypedEventBus } from '../core/TypedEventBus';
 import { type SessionMapper } from '../core/SessionMapper';
 import { snapTsToBarGrid } from '../lib/bar-grid';
-import { type TradingSession, type DataLevel, type SymbolInfo } from '../interfaces/IDataAdapter';
+import { type TradingSession, type DataLevel, type SymbolInfo, OhlcvBar } from '../interfaces/IDataAdapter';
 import { resolveTickSize } from '../lib/priceFormat';
 import { type LiveTransformer } from '../interfaces/ICoordinateTransformer';
 import { type ViewBounds, type PriceHistory, type TradePoint } from '../lib/types';
@@ -290,6 +290,8 @@ export interface UseChartInteractionParams {
     activeTool: ActiveDrawingTool;
     touchPlusRef: RefObject<HTMLButtonElement>;
     lastInputTouchRef: MutableRefObject<boolean>;
+
+    isRequestingSelectBarRef: MutableRefObject<boolean>;
 }
 
 export function useChartInteraction(p: UseChartInteractionParams): void {
@@ -391,6 +393,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
         activeTool,
         touchPlusRef,
         lastInputTouchRef,
+        isRequestingSelectBarRef
     } = p;
 
     const touchCrosshairRef = useRef<{ x: number; y: number } | null>(null);
@@ -550,6 +553,15 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
 
     function snapTs(ts: bigint): bigint {
         return snapTsToBarGrid(ts, activeTimeframeRef.current.barNs, sessionMapperRef.current);
+    }
+
+    /** The drawn bar starting at `ts`, or null where the chart has none. */
+    function barAt(ts: bigint): OhlcvBar | null {
+        if (dataLevelRef.current !== 'ohlcv') return null;
+        const display = ohlcvBarsRef.current.display;
+        const ms = Number(ts / 1_000_000n);
+        const i = display.lowerBound(ms);
+        return i < display.length && display.time[i] === ms ? display.at(i) : null;
     }
 
     function buildChartTypePointerEvent(
@@ -893,6 +905,21 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                 pressAt = { x: e.clientX, y: e.clientY };
                 hasDragged.current = false;
             }
+
+            if (isRequestingSelectBarRef.current) {
+                const rect = canvas.getBoundingClientRect();
+                const cssW = canvas.width / getEffectiveDpr();
+                const chartW = cssW - priceScaleWidthRef.current;
+                const ts = snapTs(transformer.xToTs(e.clientX - rect.left, chartW));
+                const bar = barAt(ts);
+                // nothing to pick here - a gap, or past the last bar. stay armed
+                // rather than answer with a bar that isnt on the chart
+                if (!bar) return;
+                eventBus.emit('chart:request-select-bar-resolved', { bar });
+                return;
+            }
+
+            
             // Trade line interaction
             {
                 const tl = tradeLineInteractionRef.current;
@@ -1650,6 +1677,25 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             const view = viewRef.current;
             if (!view) return;
 
+            const outsideCanvas = x < 0 || y < 0 || x > cssW || y > cssH;
+            const chartW = cssW - priceScaleWidthRef.current;
+            const inChart = x < chartW && y < cssH - (p.hideTimeScale ? 0 : X_AXIS_HEIGHT);
+
+
+            // picking a bar: track the pointer and leave the rest of the chart
+            // alone - nothing is hoverable or draggable while the pick is open
+            if (isRequestingSelectBarRef.current) {
+                const over = !outsideCanvas && inChart;
+                crosshairRef.current = over ? { x, y } : null;
+                eventBus.emit('crosshair:move', over ? { x, y } : null);
+                if (over) emitStatusCompute(x);
+                pushDrawParams();
+                renderEngineRef.current?.markDirty('drawings');
+                renderEngineRef.current?.markDirty('ui');
+                canvas.style.cursor = over ? 'crosshair' : 'default';
+                return;
+            }
+
             // Trade line hover/drag (runs every move, doesn't block chart)
             let tradeLineClaimed = false;
             {
@@ -1671,7 +1717,6 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                 }
             }
 
-            const outsideCanvas = x < 0 || y < 0 || x > cssW || y > cssH;
             if (outsideCanvas && !isDragging.current && !draggingAnchorRef.current) {
                 if (crosshairRef.current !== null) {
                     crosshairRef.current = null;
@@ -1699,9 +1744,6 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                     return;
                 }
             }
-
-            const chartW = cssW - priceScaleWidthRef.current;
-            const inChart = x < chartW && y < cssH - (p.hideTimeScale ? 0 : X_AXIS_HEIGHT);
 
             crosshairRef.current = hideTouchPointer ? null : { x, y };
             if (!hideTouchPointer) {
@@ -2336,6 +2378,13 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             const active = document.activeElement;
 
             if (!container || !active || !container.contains(active)) {
+                return;
+            }
+
+            // before anything else can swallow it: a bar pick has to be escapable
+            if (isRequestingSelectBarRef.current && e.key === 'Escape') {
+                eventBus.emit('chart:request-select-bar-resolved', { bar: null });
+                e.preventDefault();
                 return;
             }
 

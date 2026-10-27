@@ -427,6 +427,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
             hidePriceScale,
             hideTimeScale,
             syncCrosshair: syncCrosshairRef.current,
+            isRequestingSelectBar: isRequestingSelectBarRef.current,
         });
 
         publishCrosshairSync();
@@ -1031,6 +1032,8 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
     const hasDragged = useRef(false);
     const selectedTradeRef = useRef<TradePoint | null>(null);
 
+    const isRequestingSelectBarRef = useRef(false);
+
     const chartAreaRef = useRef<HTMLDivElement>(null);
     const menuRef = useRef<HTMLDivElement>(null);
     const touchPlusRef = useRef<HTMLButtonElement>(null);
@@ -1259,6 +1262,20 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
                     code: 'TIMEFRAME_NO_DATA',
                     label,
                 });
+            }),
+
+            eventBus.on('chart:request-select-bar', () => {
+                isRequestingSelectBarRef.current = true;
+                pushDrawParams();
+                renderEngineRef.current?.markDirty('ui');
+            }),
+            // every pane armed, so every pane stands down - including the ones
+            // that werent clicked, which would otherwise swallow their next click
+            eventBus.on('chart:request-select-bar-resolved', () => {
+                if (!isRequestingSelectBarRef.current) return;
+                isRequestingSelectBarRef.current = false;
+                pushDrawParams();
+                renderEngineRef.current?.markDirty('ui');
             }),
         ];
         // forEach runs now, so returning it unsubscribed both of these on mount
@@ -1650,6 +1667,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         activeTool,
         touchPlusRef,
         lastInputTouchRef,
+        isRequestingSelectBarRef
     });
 
     useEffect(() => {

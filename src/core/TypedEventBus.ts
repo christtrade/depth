@@ -79,6 +79,15 @@ export interface ChartEvents {
         };
     };
 
+    /**
+     * Arm every pane to pick a bar. The next click on one answers with it, and
+     * Escape cancels. Emitted by `chart.requestSelectBar()`.
+     */
+    'chart:request-select-bar': void;
+    /** The bar that was picked, or null when the pick was cancelled. Every
+     *  armed pane stands down on it, not just the one that was clicked. */
+    'chart:request-select-bar-resolved': { bar: OhlcvBar | null };
+
     // Layout sync. broadcast by the cell being acted on, never echoed back -
     // every other cell decides for itself whether its matching switch is on
     /** Hovered cell's crosshair, in data space. null = pointer left the chart. */

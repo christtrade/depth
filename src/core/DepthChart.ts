@@ -342,6 +342,8 @@ export class DepthChart {
     private _pluginStateListeners = new Set<() => void>();
     private _pluginCatalog: (() => PluginCatalogEntry[]) | null = null;
     private _panesRestored = false;
+    /** Stands down an unanswered requestSelectBar(). Null when none is open. */
+    private _cancelSelectBar: (() => void) | null = null;
     private playbackController: PlaybackController;
     private readonly playbackStateRegistry: PlaybackStateRegistry;
     private readonly pluginSchedules = new Map<string, PluginScheduleImpl>();
@@ -842,6 +844,34 @@ export class DepthChart {
      */
     getSymbol(): string {
         return this.focusedChart?.symbol ?? this.state.get('symbol');
+    }
+
+    /**
+     * Ask the user to click a bar, and resolve with its time in ms - or null if
+     * they press Escape, or ask again before this one is answered.
+     *
+     * Every pane arms, so a click on any of them answers. Clicking where there
+     * is no bar (a session gap, past the last one) is not an answer and leaves
+     * the chart waiting.
+     */
+    requestSelectBar(): Promise<number | null> {
+        // the newest ask wins, like every other request in here
+        this._cancelSelectBar?.();
+        return new Promise((resolve) => {
+            const off = this.eventBus.on('chart:request-select-bar-resolved', ({ bar }) => {
+                off();
+                this._cancelSelectBar = null;
+                resolve(bar ? bar.time : null);
+            });
+            // stand the panes down as well as answering, or they stay armed
+            this._cancelSelectBar = () => {
+                off();
+                this._cancelSelectBar = null;
+                this.eventBus.emit('chart:request-select-bar-resolved', { bar: null });
+                resolve(null);
+            };
+            this.eventBus.emit('chart:request-select-bar', undefined);
+        });
     }
 
     /**

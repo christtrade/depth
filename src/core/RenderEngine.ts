@@ -132,6 +132,8 @@ export interface DrawParams {
      * pointer, or nothing is being mirrored.
      */
     syncCrosshair: CrosshairSync | null;
+
+    isRequestingSelectBar: boolean;
 }
 
 export class RenderEngine {
@@ -633,6 +635,7 @@ export class RenderEngine {
             p.priceScaleWidth,
             this.priceTransition,
             p.syncCrosshair,
+            p.isRequestingSelectBar
         );
 
         this.eventBus.emit('hitmap:update', { id: this.chartId, hitMap });
