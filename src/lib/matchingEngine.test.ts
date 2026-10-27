@@ -82,6 +82,92 @@ describe('a book with no price yet', () => {
     });
 });
 
+describe('swapping the bar period under the replay', () => {
+    // the same span as `bars`, at half the period
+    const HALF = BAR_NS / 2n;
+    const fineBars = [0n, HALF, BAR_NS, BAR_NS + HALF].map((off, i) => ({
+        time: Number((T0 + off) / 1_000_000n),
+        open: 100 + i * 0.5,
+        high: 101 + i * 0.5,
+        low: 99 + i * 0.5,
+        close: 100.5 + i * 0.5,
+        volume: 5,
+    }));
+
+    // the span a limit at 99.5 fills inside, at both periods
+    const fillBars = [
+        { time: Number(T0 / 1_000_000n), open: 100, high: 101, low: 100, close: 100.5, volume: 10 },
+        {
+            time: Number((T0 + BAR_NS) / 1_000_000n),
+            open: 100.5,
+            high: 100.75,
+            low: 98,
+            close: 99,
+            volume: 12,
+        },
+    ];
+    const fillBarsFine = [0n, HALF, BAR_NS, BAR_NS + HALF].map((off, i) => ({
+        time: Number((T0 + off) / 1_000_000n),
+        open: [100, 100.25, 100.5, 99.5][i],
+        high: [101, 100.5, 100.75, 99.6][i],
+        low: [100, 100.25, 98, 98.5][i],
+        close: [100.25, 100.5, 99.5, 99][i],
+        volume: 6,
+    }));
+
+    it('does not fill the same resting order a second time', () => {
+        const { state, orders, positions } = stubTradingState();
+        const engine = createL3MatchingEngine(state, { symbolInfo: SYMBOL_INFO });
+
+        engine.ingestOhlcvBars!(fillBars as any, BAR_NS);
+        engine.seekTo(T0 + BAR_NS);
+        engine.placeOrder({
+            side: 'long',
+            type: 'limit',
+            qty: 1,
+            limitPrice: 99.5,
+            symbol: 'TEST',
+        });
+        engine.seekTo(T0 + BAR_NS * 2n);
+
+        const filledOnce = positions.length;
+        const ordersOnce = orders.length;
+        assert.ok(filledOnce > 0, 'the limit has to fill for this to mean anything');
+
+        // the switch: same span, half the period, then the same horizon again
+        engine.swapOhlcvBars!(fillBarsFine as any, HALF);
+        engine.seekTo(T0 + BAR_NS * 2n);
+
+        assert.equal(positions.length, filledOnce, 'no second fill');
+        assert.equal(orders.length, ordersOnce, 'and no second order event');
+    });
+
+    it('rewinds normally when the playhead goes back behind the swap', () => {
+        const { state } = stubTradingState();
+        const engine = createL3MatchingEngine(state, { symbolInfo: SYMBOL_INFO });
+
+        engine.ingestOhlcvBars!(bars as any, BAR_NS);
+        engine.seekTo(T0 + BAR_NS * 2n);
+        engine.swapOhlcvBars!(fineBars as any, HALF);
+
+        // scrubbing back is a rewind like any other - the finer bars replay
+        engine.seekTo(T0);
+        engine.seekTo(T0 + BAR_NS * 2n);
+
+        assert.equal(engine.getPrice(), fineBars[fineBars.length - 1].close);
+    });
+
+    it('falls back to a plain ingest when there is nothing to swap', () => {
+        const { state } = stubTradingState();
+        const engine = createL3MatchingEngine(state, { symbolInfo: SYMBOL_INFO });
+
+        engine.swapOhlcvBars!(bars as any, BAR_NS);
+        engine.seekTo(T0 + BAR_NS * 2n);
+
+        assert.equal(engine.getPrice(), 100.5 + 1);
+    });
+});
+
 /**
  * Brackets can be set on an order while it is still resting - dragging a TP or
  * SL off its line does exactly that. They reach the engine through syncOrder,

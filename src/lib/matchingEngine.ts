@@ -364,6 +364,11 @@ export interface L3MatchingEngine {
      * What a stream-append must use - see appendOhlcvBars for why.
      */
     appendOhlcvBars: (bars: OhlcvBar[] | BarStore, barNs?: bigint) => void;
+    /**
+     * OHLCV path: the same span at a different bar period, after a timeframe
+     * switch
+     */
+    swapOhlcvBars: (bars: OhlcvBar[] | BarStore, barNs: bigint) => void;
     /** OHLCV path: ingest finer-resolution bars so seekTo uses accurate mark prices within the open bar. */
     ingestSupplementalBars?: (
         bars: Array<{
@@ -2191,6 +2196,27 @@ export function createL3MatchingEngine(
         if (barNs && barNs > 0n) data.barNs = barNs;
     }
 
+    /**
+     * Replace the bar buffer with the same span at another period
+     */
+    function swapOhlcvBars(bars: OhlcvBar[] | BarStore, barNs: bigint): void {
+        if (_nonL3?.kind !== 'ohlcv' || bars.length === 0) {
+            ingestOhlcvBars(bars, barNs);
+            return;
+        }
+        // the end of the lat bar played
+        const consumedTo = _nonL3LastTs > 0n ? _nonL3LastTs + _nonL3.barNs : 0n;
+        _nonL3 = {
+            kind: 'ohlcv',
+            bars: ownBars(bars),
+            suppBars: [],
+            barNs: barNs > 0n ? barNs : _nonL3.barNs,
+        };
+        _nonL3SuppCursor = 0;
+        _nonL3Cursor =
+            consumedTo > 0n ? _nonL3.bars.lowerBound(Number(consumedTo / 1_000_000n)) : 0;
+    }
+
     /** Sub-bar counterpart of appendOhlcvBars - same cursor-preserving splice. */
     function appendSupplementalBars(
         bars: Array<{
@@ -2619,6 +2645,7 @@ export function createL3MatchingEngine(
         ingestCompactBuf,
         ingestOhlcvBars,
         appendOhlcvBars,
+        swapOhlcvBars,
         ingestSupplementalBars,
         appendSupplementalBars,
         appendTicks,

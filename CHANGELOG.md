@@ -8,10 +8,51 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- A timeframe switch now happens when the data for it arrives and not before. It also
+  keeps the bar you were centered on instead of snapping back to the playhead.
+- Timeframes the adapter cannot serve are locked in the selector and refused by `setTimeframe`:
+  anything below the finest `supportedResolutions` entry, and anything none of them divides (a 90s
+  candle cannot be built out of 1m bars). New `chart.isTimeframeServable(label, symbol?)`.
+- `data:load` gained `resolutionSwap`, set when it is the same window at a new resolution.
+  Consumers holding replay state keep their position - `IExecutionAdapter` can implement
+  `swapOhlcvBars` for it, otherwise it falls back to `ingestOhlcvBars`.
+- `data:refine` is gone. Nothing patches bars into a loaded window any more, so there is nothing
+  to announce.
+
 ### Fixed
-- Scaling down to a finer timeframe re-fetched every segment ever loaded, so a chart panned back
-  to 2000 on the daily asked for 26 years of 1m bars to fill one screen. Refines what the panes
-  are showing now, and the rest when the view reaches it.
+- Switching timeframes left bars of several resolutions in one store: a scale-down patched finer
+  bars into the loaded window instead of replacing it, and every hourly timestamp sits on a 1m
+  boundary too, so nothing downstream could tell them apart. A few switches in and the chart drew
+  1m candles, then one hourly candle, then a 59 minute hole. One window is now one resolution.
+- Scaling down re-fetched every segment ever loaded, so a chart panned back to 2000 on the daily
+  asked for 26 years of 1m bars to fill one screen. A switch loads the window it is going to show.
+- A timeframe finer than the adapter serves (seconds where only minutes exist) drew one candle per
+  source bar with holes between them, and a custom timeframe no resolution divided drew every
+  bucket misaligned.
+- Panning or prefetching after a switch extended the window at whatever resolution a pane happened
+  to want rather than the one the window was loaded at.
+- Fill geometry kept the resolution it was loaded at after a scale-down. Refinement replaced the
+  chart's bars but never reached the matching engine.
+- A timeframe switch fetched its window twice. A switch announces itself twice - the pane's new
+  period, then shared state's timeframe, and both staged a reload before either fetch returned.
+- A timeframe change or a playback prefetch reached every symbol the engine had ever loaded, not
+  just the ones on screen. A host that mounts on a default symbol and then restores a layout onto
+  another one leaves the first loaded with no pane behind it, so switching timeframe downloaded a
+  second instrument's window, and where the adapter serves supplemental bars, a day of seconds
+  per day of it.
+- A staged reload that came back empty left the pane dimmed until the 15s timeout, so switching
+  onto a period the source has no bars for (seconds over a weekend, a day outside an entitlement)
+  looked like a hang. New `data:resolution-unavailable` says so, and the pane unfreezes on the
+  timeframe it has the data for.
+- `useDepthChart` loaded the symbol passed to the constructor even when `restore` put another one
+  on every pane, fetching a full window of an instrument the layout doesnt show. It now loads the
+  restored symbol, and `restore()` mirrors it into shared state alongside the timeframe.
+- Supplemental bars were fetched across the whole loaded window, though only the bar at the
+  playhead and the replay ahead of it ever read them. New optional `supplementalRange` on
+  `FetchRequest` narrows the ask; adapters that ignore it behave as before.
+- A pane unsubscribed `data:bounds` the moment it mounted - the effect returned
+  `unsub.forEach(fn => fn())`, which runs every unsubscribe then and there instead of on cleanup.
 
 ## [0.20.0] - 2026-10-22
 

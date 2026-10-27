@@ -50,6 +50,7 @@ export interface IExecutionAdapter {
      * rather than merging; without it, extensions fall back to ingestOhlcvBars.
      */
     appendOhlcvBars?(bars: OhlcvBar[], barNs?: bigint): void;
+    swapOhlcvBars?(bars: OhlcvBar[], barNs: bigint): void;
     ingestSupplementalBars?(
         bars: Array<{
             time: number;

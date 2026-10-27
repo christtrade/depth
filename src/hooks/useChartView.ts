@@ -16,7 +16,12 @@ export interface UseChartViewParams {
     priceHistoryRef: MutableRefObject<PriceHistory[]>;
     tradesRef: MutableRefObject<TradePoint[]>;
     previewBarsRef: MutableRefObject<BarStore>;
-    ohlcvBarsRef: MutableRefObject<{ barNs: bigint; bars: BarStore; display: BarStore }>;
+    ohlcvBarsRef: MutableRefObject<{
+        barNs: bigint;
+        sourceBarNs: bigint;
+        bars: BarStore;
+        display: BarStore;
+    }>;
     openBarRef: MutableRefObject<FootprintBar>;
     chartSettingsRef: MutableRefObject<ChartSettings>;
     horizonRef: MutableRefObject<bigint>;

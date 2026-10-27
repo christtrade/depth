@@ -182,6 +182,17 @@ export class ExecutionEngine {
         this.builtInFor(symbol)?.appendOhlcvBars(bars, barNs);
     }
 
+    // the same span at another bar period after a timeframe switch
+    swapOhlcvBars(bars: OhlcvBar[] | BarStore, barNs: bigint, symbol?: string): void {
+        if (this.custom) {
+            const arr = asArray(bars);
+            if (this.custom.swapOhlcvBars) this.custom.swapOhlcvBars(arr, barNs);
+            else this.custom.ingestOhlcvBars?.(arr, barNs);
+            return;
+        }
+        this.builtInFor(symbol)?.swapOhlcvBars(bars, barNs);
+    }
+
     ingestSupplementalBars(
         bars: Array<{
             time: number;

@@ -11,6 +11,7 @@ import { CURSOR_TOOL, toolFromDrawing } from '../lib/types/drawing-types';
 import {
     parseCustomTimeframe,
     PRESET_TIMEFRAMES,
+    servableBarNs,
     timeframeFromBarNs,
     type Timeframe,
 } from '../lib/timeframes';
@@ -747,6 +748,12 @@ export class DepthChart {
             console.warn(`[ChristTrade] Unknown timeframe: "${label}"`);
             return this;
         }
+        if (!this.isTimeframeServable(label)) {
+            console.warn(
+                `[ChristTrade] "${label}" cant be built from what the adapter serves for ${this.state.get('symbol')}`,
+            );
+            return this;
+        }
         this.state.set('timeframe', tf, this.eventBus);
         return this;
     }
@@ -787,6 +794,16 @@ export class DepthChart {
     isTimeframeAllowed(label: string): boolean {
         const allowed = this.features?.timeframe?.timeframes ?? 'any';
         return allowed === 'any' || allowed.includes(label);
+    }
+
+    // can this timeframe be built from the data the adapter serves for a symbol?
+    isTimeframeServable(label: string, symbol?: string): boolean {
+        const tf =
+            PRESET_TIMEFRAMES.find((t) => t.label.toLowerCase() === label.toLowerCase()) ??
+            parseCustomTimeframe(label);
+        if (!tf) return false;
+        const info = this.dataEngine.getResolvedSymbolInfo(symbol ?? this.state.get('symbol'));
+        return servableBarNs(info?.supportedResolutions, tf.barNs) !== null;
     }
 
     /**
@@ -1005,6 +1022,7 @@ export class DepthChart {
         // this runs before panes mount, nothing to notify
         const focused = this._panes.get(this.state.get('focusedPane') ?? 0);
         if (focused) this.state.set('timeframe', focused.timeframe);
+        if (focused?.symbol) this.state.set('symbol', focused.symbol);
 
         return this;
     }

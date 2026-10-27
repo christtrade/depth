@@ -13,7 +13,7 @@ export function useDepthChart(options: ChartOptions) {
     if (!chartRef.current) {
         chartRef.current = new DepthChart(options);
         // fire and forget - DataEngine emits data:status events for loading/error ui
-        chartRef.current.load(options.symbol);
+        chartRef.current.load(chartRef.current.getSymbol());
     }
 
     useEffect(() => {

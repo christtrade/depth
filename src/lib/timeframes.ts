@@ -123,6 +123,22 @@ export function tfViewSpan(tf: Timeframe, bars?: number): bigint {
     return tf.barNs * BigInt(bars ?? tf.defaultBars);
 }
 
+// Resolution a timeframe can be built from
+export function servableBarNs(
+    supported: readonly bigint[] | undefined,
+    viewBarNs: bigint,
+): bigint | null {
+    if (viewBarNs <= 0n) return null;
+    if (!supported?.length) return viewBarNs;
+    let best: bigint | null = null;
+    for (const r of supported) {
+        if (r > 0n && r <= viewBarNs && viewBarNs % r === 0n && (best === null || r > best)) {
+            best = r;
+        }
+    }
+    return best;
+}
+
 // Custom timeframe parsing
 /**
  * Parse a user-entered string like "213m", "2h", "45s", "3d" into a Timeframe.

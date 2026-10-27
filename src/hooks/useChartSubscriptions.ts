@@ -41,7 +41,12 @@ export interface UseChartSubscriptionsParams {
     dataLevelRef: MutableRefObject<DataLevel | null>;
     previewBarsRef: MutableRefObject<BarStore>;
     candleCacheRef: MutableRefObject<Map<bigint, any> | null>;
-    ohlcvBarsRef: MutableRefObject<{ barNs: bigint; bars: BarStore; display: BarStore }>;
+    ohlcvBarsRef: MutableRefObject<{
+        barNs: bigint;
+        sourceBarNs: bigint;
+        bars: BarStore;
+        display: BarStore;
+    }>;
     openBarRef: MutableRefObject<FootprintBar | null>;
     viewRef: MutableRefObject<ViewBounds | null>;
     accountSnapRef: MutableRefObject<any>;

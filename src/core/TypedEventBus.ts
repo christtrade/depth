@@ -94,7 +94,7 @@ export interface ChartEvents {
     'features:change': void;
     'timeframe:add-failed': {
         message: string;
-        code: 'NO_CUSTOM_TIMEFRAMES' | 'TIMEFRAME_NOT_ALLOWED';
+        code: 'NO_CUSTOM_TIMEFRAMES' | 'TIMEFRAME_NOT_ALLOWED' | 'TIMEFRAME_BELOW_RESOLUTION';
         /** The timeframe the user typed, e.g. "7m". Hosts use it in their upsell copy. */
         label?: string;
     };
@@ -192,6 +192,7 @@ export interface ChartEvents {
          * of rewinding and settling the window again.
          */
         rehydrate?: boolean;
+        resolutionSwap?: boolean;
         /** Pre-bucketed ingest result from DataEngine (non-ohlcv data levels only). */
         ingestOhlcvBuf?: ArrayBuffer;
         ingestBucketedPhBuf?: ArrayBuffer;
@@ -299,6 +300,12 @@ export interface ChartEvents {
     /** The requested span was entirely outside this symbol's trading hours, so
      *  nothing was fetched. */
     'data:session-gap': { from: bigint; to: bigint; symbol?: string };
+    /**
+     * A staged reload came back with no bars, so the resolution a pane was
+     * waiting on isnt coming. Without it a switch onto a period the source has
+     * no data for (1s over a weekend) sat dimmed until the 15s timeout.
+     */
+    'data:resolution-unavailable': { symbol: string; barNs: bigint };
     'data:symbol-resolved': { symbolInfo: SymbolInfo };
     /**
      * Ask the engine to re-announce a symbol's resolved info as
@@ -322,20 +329,6 @@ export interface ChartEvents {
         /** Visible range (ns). Omitted before the pane has a view to report. */
         viewFrom?: bigint;
         viewTo?: bigint;
-    };
-
-    /** Part of a loaded segment - the part on screen, not the whole loaded
-     *  range - was re-fetched finer after a scale-down. Replace stale bars. */
-    'data:refine': {
-        symbol: string;
-        dataLevel: DataLevel;
-        ohlcvBars: OhlcvBar[];
-        /** The fetch resolution of the new bars. */
-        barNs: bigint;
-        /** ISO - inclusive start of the replaced time range. */
-        from: string;
-        /** ISO - exclusive end of the replaced time range. */
-        to: string;
     };
 
     'render-engine:ready': { engine: RenderEngine };

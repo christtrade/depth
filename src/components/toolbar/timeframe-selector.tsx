@@ -9,6 +9,7 @@ import {
     parseCustomTimeframe,
     loadFavoriteTimeframes,
     saveFavoriteTimeframes,
+    servableBarNs,
     type Timeframe,
 } from '../../lib/timeframes';
 import type { FeaturesOptions } from '../../core/DepthChart';
@@ -51,6 +52,7 @@ interface TimeframeSelectorProps {
     value: Timeframe;
     customTimeframes: Timeframe[];
     features: FeaturesOptions,
+    supportedResolutions?: bigint[];
     onChange: (tf: Timeframe) => void;
     onAddCustom: (tf: Timeframe) => void;
     onRemoveCustom: (label: string) => void;
@@ -62,6 +64,7 @@ export function TimeframeSelector({
     value,
     customTimeframes,
     features,
+    supportedResolutions,
     onChange,
     onAddCustom,
     onRemoveCustom,
@@ -93,9 +96,19 @@ export function TimeframeSelector({
     // gets no gate at all.
     const allowedTfs = features?.timeframe?.timeframes ?? 'any';
     const allowCustom = features?.timeframe?.allowCustom ?? true;
+
+    // the other half of the lock, where the data adapter just doesnt support the tf
+    const isUnservable = useCallback(
+        (tf: Timeframe) => servableBarNs(supportedResolutions, tf.barNs) === null,
+        [supportedResolutions],
+    );
     const isLocked = useCallback(
-        (label: string) => allowedTfs !== 'any' && !allowedTfs.includes(label),
-        [allowedTfs],
+        (label: string) => {
+            if (allowedTfs !== 'any' && !allowedTfs.includes(label)) return true;
+            const tf = allTfs.find((t) => t.label === label) ?? parseCustomTimeframe(label);
+            return tf ? isUnservable(tf) : false;
+        },
+        [allowedTfs, allTfs, isUnservable],
     );
 
     // resolve favorites to definitions, drop dangling labels, sort ascending
@@ -131,9 +144,12 @@ export function TimeframeSelector({
             if (isLocked(tf.label)) {
                 // the host owns the explanation - close and report, so the chart
                 // never lands on a timeframe it can't get data for
+                const unservable = isUnservable(tf);
                 eventBus?.emit('timeframe:add-failed', {
-                    message: 'Timeframe not allowed',
-                    code: 'TIMEFRAME_NOT_ALLOWED',
+                    message: unservable
+                        ? 'No data at this resolution for this symbol'
+                        : 'Timeframe not allowed',
+                    code: unservable ? 'TIMEFRAME_BELOW_RESOLUTION' : 'TIMEFRAME_NOT_ALLOWED',
                     label: tf.label,
                 });
                 setOpenWithCallback(false);
@@ -142,7 +158,7 @@ export function TimeframeSelector({
             onChange(tf);
             setOpenWithCallback(false);
         },
-        [onChange, isLocked, eventBus],
+        [onChange, isLocked, isUnservable, eventBus],
     );
 
     const toggleFavorite = useCallback((label: string) => {

@@ -274,6 +274,11 @@ export default function Depth({
 
     // Shared toolbar state
     const [activeTimeframe, setActiveTimeframe] = useState<Timeframe>(_state.get('timeframe'));
+
+    // lock tfs the symbols adapter doesnt serve
+    const [supportedResolutions, setSupportedResolutions] = useState<bigint[] | undefined>(
+        undefined,
+    );
     const [customTimeframes, setCustomTimeframes] = useState<Timeframe[]>(() =>
         loadCustomTimeframes(),
     );
@@ -582,15 +587,16 @@ export default function Depth({
      * the focused pane's instrument, and a background symbol's bars must not
      * land there.
      *
-     * `mode` is the difference between "here is the dataset" and "here is more
-     * of it". Only the OHLCV path distinguishes them: its append carries just
-     * the new chunk, and ingesting a chunk through the reset path would throw
-     * away the history behind it. The other levels always ship the full master.
+     * `mode` is the difference between "here is the dataset", "here is more of
+     * it", and "here is the same span at another bar period". Only the OHLCV path
+     * distinguishes them: its append carries just the new chunk, and ingesting a
+     * chunk through the reset path would throw away the history behind it. The
+     * other levels always ship the full master.
      */
     const ingestForExecution = useCallback(
         (
             payload: ChartEvents['data:load'] | ChartEvents['data:append'],
-            mode: 'load' | 'append',
+            mode: 'load' | 'append' | 'swap',
         ) => {
             const eng = execEngineRef.current;
             const sym = payload.symbol;
@@ -598,6 +604,9 @@ export default function Depth({
 
             switch (payload.dataLevel) {
                 case 'l3': {
+                    // l3 events dont have a bar period to swap so a resolution
+                    // change is nothing to this level
+                    if (mode === 'swap') break;
                     const buf = (payload.compactBuf as ArrayBuffer).slice(0);
                     if (mode === 'append') eng.appendCompactBuf(buf, sym);
                     else eng.ingestCompactBuf(buf, sym);
@@ -610,6 +619,7 @@ export default function Depth({
                     // append carries the chunk, load only the whole store
                     const bars = 'ohlcvBars' in payload ? payload.ohlcvBars : payload.bars;
                     if (mode === 'append') eng.appendOhlcvBars(bars, payload.barNs, sym);
+                    else if (mode === 'swap') eng.swapOhlcvBars(bars, payload.barNs, sym);
                     else eng.ingestOhlcvBars(bars, payload.barNs, sym);
 
                     const suppSets = (payload as any).supplemental as
@@ -912,14 +922,23 @@ export default function Depth({
             eventBus.on('chart:set-symbol-focused', ({ symbol }) => {
                 eventBus.emit('chart:set-symbol', { symbol, id: focusedRef.current });
             }),
+            eventBus.on('data:symbol-resolved', ({ symbolInfo }) => {
+                if (symbolInfo.symbol !== _state.get('symbol')) return;
+                setSupportedResolutions(symbolInfo.supportedResolutions);
+            }),
             eventBus.on('data:load', (payload) => {
                 setDataLevel(payload.dataLevel);
                 // A rehydrate is the same window handed over again (a pane
                 // mounting, or moving onto a symbol another pane already has).
                 // Treated as a load it would rewind the engine to the start of
                 // that window and re-settle every bar in it, which can fill a
-                // live working order somewhere back in the past.
-                ingestForExecution(payload, payload.rehydrate ? 'append' : 'load');
+                // live working order somewhere back in the past. A resolution
+                // swap is the same span at a new bar period, with the same
+                // hazard and a cursor that cant just carry over by index.
+                ingestForExecution(
+                    payload,
+                    payload.resolutionSwap ? 'swap' : payload.rehydrate ? 'append' : 'load',
+                );
             }),
             // Bars streamed in ahead of the playhead. These have to reach the
             // engine too: it fills from the bars it holds, so without this it
@@ -1293,6 +1312,7 @@ export default function Depth({
                                 value={activeTimeframe}
                                 customTimeframes={customTimeframes}
                                 features={features}
+                                supportedResolutions={supportedResolutions}
                                 onChange={(tf) => {
                                     setActiveTimeframe(tf);
                                     _state.set('timeframe', tf, eventBus);

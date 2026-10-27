@@ -34,7 +34,12 @@ export interface UseChartHandlersParams {
     panesRef: MutableRefObject<ChartPane[]>;
 
     // Data refs
-    ohlcvBarsRef: MutableRefObject<{ barNs: bigint; bars: BarStore; display: BarStore }>;
+    ohlcvBarsRef: MutableRefObject<{
+        barNs: bigint;
+        sourceBarNs: bigint;
+        bars: BarStore;
+        display: BarStore;
+    }>;
     sessionMapperRef: MutableRefObject<SessionMapper>;
     activeTimeframeRef: MutableRefObject<Timeframe>;
     horizonRef: MutableRefObject<bigint>;
@@ -81,12 +86,16 @@ export interface UseChartHandlersParams {
     syncOhlcvOpenBar: (horizon: bigint) => void;
     updatePriceHistoryToRawIdx: (rawIdx: number) => void;
     findPriceHistoryIdx: (horizon: bigint) => number;
-    resetXAxis: () => void;
     resetYAxis: () => void;
     autofitIndicatorPanes: () => void;
 
     hideTimeScale: boolean;
     priceScaleWidthRef: MutableRefObject<number>;
+}
+
+export interface TimeRange {
+    from: bigint;
+    to: bigint;
 }
 
 export interface UseChartHandlersResult {
@@ -106,7 +115,7 @@ export interface UseChartHandlersResult {
     handleMaximize: (paneId: string) => void;
     handleEnter: () => void;
     handleLeave: () => void;
-    handleTimeframeChange: (tf: Timeframe) => void;
+    handleTimeframeChange: (tf: Timeframe, targetView?: TimeRange) => void;
     handleAddIndicator: (defId: string) => void;
     handleAddTradeLine: (opts: TradeLine) => void;
 }
@@ -160,7 +169,6 @@ export function useChartHandlers(p: UseChartHandlersParams): UseChartHandlersRes
         syncOhlcvOpenBar,
         updatePriceHistoryToRawIdx,
         findPriceHistoryIdx,
-        resetXAxis,
         resetYAxis,
         autofitIndicatorPanes,
     } = p;
@@ -415,11 +423,13 @@ export function useChartHandlers(p: UseChartHandlersParams): UseChartHandlersRes
     }, []);
 
     // Timeframe handler
-    const handleTimeframeChange = useCallback((tf: Timeframe) => {
+
+    const handleTimeframeChange = useCallback((tf: Timeframe, targetView?: TimeRange) => {
         if (ohlcvBarsRef.current.bars.length) {
             ohlcvBarsRef.current.barNs = tf.barNs;
             ohlcvBarsRef.current.display = displayFor(
                 ohlcvBarsRef.current.bars,
+                ohlcvBarsRef.current.sourceBarNs,
                 tf.barNs,
                 sessionMapperRef.current,
             );
@@ -459,8 +469,12 @@ export function useChartHandlers(p: UseChartHandlersParams): UseChartHandlersRes
             activeTimeframeRef.current.barNs,
         );
 
-        const span = tfViewSpan(tf);
-        view.tMin = view.tMax - span;
+        if (targetView) {
+            view.tMin = targetView.from;
+            view.tMax = targetView.to;
+        } else {
+            view.tMin = view.tMax - tfViewSpan(tf);
+        }
 
         if (isYAxisAutoRef.current)
             autoFitPriceAxis(
@@ -476,7 +490,7 @@ export function useChartHandlers(p: UseChartHandlersParams): UseChartHandlersRes
                 dataLevelRef.current,
             );
 
-        resetXAxis();
+        // no resetXAxis to keep the current view
         resetYAxis();
         autofitIndicatorPanes();
         scheduleResample();

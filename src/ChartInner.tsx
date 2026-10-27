@@ -14,7 +14,13 @@ import { ViewBounds, TradeLine, TradePoint } from './lib/types';
 import { MAX_TIME_SPAN, MIN_TIME_SPAN } from './lib/constants';
 import { ChevronLeft, ChevronRight, Minus, Plus, RotateCcw } from 'lucide-react';
 import { ChartPane, Indicator } from './lib/types/indicator-types';
-import { TimeframeUnit, type Timeframe } from './lib/timeframes';
+import {
+    TimeframeUnit,
+    servableBarNs,
+    tfViewSpan,
+    timeframeFromBarNs,
+    type Timeframe,
+} from './lib/timeframes';
 import { ChartContextMenu } from './components/chart/chart-context-menu';
 import { getDrawingLabelAnchor } from './lib/renderers/drawings-renderer';
 import {
@@ -71,6 +77,9 @@ import {
     type TimeRangeSync,
 } from './lib/types/layout-sync';
 import { ChartStateShape } from './core/ChartState';
+
+/** How long a staged timeframe switch waits before giving up on the data. */
+const SWITCH_TIMEOUT_MS = 15_000;
 
 export type ChartHandle = {
     // Time / horizon
@@ -221,6 +230,8 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
 ) {
     const _seekHorizonRef = useRef<((h: bigint, recenter?: boolean) => void) | null>(null);
     const _handleTimeframeChangeRef = useRef<((tf: any, fromSync?: boolean) => void) | null>(null);
+    const _onLoadAppliedRef = useRef<(sourceBarNs: bigint) => void>(() => {});
+    const _symbolResolvedRef = useRef<(info: SymbolInfo) => void>(() => {});
     const _handleAddIndicatorRef = useRef<((id: string) => void) | null>(null);
     const _handleToggleIndicatorRef = useRef<((id: string) => void) | null>(null);
     const _handleRemoveIndicatorRef = useRef<((id: string) => void) | null>(null);
@@ -591,11 +602,12 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
 
     // What this pane needs fetched, and over what span. Without the resolution a
     // pane on a finer timeframe is served the focused pane's bars (a 1m chart
-    // drawing hourly candles); without the window a scale-down refines every
-    // year ever panned through instead of the screen.
+    // drawing hourly candles); without the window the engine cant tell which
+    // span a switch needs in hand.
     function announcePaneView() {
         const symbol = cellSymbolRef.current;
         if (!symbol) return;
+        if (pendingSwitchRef.current) return;
         const view = viewRef.current;
         eventBus.emit('data:pane-resolution', {
             id: _id,
@@ -609,6 +621,58 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
     function onViewSettled() {
         announcePaneView();
         publishTimeRangeSync();
+    }
+
+    // Timeframe switching
+    //
+    // a switch only happens once the data for it is loaded
+    // looks bad otherwise with two different tfs mixed
+
+    const pendingSwitchRef = useRef<{
+        tf: Timeframe;
+        target: { from: bigint; to: bigint };
+        token: number;
+    } | null>(null);
+    const switchTokenRef = useRef(0);
+    const switchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const switchPendingRef = useRef(false);
+    const [switchPending, setSwitchPending] = useState(false);
+
+    function clearPendingSwitch() {
+        pendingSwitchRef.current = null;
+        switchPendingRef.current = false;
+        if (switchTimerRef.current !== null) clearTimeout(switchTimerRef.current);
+        switchTimerRef.current = null;
+        setSwitchPending(false);
+    }
+
+    function targetViewFor(tf: Timeframe): { from: bigint; to: bigint } {
+        const span = tfViewSpan(tf);
+        const view = viewRef.current;
+
+        if (!view || isPlayingRef.current) {
+            const end = horizonRef.current + span / 10n;
+            return { from: end - span, to: end };
+        }
+        const center = (view.tMin + view.tMax) / 2n;
+        return { from: center - span / 2n, to: center + span / 2n };
+    }
+
+    function hasHistoryFor({ from }: { from: bigint; to: bigint }): boolean {
+        const start = datasetStartRef.current;
+        return start !== 0n && start <= from;
+    }
+
+    // the load the pending switch was waiting for has landed
+    function onLoadApplied(sourceBarNs: bigint) {
+        const pending = pendingSwitchRef.current;
+        if (!pending) return;
+        // anything that divides the requested timeframe builds it
+        if (sourceBarNs <= 0n || pending.tf.barNs % sourceBarNs !== 0n) return;
+        const { tf, target } = pending;
+        clearPendingSwitch();
+        handleTimeframeChange(tf, target);
+        announcePaneView();
     }
 
     /**
@@ -867,6 +931,8 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         hidePriceScale,
         hideTimeScale,
         onDataLevelChangeRef: _enforceDataLevelRef,
+        onLoadAppliedRef: _onLoadAppliedRef,
+        onSymbolResolvedRef: _symbolResolvedRef,
     });
 
     const {
@@ -881,6 +947,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         openBarTsRef,
         openBarTradeCountRef,
         phCursorRef,
+        isPlayingRef,
         dataLevelRef,
         datasetStartRef,
         datasetEndRef,
@@ -1156,6 +1223,9 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
             // No symbol = chart-wide, so every cell takes it.
             if (symbol !== undefined && symbol !== cellSymbolRef.current) return;
             if (status === 'ready' && symbol !== undefined) paneHasDataRef.current = true;
+            // a switch whose fetch failed is never going to landd so just .unfreeze and
+            // stay on the timeframe we have the data for
+            if (status === 'error') clearPendingSwitch();
             // The overlay means "nothing to show". A symbol-scoped load is a full
             // refetch of that symbol, which another pane can trigger just by
             // switching onto a symbol we are already displaying - so when we have
@@ -1178,8 +1248,21 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
                 datasetEndRef.current = end;
                 onDataBoundsChange?.(start, end);
             }),
+            eventBus.on('data:resolution-unavailable', ({ symbol, barNs }) => {
+                if (symbol !== cellSymbolRef.current) return;
+                const pending = pendingSwitchRef.current;
+                if (!pending || pending.tf.barNs % barNs !== 0n) return;
+                const label = pending.tf.label;
+                clearPendingSwitch();
+                eventBus.emit('timeframe:add-failed', {
+                    message: `${symbol} has no ${timeframeFromBarNs(barNs).label} data over this range`,
+                    code: 'TIMEFRAME_NO_DATA',
+                    label,
+                });
+            }),
         ];
-        return unsub.forEach((fn) => fn());
+        // forEach runs now, so returning it unsubscribed both of these on mount
+        return () => unsub.forEach((fn) => fn());
     }, []);
 
     const { chartSettings, setChartSettings } = useChartSettings({
@@ -1392,7 +1475,6 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         syncOhlcvOpenBar,
         updatePriceHistoryToRawIdx,
         findPriceHistoryIdx,
-        resetXAxis,
         resetYAxis,
         autofitIndicatorPanes,
         hideTimeScale,
@@ -1536,6 +1618,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         eventBus,
         features,
         showTimeframeWindowRef,
+        switchPendingRef,
         setActiveTool,
         setSelectedDrawingId,
         setSettingsBarPos,
@@ -1624,6 +1707,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
     useEffect(() => {
         return () => {
             if (viewAnimRef.current !== null) cancelAnimationFrame(viewAnimRef.current);
+            if (switchTimerRef.current !== null) clearTimeout(switchTimerRef.current);
         };
     }, []);
 
@@ -1651,14 +1735,75 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
             });
             return;
         }
-        handleTimeframeChange(tf);
+
+        // Nothing the adapter serves can be aggregated into this timeframe
+        // Drawing it would look bad as there would be one candle per source bar with holes between
+        const supported = resolvedSymbolInfoRef.current?.supportedResolutions;
+        const need = servableBarNs(supported, tf.barNs);
+        if (need === null) {
+            const finest = supported?.length
+                ? supported.reduce((a, b) => (b < a ? b : a))
+                : null;
+            eventBus?.emit('timeframe:add-failed', {
+                message: finest
+                    ? `${cellSymbolRef.current} has no data finer than ${timeframeFromBarNs(finest).label}`
+                    : `${tf.label} cannot be built from this symbol's data`,
+                code: 'TIMEFRAME_BELOW_RESOLUTION',
+                label: tf.label,
+            });
+            return;
+        }
+
         // Announce it so an interval-synced layout can follow. `fromSync` marks
         // the pane as the follower rather than the source, which is what keeps
         // the fan-out from bouncing back around the layout.
         if (!fromSync) eventBus?.emit('layout:timeframe', { id: _id, tf });
+
+        const target = targetViewFor(tf);
+
+        // just reaggregation since the data already exists in memory
+        const source = ohlcvBarsRef.current.sourceBarNs;
+        if (source > 0n && tf.barNs % source === 0n && hasHistoryFor(target)) {
+            clearPendingSwitch();
+            handleTimeframeChange(tf, target);
+            announcePaneView();
+            return;
+        }
+
+        // otherwise stage it and requst new data
+        const token = ++switchTokenRef.current;
+        pendingSwitchRef.current = { tf, target, token };
+        switchPendingRef.current = true;
+        setSwitchPending(true);
+        if (switchTimerRef.current !== null) clearTimeout(switchTimerRef.current);
+        switchTimerRef.current = setTimeout(() => {
+            if (pendingSwitchRef.current?.token !== token) return;
+            clearPendingSwitch();
+            eventBus?.emit('data:status', {
+                status: 'error',
+                error: { code: 'timeframe_timeout', message: `Timed out loading ${tf.label}` },
+                symbol: cellSymbolRef.current,
+            });
+        }, SWITCH_TIMEOUT_MS);
+
+        eventBus?.emit('data:pane-resolution', {
+            id: _id,
+            symbol: cellSymbolRef.current,
+            barNs: tf.barNs,
+            viewFrom: target.from,
+            viewTo: target.to,
+        });
     };
 
     _handleTimeframeChangeRef.current = applyTimeframe;
+    _onLoadAppliedRef.current = onLoadApplied;
+    _symbolResolvedRef.current = (info: SymbolInfo) => {
+        const supported = info.supportedResolutions;
+        if (!supported?.length) return;
+        if (servableBarNs(supported, activeTimeframeRef.current.barNs) !== null) return;
+        const finest = supported.reduce((a, b) => (b < a ? b : a));
+        applyTimeframe(timeframeFromBarNs(finest));
+    };
     _handleAddIndicatorRef.current = handleAddIndicator;
     _handleToggleIndicatorRef.current = handleToggleIndicator;
     _handleRemoveIndicatorRef.current = handleRemoveIndicator;
@@ -1941,6 +2086,13 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
                     >
                         <Plus className="w-3.5 h-3.5" />
                     </button>
+
+                    {switchPending && (
+                        <div
+                            className="absolute inset-0 z-20 bg-background/20 cursor-progress"
+                            aria-busy
+                        />
+                    )}
 
                     {status === 'ready' && (
                         <div

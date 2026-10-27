@@ -188,12 +188,14 @@ export interface SymbolInfo {
     /**
      * Ascending-sorted list of barNs values this adapter can natively serve.
      *
-     * DataEngine picks the coarsest supported resolution <= the active timeframe
-     * for all fetches. When the active timeframe drops below a loaded segment's
-     * resolution, DataEngine re-fetches the part of it that is on screen (plus a
-     * pan margin) at the finer resolution and emits `data:refine`. History off
-     * screen keeps the resolution it came in at until the view reaches it, so
-     * expect a fetch per screenful panned, not one for the whole loaded range.
+     * DataEngine fetches at the coarsest declared resolution that *divides* the
+     * active timeframe, since only those aggregate onto its bar boundaries. A
+     * timeframe no declared resolution divides cannot be charted at all and is
+     * locked in the UI - including everything below the finest one here.
+     *
+     * One loaded window is always at one resolution: changing timeframe refetches
+     * the visible window at the new one rather than patching bars into what is
+     * already loaded.
      *
      * Example: `[60_000_000_000n, 300_000_000_000n, 3_600_000_000_000n]`
      * declares native support for 1m, 5m, and 1h bars.
@@ -319,6 +321,12 @@ export interface FetchRequest {
      * automatically from the adapter's getCapabilities().
      */
     supplementalBarNs?: bigint;
+
+    /**
+     * Span the supplemental bars are actually wanted over, always within
+     * `range`. Absent means all of it
+     */
+    supplementalRange?: TimeRange;
 }
 
 export interface SupplementalBarSet {

@@ -226,7 +226,12 @@ export interface UseChartInteractionParams {
     tradesRef: MutableRefObject<TradePoint[]>;
     priceHistoryRef: MutableRefObject<PriceHistory[]>;
     allPriceHistoryRef: MutableRefObject<PriceHistory[]>;
-    ohlcvBarsRef: MutableRefObject<{ barNs: bigint; bars: BarStore; display: BarStore }>;
+    ohlcvBarsRef: MutableRefObject<{
+        barNs: bigint;
+        sourceBarNs: bigint;
+        bars: BarStore;
+        display: BarStore;
+    }>;
     previewBarsRef: MutableRefObject<BarStore>;
     dataLevelRef: MutableRefObject<DataLevel | null>;
     openBarRef: MutableRefObject<FootprintBar | null>;
@@ -246,6 +251,7 @@ export interface UseChartInteractionParams {
 
     // State refs (for reading latest value without stale closure)
     showTimeframeWindowRef: MutableRefObject<boolean>;
+    switchPendingRef: MutableRefObject<boolean>;
 
     // State setters
     setActiveTool: (tool: ActiveDrawingTool) => void;
@@ -355,6 +361,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
         eventBus,
         features,
         showTimeframeWindowRef,
+        switchPendingRef,
         setActiveTool,
         setSelectedDrawingId,
         setSettingsBarPos,
@@ -2331,6 +2338,9 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             if (!container || !active || !container.contains(active)) {
                 return;
             }
+
+            const digit = e.key >= '0' && e.key <= '9';
+            if (switchPendingRef.current && !digit && e.key !== 'Escape') return;
             if(showTimeframeWindowRef.current && e.key === 'Escape'){
                 setShowTimeframeWindow(false);
                 setTimeframeWindowInput('');
