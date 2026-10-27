@@ -8,6 +8,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-10-27
+
+A timeframe switch loads its window at the new resolution before it swaps, so a chart is never
+drawn from bars of two periods at once. Timeframes the adapter cannot build are refused up front
+rather than drawn wrong.
+
+### Added
+- `chart.requestSelectBar()`: arms every pane to pick a bar and resolves with the time (ms) of the
+  one clicked, or null on Escape. The pane dims what is behind the cursor and outlines the column a
+  click would take. Asking again cancels a pick still open, and clicking where there is no bar
+  leaves it waiting rather than answering with one that isnt there. Rides on two new events,
+  `chart:request-select-bar` and `chart:request-select-bar-resolved`.
+- `data:pane-resolution`: every pane announces the instrument, timeframe and visible range it is
+  showing - on mount, on any change to them, and whenever a pan or zoom settles. The data engine
+  sizes its fetches from it, so a pane on a finer timeframe is no longer served the focused pane's
+  bars.
+- `data:resolution-unavailable`, emitted when a staged reload comes back empty. See Fixed.
+
 ### Changed
 - A timeframe switch now happens when the data for it arrives and not before. It also
   keeps the bar you were centered on instead of snapping back to the playhead.
@@ -693,7 +711,8 @@ Not user-visible, but this is what the split out of the monorepo turned up:
 - 30 unused UI components were removed, taking `depth.css` from 147 KB to
   124 KB.
 
-[unreleased]: https://github.com/christtrade/depth/compare/v0.20.0...HEAD
+[unreleased]: https://github.com/christtrade/depth/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/christtrade/depth/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/christtrade/depth/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/christtrade/depth/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/christtrade/depth/compare/v0.17.0...v0.18.0
