@@ -1136,12 +1136,58 @@ export default function Depth({
     };
 
     useEffect(() => {
+        const writeClock = (tNs: bigint) => {
+            if (!currentTimeRef.current) return;
+            const tz = chartSettings.timezone ?? 'UTC';
+            if (
+                !timeFormatterRef.current ||
+                !dateFormatterRef.current ||
+                lastFormatterTzRef.current !== tz
+            ) {
+                dateFormatterRef.current = new Intl.DateTimeFormat('sv-SE', {
+                    timeZone: tz,
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                });
+                timeFormatterRef.current = new Intl.DateTimeFormat('sv-SE', {
+                    timeZone: tz,
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false,
+                });
+                lastFormatterTzRef.current = tz;
+            }
+            const millis = Number(tNs / 1_000_000n);
+            const micros = Math.floor(Number((tNs / 1_000n) % 1_000_000n) / 1000);
+            const msStr = micros < 10 ? '00' + micros : micros < 100 ? '0' + micros : '' + micros;
+            setText(
+                currentTimeRef.current,
+                timePrecision === 'ms'
+                    ? timeFormatterRef.current.format(millis) + '.' + msStr
+                    : timeFormatterRef.current.format(millis),
+            );
+        };
+        let wasLive = false;
+
         const loop = () => {
             const focusedIdx = focusedRef.current;
             const focusedChart = chartRefs.current[focusedIdx];
 
             if (focusedChart) {
                 const newHorizon = focusedChart.getHorizon?.() ?? 0n;
+                const pbState = pb.pbRef.current;
+                // live = following a realtime feed so the clock is the wall clock
+                // not data time
+                const live =
+                    _chart.isRealtime() &&
+                    pbState.status !== 'playing' &&
+                    newHorizon >= pbState.dataEnd;
+
+                if (live) writeClock(BigInt(Date.now()) * 1_000_000n);
+                else if (wasLive && newHorizon > 0n) writeClock(newHorizon);
+                wasLive = live;
 
                 if (newHorizon > 0n && newHorizon !== sharedHorizonRef.current) {
                     sharedHorizonRef.current = newHorizon;
@@ -1151,41 +1197,7 @@ export default function Depth({
                     // ref before onTick, so this branch doesn't double-emit), but
                     // nothing else tells the outside world the playhead moved.
                     eventBus.emit('playback:seek', { tNs: newHorizon });
-                    if (currentTimeRef.current && newHorizon > 0n) {
-                        const tz = chartSettings.timezone ?? 'UTC';
-                        if (
-                            !timeFormatterRef.current ||
-                            !dateFormatterRef.current ||
-                            lastFormatterTzRef.current !== tz
-                        ) {
-                            dateFormatterRef.current = new Intl.DateTimeFormat('sv-SE', {
-                                timeZone: tz,
-                                year: 'numeric',
-                                month: '2-digit',
-                                day: '2-digit',
-                            });
-                            timeFormatterRef.current = new Intl.DateTimeFormat('sv-SE', {
-                                timeZone: tz,
-                                hour: '2-digit',
-                                minute: '2-digit',
-                                second: '2-digit',
-                                hour12: false,
-                            });
-                            lastFormatterTzRef.current = tz;
-                        }
-                        const millis = Number(newHorizon / 1_000_000n);
-                        const micros = Math.floor(
-                            Number((newHorizon / 1_000n) % 1_000_000n) / 1000,
-                        );
-                        const msStr =
-                            micros < 10 ? '00' + micros : micros < 100 ? '0' + micros : '' + micros;
-                        setText(
-                            currentTimeRef.current,
-                            timePrecision === 'ms'
-                                ? timeFormatterRef.current.format(millis) + '.' + msStr
-                                : timeFormatterRef.current.format(millis),
-                        );
-                    }
+                    if (!live) writeClock(newHorizon);
 
                     if (panningChartRef.current === null) {
                         const ea = everActiveRef2.current;

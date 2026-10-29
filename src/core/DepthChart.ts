@@ -709,6 +709,11 @@ export class DepthChart {
         return this.dataEngine.getSnapshot();
     }
 
+    /** True while the adapter's realtime feed is subscribed. */
+    isRealtime(): boolean {
+        return this.dataEngine.isRealtime();
+    }
+
     /** The focused cell's paint loop, once a cell has mounted one. Every cell's: `getRenderEngines()`. */
     get renderEngine(): RenderEngine | null {
         return this._engines.focused;

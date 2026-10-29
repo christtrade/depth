@@ -386,6 +386,10 @@ export class DataEngine {
         return symbol && this._states.has(symbol) ? symbol : this.activeSymbol;
     }
 
+    isRealtime(): boolean {
+        return this.realtimeUnsub !== null;
+    }
+
     setAdapter(adapter: IDataAdapter): void {
         this.realtimeUnsub?.();
         this.realtimeUnsub = null;

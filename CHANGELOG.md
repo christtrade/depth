@@ -11,6 +11,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Added
 - The baseline chart type's base line value is now fixed to screen pixels, and is now draggable. Used
   to be fixed to the start of loaded data.
+- `chart.isRealtime()`: whether the adapter's realtime feed is subscribed.
 
 ## Fixed
 - Line and step line charts crashed when there was no open bar.
@@ -18,6 +19,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   line was stuck on the last closed bar too.
 - The price line was missing whenever the horizon sat past the last bars open, like a live
   chart right after loading or switching timeframe
+- The clock on a live chart only moved when a bar opened. It runs on the wall clock now while
+  following a realtime feed, and on the horizon otherwise.
 
 ## [0.21.0] - 2026-10-27
 
