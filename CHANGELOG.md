@@ -8,6 +8,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## Added
+- The baseline chart type's base line value is now fixed to screen pixels, and is now draggable. Used
+  to be fixed to the start of loaded data.
+
+## Fixed
+- Line and step line charts crashed when there was no open bar.
+
 ## [0.21.0] - 2026-10-27
 
 A timeframe switch loads its window at the new resolution before it swaps, so a chart is never
@@ -25,8 +32,6 @@ rather than drawn wrong.
   sizes its fetches from it, so a pane on a finer timeframe is no longer served the focused pane's
   bars.
 - `data:resolution-unavailable`, emitted when a staged reload comes back empty. See Fixed.
-- The baseline chart type's base line value is now fixed to screen pixels, and is now draggable. Used
-  to be fixed to the start of loaded data.
 
 ### Changed
 - A timeframe switch now happens when the data for it arrives and not before. It also

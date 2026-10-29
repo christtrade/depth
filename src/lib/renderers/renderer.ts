@@ -2287,8 +2287,11 @@ function drawTradeLine(
 
             if (x > w + 100) break;
         }
-        ctx.lineTo(tsToXFn(openBar.ts), priceToYFn(close[idx]));
-        ctx.lineTo(tsToXFn(openBar.ts), priceToYFn(openBar.close));
+        if(openBar){
+            ctx.lineTo(tsToXFn(openBar.ts), priceToYFn(close[idx]));
+            ctx.lineTo(tsToXFn(openBar.ts), priceToYFn(openBar.close));
+        }
+
         ctx.stroke();
     } else {
         if (priceHistory.length === 0) return;
