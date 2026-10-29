@@ -25,6 +25,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   symbol or resolution changes, so an adapter no longer guesses the timeframe from its last fetch.
   A plugin source's `onTick` builds bars of the subscription's symbol and size, not the last
   fetch's.
+- **Breaking:** removed `ohlcvBars` from `getData()` and the plugin data snapshot. Use `bars`, or
+  `bars.toArray()` for objects
 - A locked timeframe says why. One the adapter can't serve says it isn't supported, and why. One
   `features` leaves out says it's unavailable, or whatever `lockedReason` returns. Every lock used
   to say "Pro timeframe". The `timeframe:add-failed` messages match the tooltips now.

@@ -209,11 +209,6 @@ export interface PluginDataSnapshot {
      * read it, don't change it. `clone()` it for a copy of your own.
      */
     bars: BarStore;
-    /**
-     * `bars` as objects, built on first read and kept until the bars change.
-     * @deprecated ~176 bytes a bar and a full copy - use `bars`.
-     */
-    ohlcvBars: OhlcvBar[];
     /** Populated when dataLevel is tick or l3. */
     ticks: TickEvent[];
     barNs: bigint;

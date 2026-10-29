@@ -105,11 +105,6 @@ export interface ChartDataSnapshot {
      * don't change it. `clone()` it for your own copy.
      */
     readonly bars: BarStore;
-    /**
-     * `bars` as objects, built on first read and kept until the bars change.
-     * @deprecated ~176 bytes a bar and a full copy - use `bars`.
-     */
-    readonly ohlcvBars: OhlcvBar[];
     /** Populated for tick and l3 (derived from trades). */
     readonly ticks: TickEvent[];
     readonly barNs: bigint;
@@ -845,16 +840,6 @@ export class DataEngine {
         };
     }
 
-    // getData().ohlcvBars, built once per store version
-    private readonly _arrays = new WeakMap<BarStore, { version: number; bars: OhlcvBar[] }>();
-    private readonly _barsAsArray = (store: BarStore): OhlcvBar[] => {
-        const hit = this._arrays.get(store);
-        if (hit && hit.version === store.version) return hit.bars;
-        const bars = store.toArray();
-        this._arrays.set(store, { version: store.version, bars });
-        return bars;
-    };
-
     getSnapshot(): ChartDataSnapshot {
         const master = this._states.get(this.activeSymbol)?.master ?? null;
         if (!master) {
@@ -864,7 +849,6 @@ export class DataEngine {
                 footprintBars: [],
                 priceHistory: [],
                 bars: new BarStore(),
-                ohlcvBars: [],
                 ticks: [],
                 barNs: 1_000_000_000n,
                 dataStart: 0,
@@ -878,16 +862,12 @@ export class DataEngine {
         const ticks: TickEvent[] =
             dataLevel === 'l3' || dataLevel === 'tick' ? _deriveTicksFromTrades(trades) : [];
 
-        const asArray = this._barsAsArray;
         return {
             dataLevel,
             trades,
             footprintBars,
             priceHistory,
             bars,
-            get ohlcvBars() {
-                return asArray(bars);
-            },
             ticks,
             barNs: master.barNs,
             dataStart: master.dataStart,
