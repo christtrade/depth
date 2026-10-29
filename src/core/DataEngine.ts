@@ -1844,8 +1844,13 @@ export class DataEngine {
         if (from === null || to === null) {
             const anchor = isoToNs(this.horizonIso);
             const budgetNs = SWITCH_FALLBACK_BARS * fetchBarNs;
-            return { from: anchor - budgetNs - lookbackNs, to: anchor + budgetNs };
+            from = anchor - budgetNs - lookbackNs;
+            to = anchor + budgetNs;
         }
+        // keep the old right edge (keep this!). stopping at the view leaves a hole up to the live
+        // bar, and only playback pages forward to fill it
+        const edge = st.loadedTo === null ? null : st.loadedTo + st.fetchBarNs;
+        if (edge !== null && edge > to) to = edge;
         return { from, to };
     }
 

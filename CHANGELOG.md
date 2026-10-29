@@ -34,6 +34,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Fixed
 - Line and step line charts crashed when there was no open bar.
 - `SimulatedMarketAdapter` got its volatility scale wrong for bars under a minute.
+- `SimulatedMarketAdapter` gave every bar a minute's volume, so 1s bars came out 60x too heavy.
+- A live `SimulatedMarketAdapter` said `hasMore: false` on every fetch, so after a timeframe
+  switch the chart never paged in more history.
+- Switching to a timeframe fetched at a new resolution while panned back only loaded around the
+  view. On a live chart that left a hole up to the live bar since only playback pages forward.
+  The new window runs to where the old data ended.
 - An ohlcv feed with no supplemental bars didn't draw its forming bar until it closed. Its price
   line was stuck on the last closed bar too.
 - The price line was missing whenever the horizon sat past the last bars open, like a live

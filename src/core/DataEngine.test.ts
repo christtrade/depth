@@ -496,6 +496,26 @@ describe('changing timeframe', () => {
         );
     });
 
+    it('a switch while panned back still reaches the old right edge', async () => {
+        const { de, fetches, announce, switchTo, settle } = tfEngine({
+            timeframe: HOUR,
+            loadFrom: T2026 - 30 * 86_400_000,
+            loadTo: T2026,
+        });
+
+        await de.load('NQ');
+        announce(0, HOUR, T2026 - 100 * 3_600_000, T2026);
+        await settle();
+        const edge = nsOf(de.getSnapshot().bars.time.at(-1)!);
+
+        switchTo(MIN, T2026 - 20 * 86_400_000, T2026 - 20 * 86_400_000 + 100 * 60_000);
+        await settle();
+
+        const staged = at(fetches, MIN).all.at(-1)!;
+        assert.ok(staged.fromNs < nsOf(T2026 - 20 * 86_400_000), 'from the view');
+        assert.ok(staged.toNs > edge, 'to where the data ended, not the view');
+    });
+
     it('scaling up to a multiple needs no fetch at all', async () => {
         const { de, fetches, announce, settle } = tfEngine({
             timeframe: MIN,

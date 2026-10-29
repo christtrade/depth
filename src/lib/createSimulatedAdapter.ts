@@ -248,7 +248,8 @@ function openBar(
         high: p,
         low: p,
         price: p,
-        volume: 500 + rand() * 4500 + (newVar / longRunVar) * 2000,
+        // per minute so a 1s bar isnt as heavy as a 1m one
+        volume: (500 + rand() * 4500 + (newVar / longRunVar) * 2000) * ((252 * 390) / barsPerYear),
         frac: 0,
     };
 }
@@ -381,13 +382,16 @@ export class SimulatedMarketAdapter implements IDataAdapter {
     }
 
     private _fetchLive(request: FetchRequest): BarResponse {
-        const { closed, forming } = this._liveTo(Date.now());
+        const now = Date.now();
+        const { closed, forming } = this._liveTo(now);
         const { fromMs, toMs } = request.range;
         const bars: OhlcvBar[] = [];
         for (let i = firstAtOrAfter(closed, fromMs); i < closed.length && closed[i].time < toMs; i++)
             bars.push({ ...closed[i] });
         if (forming.time >= fromMs && forming.time < toMs) bars.push(toOhlcv(forming, this.cfg.tickSize));
-        return { events: [], ohlcvBars: bars, hasMore: false };
+        const first = closed.length ? closed[0].time : forming.time;
+        const hasMore = request.direction === 'forward' ? toMs < now : fromMs > first;
+        return { events: [], ohlcvBars: bars, hasMore };
     }
 
     async searchSymbols(): Promise<SymbolInfo[]> {

@@ -19,6 +19,23 @@ describe('SimulatedMarketAdapter realtime', () => {
         assert.equal(new SimulatedMarketAdapter({ seed: 7 }).subscribeRealtime, undefined);
     });
 
+    it('says there is more until a fetch reaches the end of the path that way', async () => {
+        const t0 = Date.UTC(2026, 9, 29, 12, 0, 30);
+        mock.timers.enable({ apis: ['Date'], now: t0 });
+        try {
+            const sim = new SimulatedMarketAdapter({ seed: 7, realtime: true, historyBars: 1000 });
+            const more = async (direction: string, fromMs: number, toMs: number) =>
+                (await sim.fetchBars({ ...range(fromMs, toMs), direction })).hasMore;
+
+            assert.equal(await more('initial', t0 - 100 * MIN, t0), true);
+            assert.equal(await more('backward', t0 - 2000 * MIN, t0 - 100 * MIN), false);
+            assert.equal(await more('forward', t0 - 100 * MIN, t0 - 50 * MIN), true);
+            assert.equal(await more('forward', t0 - 50 * MIN, t0 + MIN), false);
+        } finally {
+            mock.timers.reset();
+        }
+    });
+
     it('serves one path up to now and streams the forming bar', async () => {
         const t0 = Date.UTC(2026, 9, 29, 12, 0, 30);
         mock.timers.enable({ apis: ['setInterval', 'Date'], now: t0 });

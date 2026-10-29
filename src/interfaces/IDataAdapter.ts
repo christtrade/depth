@@ -371,6 +371,11 @@ export interface BarResponse {
     ticks?: TickEvent[];
     /** L2 depth snapshots - populate for dataLevel === 'l2' */
     l2Snapshots?: L2Snapshot[];
+    /**
+     * Whether there's data past this range in the request's direction: older for
+     * 'initial' and 'backward', newer for 'forward'. False stops paging that way
+     * for good, so only say it at the real end of your data.
+     */
     hasMore: boolean;
     coveredFrom?: bigint;
     coveredTo?: bigint;
