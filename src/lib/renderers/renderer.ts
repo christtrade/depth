@@ -4661,7 +4661,13 @@ function drawBaselineChart(
     const priceToYFn = transformer.makePriceToYFn(h);
 
     const pts: { x: number; price: number }[] = [];
-    let baselinePrice: number | null = chartSettings.baselineValue;
+    let baselineValue: number | null = chartSettings.baselineValue;
+    if (!baselineValue) baselineValue = h/2;
+
+    let baselinePrice = transformer.yToPrice(baselineValue, h);
+    if (baselinePrice == null) {
+        baselinePrice = transformer.yToPrice(h/2, h);
+    }
 
     if (side === 'price') {
         if (!ohlcvBars || !ohlcvBars.length || barNs === 0n) return;
@@ -4670,17 +4676,7 @@ function drawBaselineChart(
                 ? Number(((horizon / barNs) * barNs) / 1_000_000n)
                 : Number(bounds.tMax / 1_000_000n);
 
-        // Default baseline: the first real price of the whole series - a stable
-        // anchor that doesn't drift while panning.
         const { time, close } = ohlcvBars;
-        if (baselinePrice == null) {
-            for (let i = 0; i < close.length; i++) {
-                if (close[i] !== 0) {
-                    baselinePrice = close[i];
-                    break;
-                }
-            }
-        }
 
         const target = Number(bounds.tMin / 1_000_000n);
         for (let i = Math.max(0, ohlcvBars.upperBound(target) - 1); i < time.length; i++) {
@@ -4697,16 +4693,6 @@ function drawBaselineChart(
         if (!priceHistory.length) return;
         const cutTs = horizon > 0n ? horizon : bounds.tMax;
         const isBid = side === 'bid';
-
-        if (baselinePrice == null) {
-            for (let i = 0; i < priceHistory.length; i++) {
-                const v = isBid ? priceHistory[i].bestBid : priceHistory[i].bestAsk;
-                if (v !== 0) {
-                    baselinePrice = v;
-                    break;
-                }
-            }
-        }
 
         for (
             let i = Math.max(0, floorIndex(priceHistory, bounds.tMin));

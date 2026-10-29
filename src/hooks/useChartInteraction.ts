@@ -899,6 +899,9 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
         let hideTouchPointer = false;
         let touchCrosshairMoving = false;
 
+        // moving the baseline line thing
+        let draggingBaseline = false;
+
         const handleMouseDown = (e: MouseEvent) => {
             stopGlide();
             if (e.button === 0) {
@@ -939,11 +942,32 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                 if (captured) return;
             }
 
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            const view = viewRef.current;
+            const dpr = getEffectiveDpr();
+
+            const cssW = canvas.width / dpr;
+            const cssH = canvas.height / dpr;
+
+            const chartW = cssW - priceScaleWidthRef.current;
+            const chartH = cssH - (p.hideTimeScale ? 0 : X_AXIS_HEIGHT);
+            const inChart = x < chartW && y < cssH;
+
+            if (chartSettingsRef.current.chartType === 'baseline'){
+                const outsideCanvas = x < 0 || y < 0 || x > cssW || y > cssH;
+                const over = !outsideCanvas && inChart;
+
+                const baselineValue = chartSettingsRef.current.baselineValue ?? chartH/2;
+
+                if (Math.abs(y - baselineValue) < 5 && over && e.button === 0){
+                    draggingBaseline = true;
+                    return;
+                }
+            }
+
             if (e.button === 1) {
-                const rect = canvas.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const y = e.clientY - rect.top;
-                const view = viewRef.current;
                 if (!view) return;
                 // Named apart from the `dpr` declared further down this handler - that
                 // one is in the function scope and would be in its TDZ here.
@@ -970,19 +994,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             }
 
             if (e.button !== 0) return;
-
-            const rect = canvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            const view = viewRef.current;
             if (!view) return;
-            const dpr = getEffectiveDpr();
-
-            const cssW = canvas.width / dpr;
-            const cssH = canvas.height / dpr;
-
-            const chartW = cssW - priceScaleWidthRef.current;
-            const inChart = x < chartW && y < cssH - (p.hideTimeScale ? 0 : X_AXIS_HEIGHT);
 
             const layouts = getLayouts();
             const mainRect = layouts['main'];
@@ -1335,6 +1347,8 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
 
         const handleMouseUp = (e: MouseEvent) => {
             pressAt = null;
+            draggingBaseline = false;
+
             // Trade line drag end
             {
                 const tl = tradeLineInteractionRef.current;
@@ -1679,7 +1693,8 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
 
             const outsideCanvas = x < 0 || y < 0 || x > cssW || y > cssH;
             const chartW = cssW - priceScaleWidthRef.current;
-            const inChart = x < chartW && y < cssH - (p.hideTimeScale ? 0 : X_AXIS_HEIGHT);
+            const chartH = cssH - (p.hideTimeScale ? 0 : X_AXIS_HEIGHT);
+            const inChart = x < chartW && y < chartH;
 
 
             // picking a bar: track the pointer and leave the rest of the chart
@@ -1749,6 +1764,29 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             if (!hideTouchPointer) {
                 eventBus.emit('crosshair:move', { x, y });
                 emitStatusCompute(x);
+            }
+
+            if (chartSettingsRef.current.chartType === 'baseline'){
+                const over = !outsideCanvas && inChart;
+                const baselineValue = chartSettingsRef.current.baselineValue ?? chartH/2;
+
+                if (draggingBaseline){
+                    chartSettingsRef.current.baselineValue = y;
+                    canvas.style.cursor = 'ns-resize';
+                    
+                    pushDrawParams();
+                    renderEngineRef.current?.markDirty('base');
+                    renderEngineRef.current?.markDirty('ui');
+
+                    return;
+                } else if (Math.abs(y - baselineValue) < 5 && over) {
+                    canvas.style.cursor = 'ns-resize';
+
+                    pushDrawParams();
+                    renderEngineRef.current?.markDirty('ui');
+               
+                    return;
+                }
             }
 
             if (draggingAnchorRef.current) {
