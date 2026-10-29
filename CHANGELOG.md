@@ -19,6 +19,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   leaves out, for when your plan isn't called Pro.
 
 ## Changed
+- **Breaking:** `subscribeRealtime(request, onBar)`, on adapters and plugin data sources. `request`
+  is a `RealtimeRequest`: the symbol, the resolution to stream at, where the chart's data ends
+  (`since`, to backfill from) and `supplementalBarNs`. The engine subscribes again whenever the
+  symbol or resolution changes, so an adapter no longer guesses the timeframe from its last fetch.
+  A plugin source's `onTick` builds bars of the subscription's symbol and size, not the last
+  fetch's.
 - A locked timeframe says why. One the adapter can't serve says it isn't supported, and why. One
   `features` leaves out says it's unavailable, or whatever `lockedReason` returns. Every lock used
   to say "Pro timeframe". The `timeframe:add-failed` messages match the tooltips now.
@@ -34,6 +40,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   following a realtime feed, and on the horizon otherwise.
 - A live chart didnt slide right when a new bar opened, like playback does. The first slide after
   loading mid-bar also came up short of a full bar.
+- Focusing a pane on an already-loaded symbol left the realtime feed running for the old one, and
+  wrote its bars into the new symbol.
 
 ## [0.21.0] - 2026-10-27
 

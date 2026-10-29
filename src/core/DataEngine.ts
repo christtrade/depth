@@ -258,6 +258,7 @@ interface SymbolState {
 export class DataEngine {
     private adapter: IDataAdapter | null = null;
     private realtimeUnsub: (() => void) | null = null;
+    private realtimeKey = '';
     private executionEngine: ExecutionEngine | null = null;
     private readonly config: DataEngineConfig;
 
@@ -393,6 +394,7 @@ export class DataEngine {
     setAdapter(adapter: IDataAdapter): void {
         this.realtimeUnsub?.();
         this.realtimeUnsub = null;
+        this.realtimeKey = '';
         this.adapter?.destroy?.();
         this.adapter = adapter;
         // swapping the adapter invalidates every symbol's state
@@ -419,6 +421,7 @@ export class DataEngine {
         if (loaded?.master) {
             this.activeSymbol = symbol;
             this._syncShared();
+            this._syncRealtime();
             void this._emitLoad(loaded, /* rehydrate */ true).catch((err) =>
                 console.error('[DataEngine] re-emit on symbol switch failed', err),
             );
@@ -522,15 +525,35 @@ export class DataEngine {
         const fromNs = isoToNs(this.initialLoad.start) - lookbackNs;
         const toNs = isoToNs(this.initialLoad.end);
         await this._loadWindow(st, fromNs, toNs, isoToNs(this.horizonIso));
+    }
 
-        // 5. subscribe to realtime. this tracks the focused symbol, so tear the
-        // previous subscription down or loading several panes leaks/double-feeds
-        if (adapter.subscribeRealtime) {
-            this.realtimeUnsub?.();
-            this.realtimeUnsub = adapter.subscribeRealtime((bar) => {
-                this._handleRealtimeBar(bar);
-            });
-        }
+    // one feed for the focused symbol at the res its data is held at
+    // every master rebuild and focus change lands here. only a new key resubscribes
+    private _syncRealtime(): void {
+        const st = this._states.get(this.activeSymbol);
+        const info = st?.master ? st.symbolInfo : null;
+        const adapter = info ? this._adapterFor(info.symbol) : null;
+        const key = info && adapter?.subscribeRealtime ? `${info.symbol}|${st!.fetchBarNs}` : '';
+        if (key === this.realtimeKey) return;
+        this.realtimeUnsub?.();
+        this.realtimeUnsub = null;
+        this.realtimeKey = key;
+        if (!key) return;
+
+        const fetchBarNs = st!.fetchBarNs;
+        const timeframe = this._fetchTimeframe(st!, fetchBarNs);
+        this.realtimeUnsub = adapter!.subscribeRealtime!(
+            {
+                symbolInfo: info!,
+                timeframe,
+                since: st!.loadedTo ?? 0n,
+                supplementalBarNs: this._supplementalFor(st!, fetchBarNs),
+            },
+            (bar) => {
+                // in flight from before a switch
+                if (st!.fetchBarNs === fetchBarNs) this._handleRealtimeBar(st!, bar);
+            },
+        );
     }
 
     // fetches a fresh window and reinitializes the chart around horizonNs, then
@@ -623,6 +646,7 @@ export class DataEngine {
         st.master = this._buildMaster(st, processed, fetchBarNs);
 
         this._syncShared();
+        this._syncRealtime();
         await this._emitLoad(st);
 
         // a pane can announce a different timeframe while this fetch is in
@@ -1417,10 +1441,8 @@ export class DataEngine {
 
     // Realtime
 
-    private _handleRealtimeBar(bar: BarResponse): void {
+    private _handleRealtimeBar(st: SymbolState, bar: BarResponse): void {
         if (this.destroyed) return;
-        // realtime feeds the focused symbol's stream
-        const st = this._st(this.activeSymbol);
         if (!st.master) return;
         const processed = this._process(bar, st);
         if (!processed || isEmptyChunk(processed)) return;
@@ -1908,6 +1930,7 @@ export class DataEngine {
         st.master = this._buildMaster(st, processed, fetchBarNs);
 
         this._syncShared();
+        this._syncRealtime();
         await this._emitLoad(st, /* rehydrate */ false, /* resolutionSwap */ true);
     }
 

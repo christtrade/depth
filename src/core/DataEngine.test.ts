@@ -100,6 +100,7 @@ function tfEngine(opts: {
     supplemental?: bigint;
 }) {
     const fetches: Fetch[] = [];
+    const subs: { req: any; onBar: (bar: any) => void; open: boolean }[] = [];
     const bus = new TypedEventBus();
     const tf = tfOf(opts.timeframe);
     const state = new ChartState({ symbol: 'NQ', timeframe: tf } as unknown as ChartStateShape);
@@ -137,6 +138,11 @@ function tfEngine(opts: {
                 bars.push({ time: t, open: 1, high: 2, low: 0.5, close: 1.5, volume: 1 });
             }
             return { events: [], ohlcvBars: bars, hasMore: true };
+        },
+        subscribeRealtime: (req: any, onBar: any) => {
+            const sub = { req, onBar, open: true };
+            subs.push(sub);
+            return () => (sub.open = false);
         },
     } as unknown as IDataAdapter;
 
@@ -182,7 +188,7 @@ function tfEngine(opts: {
         return gaps;
     };
 
-    return { bus, de, state, fetches, announce, switchTo, settle, storePeriods };
+    return { bus, de, state, fetches, subs, announce, switchTo, settle, storePeriods };
 }
 
 /** Fetches issued at `barNs`, and the widest span any one of them asked for. */
@@ -508,6 +514,41 @@ describe('changing timeframe', () => {
         await settle();
 
         assert.equal(fetches.length, before, 'no refetch on the way up');
+    });
+});
+
+describe('realtime', () => {
+    it('streams at the resolution the data is held at, and follows a switch', async () => {
+        const { de, subs, announce, switchTo, settle } = tfEngine({
+            timeframe: HOUR,
+            loadFrom: T2026 - 30 * 86_400_000,
+            loadTo: T2026,
+        });
+
+        await de.load('NQ');
+        announce(0, HOUR, T2026 - 100 * 3_600_000, T2026);
+        await settle();
+        assert.equal(subs.length, 1);
+        assert.equal(subs[0].req.symbolInfo.symbol, 'NQ');
+        assert.equal(subs[0].req.timeframe.barNs, HOUR);
+        const lastBar = de.getSnapshot().bars.time.at(-1)!;
+        assert.equal(subs[0].req.since, nsOf(lastBar), 'since is the newest bar');
+
+        // 1h -> 5h divides, nothing to refetch so nothing 2 resubscribe
+        announce(0, 5n * HOUR, T2026 - 100 * 18_000_000, T2026);
+        await settle();
+        assert.equal(subs.length, 1);
+
+        switchTo(MIN, T2026 - 100 * 60_000, T2026);
+        await settle();
+        assert.equal(subs.length, 2);
+        assert.equal(subs[0].open, false, 'the hourly feed was dropped');
+        assert.equal(subs[1].req.timeframe.barNs, MIN);
+
+        // an hourly bar still in flight from the old feed
+        const before = de.getSnapshot().bars.length;
+        subs[0].onBar({ events: [], ohlcvBars: [{ time: T2026, open: 9, high: 9, low: 9, close: 9, volume: 1 }], hasMore: false });
+        assert.equal(de.getSnapshot().bars.length, before, 'stale bar ignored');
     });
 });
 

@@ -18,6 +18,7 @@ import type {
     BarResponse,
     SymbolInfo,
     OhlcvBar,
+    RealtimeRequest,
 } from '../interfaces/IDataAdapter';
 
 // -
@@ -271,6 +272,17 @@ function closeBar(state: SimState, b: FormingBar) {
     state.ouMean = 0.995 * state.ouMean + 0.005 * b.price;
 }
 
+function firstAtOrAfter(bars: OhlcvBar[], ms: number): number {
+    let lo = 0,
+        hi = bars.length;
+    while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        if (bars[mid].time < ms) lo = mid + 1;
+        else hi = mid;
+    }
+    return lo;
+}
+
 function toOhlcv(b: FormingBar, tickSize: number): OhlcvBar {
     const snap = (x: number) => Math.round(x / tickSize) * tickSize;
     return {
@@ -312,17 +324,16 @@ export class SimulatedMarketAdapter implements IDataAdapter {
             historyBars: cfg.historyBars ?? 10_000,
         };
         // only subscribe when live
-        if (this.cfg.realtime) this.subscribeRealtime = (onBar) => this._subscribe(onBar);
+        if (this.cfg.realtime) this.subscribeRealtime = (req, onBar) => this._subscribe(req, onBar);
     }
 
-    subscribeRealtime?: (onBar: (bar: BarResponse) => void) => () => void;
+    subscribeRealtime?: (request: RealtimeRequest, onBar: (bar: BarResponse) => void) => () => void;
 
     private live: {
         rand: () => number;
         state: SimState;
         closed: OhlcvBar[];
         forming: FormingBar;
-        servedTo: number;
     } | null = null;
 
     private get barsPerYear(): number {
@@ -337,7 +348,7 @@ export class SimulatedMarketAdapter implements IDataAdapter {
             const state = initState(regimes.MEAN_REVERTING, startPrice, rand);
             const origin = Math.floor(nowMs / durMs) * durMs - historyBars * durMs;
             const forming = openBar(state, regimes, this.barsPerYear, rand, origin);
-            this.live = { rand, state, closed: [], forming, servedTo: 0 };
+            this.live = { rand, state, closed: [], forming };
         }
         const live = this.live;
         while (live.forming.time + durMs <= nowMs) {
@@ -356,11 +367,11 @@ export class SimulatedMarketAdapter implements IDataAdapter {
         return live;
     }
 
-    private _subscribe(onBar: (bar: BarResponse) => void): () => void {
-        let sent = this.live?.servedTo ?? -1;
+    private _subscribe(request: RealtimeRequest, onBar: (bar: BarResponse) => void): () => void {
+        let sent = -1;
         const id = setInterval(() => {
             const live = this._liveTo(Date.now());
-            if (sent < 0) sent = live.closed.length;
+            if (sent < 0) sent = firstAtOrAfter(live.closed, Number(request.since / 1_000_000n));
             const bars = live.closed.slice(sent);
             bars.push(toOhlcv(live.forming, this.cfg.tickSize));
             sent = live.closed.length;
@@ -370,23 +381,12 @@ export class SimulatedMarketAdapter implements IDataAdapter {
     }
 
     private _fetchLive(request: FetchRequest): BarResponse {
-        const nowMs = Date.now();
-        const live = this._liveTo(nowMs);
+        const { closed, forming } = this._liveTo(Date.now());
         const { fromMs, toMs } = request.range;
-        const { closed, forming } = live;
-        let lo = 0,
-            hi = closed.length;
-        while (lo < hi) {
-            const mid = (lo + hi) >>> 1;
-            if (closed[mid].time < fromMs) lo = mid + 1;
-            else hi = mid;
-        }
         const bars: OhlcvBar[] = [];
-        for (let i = lo; i < closed.length && closed[i].time < toMs; i++) bars.push({ ...closed[i] });
-        if (forming.time >= fromMs && forming.time < toMs) {
-            bars.push(toOhlcv(forming, this.cfg.tickSize));
-            live.servedTo = closed.length;
-        }
+        for (let i = firstAtOrAfter(closed, fromMs); i < closed.length && closed[i].time < toMs; i++)
+            bars.push({ ...closed[i] });
+        if (forming.time >= fromMs && forming.time < toMs) bars.push(toOhlcv(forming, this.cfg.tickSize));
         return { events: [], ohlcvBars: bars, hasMore: false };
     }
 

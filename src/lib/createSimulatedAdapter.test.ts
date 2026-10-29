@@ -12,6 +12,7 @@ const range = (fromMs: number, toMs: number) =>
             toNs: BigInt(toMs) * 1_000_000n,
         },
     }) as any;
+const since = (ms: number) => ({ since: BigInt(ms) * 1_000_000n }) as any;
 
 describe('SimulatedMarketAdapter realtime', () => {
     it('has no feed unless asked for one', () => {
@@ -41,7 +42,7 @@ describe('SimulatedMarketAdapter realtime', () => {
             for (const x of b.slice(0, -1)) assert.deepEqual(aByTime.get(x.time), x);
 
             const got: any[][] = [];
-            const unsub = sim.subscribeRealtime!((r) => got.push(r.ohlcvBars!));
+            const unsub = sim.subscribeRealtime!(since(last.time), (r) => got.push(r.ohlcvBars!));
             mock.timers.tick(1000);
             assert.equal(got.length, 4);
             assert.equal(got[0][0].time, last.time);
@@ -59,6 +60,28 @@ describe('SimulatedMarketAdapter realtime', () => {
             const n = got.length;
             mock.timers.tick(5000);
             assert.equal(got.length, n);
+        } finally {
+            mock.timers.reset();
+        }
+    });
+
+    it('backfills what closed between the fetch and the subscribe', async () => {
+        const t0 = Date.UTC(2026, 9, 29, 12, 0, 30);
+        mock.timers.enable({ apis: ['setInterval', 'Date'], now: t0 });
+        try {
+            const sim = new SimulatedMarketAdapter({ seed: 7, realtime: true });
+            const a = (await sim.fetchBars(range(t0 - 10 * MIN, t0))).ohlcvBars!;
+            const last = a[a.length - 1];
+
+            mock.timers.setTime(t0 + 3 * MIN);
+            const got: any[][] = [];
+            const unsub = sim.subscribeRealtime!(since(last.time), (r) => got.push(r.ohlcvBars!));
+            mock.timers.tick(250);
+            unsub();
+            assert.deepEqual(
+                got[0].map((b) => b.time),
+                [0, 1, 2, 3].map((i) => last.time + i * MIN),
+            );
         } finally {
             mock.timers.reset();
         }

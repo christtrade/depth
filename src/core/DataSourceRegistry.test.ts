@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
 
 import { DataSourceRegistry, type PluginDataSource } from './DataSourceRegistry';
-import { makeTimeRange, type FetchRequest, type SymbolInfo } from '../interfaces/IDataAdapter';
+import {
+    makeTimeRange,
+    type FetchRequest,
+    type RealtimeRequest,
+    type SymbolInfo,
+} from '../interfaces/IDataAdapter';
 
 function info(symbol: string): SymbolInfo {
     return {
@@ -27,6 +32,14 @@ function request(symbol: string, direction: FetchRequest['direction'] = 'initial
         range: makeTimeRange(0n, 60_000_000_000n),
         timeframe: { label: '1m', barNs: 60_000_000_000n } as never,
         direction,
+    };
+}
+
+function live(symbol: string, barNs = 60_000_000_000n): RealtimeRequest {
+    return {
+        symbolInfo: info(symbol),
+        timeframe: { label: '', barNs } as never,
+        since: 0n,
     };
 }
 
@@ -228,25 +241,21 @@ describe('the tick bridge', () => {
             }),
         );
 
-        const adapter = registry.adapterFor('X:ONE')!;
-        // the symbol and bar size come from the last fetch, so onTick knows what
-        // it is building bars of
-        await adapter.fetchBars(request('X:ONE'));
-        adapter.subscribeRealtime!((bar) => pushed.push(bar.ohlcvBars![0].close));
+        registry
+            .adapterFor('X:ONE')!
+            .subscribeRealtime!(live('X:ONE'), (bar) => pushed.push(bar.ohlcvBars![0].close));
 
         assert.equal(registry.handleTick(trade), true);
         assert.deepEqual(pushed, [10]);
     });
 
-    it('goes quiet once the subscription is torn down', async () => {
+    it('goes quiet once the subscription is torn down', () => {
         let pushes = 0;
         registry.register(
             source({ onTick: () => ({ events: [], ohlcvBars: [], hasMore: true }) }),
         );
 
-        const adapter = registry.adapterFor('X:ONE')!;
-        await adapter.fetchBars(request('X:ONE'));
-        const unsub = adapter.subscribeRealtime!(() => pushes++);
+        const unsub = registry.adapterFor('X:ONE')!.subscribeRealtime!(live('X:ONE'), () => pushes++);
         registry.handleTick(trade);
         unsub();
         registry.handleTick(trade);
@@ -254,12 +263,21 @@ describe('the tick bridge', () => {
         assert.equal(pushes, 1);
     });
 
-    it('ignores a source that never fetched anything', () => {
-        let called = false;
-        registry.register(source({ onTick: () => ((called = true), null) }));
-        registry.adapterFor('X:ONE')!.subscribeRealtime!(() => {});
+    it('builds bars of the symbol and size the subscription asked for', () => {
+        let asked: { symbol: string; barNs: bigint } | null = null;
+        registry.register(source({ onTick: ({ symbol, barNs }) => ((asked = { symbol, barNs }), null) }));
+        registry.adapterFor('X:ONE')!.subscribeRealtime!(live('X:ONE', 5_000_000_000n), () => {});
 
         assert.equal(registry.handleTick(trade), false);
-        assert.equal(called, false);
+        assert.deepEqual(asked, { symbol: 'X:ONE', barNs: 5_000_000_000n });
+    });
+
+    it('hands the request through to a source with its own feed', () => {
+        let got: RealtimeRequest | null = null;
+        registry.register(source({ subscribeRealtime: (req) => ((got = req), () => {}) }));
+        const req = live('X:ONE');
+        registry.adapterFor('X:ONE')!.subscribeRealtime!(req, () => {});
+
+        assert.equal(got, req);
     });
 });

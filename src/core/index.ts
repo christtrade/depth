@@ -346,6 +346,7 @@ export type {
     DataAdapterErrorCode,
     FetchRequest,
     PreProcessedPayload,
+    RealtimeRequest,
     SupplementalBarSet,
     SymbolIconSpec,
     TimeRange,

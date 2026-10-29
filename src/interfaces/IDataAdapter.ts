@@ -329,6 +329,27 @@ export interface FetchRequest {
     supplementalRange?: TimeRange;
 }
 
+export interface RealtimeRequest {
+    /** The instrument to stream. */
+    symbolInfo: SymbolInfo;
+
+    /**
+     * The resolution the chart holds this symbol's data at - stream bars of
+     * this size. Can be coarser than what's on screen, since the chart builds
+     * timeframes out of finer bars. A change means a new subscription.
+     */
+    timeframe: Timeframe;
+
+    /**
+     * Where the chart's data ends (ns) - for bars, the newest one's open. Send
+     * from there on, so anything that closed since the last fetch isn't lost.
+     */
+    since: bigint;
+
+    /** As on {@link FetchRequest}: also send bars at this finer resolution. */
+    supplementalBarNs?: bigint;
+}
+
 export interface SupplementalBarSet {
     /** barNs of the finer-resolution data */
     resolution: bigint;
@@ -459,9 +480,31 @@ export interface IDataAdapter {
      * the engine expects is decided by `getCapabilities().symbolSearch`.
      */
     searchSymbols(request: SymbolSearchRequest): Promise<SymbolSearchResponse | SymbolInfo[]>;
+    /**
+     * Provide the chart with market data. The engine will call this function
+     * with the needed range, along with relevant information to help get the
+     * right set of data. Building your own caching system is recommended,
+     * as this function might get called a lot.
+    */
     fetchBars(request: FetchRequest): Promise<BarResponse>;
+    /**
+     * The same as `fetchBars()` - if this function is defined, it'll get
+     * called at the same time as fetchBars, but the returned data here will
+     * be dropped when fetchBars returns data. An example use case is
+     * when providing the chart with heavy data such as L3/MBO events, to
+     * quickly output bars on the chart for a responsive experience, then
+     * replace those bars with aggregated ones using the MBO events when they arrive.
+    */
     fetchPreview?(request: FetchRequest): Promise<BarPreviewResponse>;
-    subscribeRealtime?(onBar: (bar: BarResponse) => void): () => void;
+    /**
+     * Stream updates to the chart through `onBar` and return an unsubscribe.
+     * The engine subscribes again when the symbol or the resolution in `request`
+     * changes, making sure to unsubscribe the old one first.
+     */
+    subscribeRealtime?(
+        request: RealtimeRequest,
+        onBar: (bar: BarResponse) => void,
+    ): () => void;
     connect?(): Promise<void>;
     destroy?(): void;
     /**
