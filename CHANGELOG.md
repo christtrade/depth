@@ -16,6 +16,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Line and step line charts crashed when there was no open bar.
 - An ohlcv feed with no supplemental bars didn't draw its forming bar until it closed. Its price
   line was stuck on the last closed bar too.
+- The price line was missing whenever the horizon sat past the last bars open, like a live
+  chart right after loading or switching timeframe
 
 ## [0.21.0] - 2026-10-27
 

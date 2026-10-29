@@ -3038,10 +3038,10 @@ function drawPriceLabel(
         const tMaxMs = Number(bounds.tMax / 1_000_000n) - Number(barNs / 1_000_000n / 2n);
         const horizonMs = Number(horizon / 1_000_000n);
         const idx = bars.lowerBound(tMaxMs);
-        const hIdx = bars.lowerBound(horizonMs);
+        const hIdx = bars.upperBound(horizonMs) - 1;
 
         price = bars.at(Math.min(idx, bars.length - 1));
-        currPrice = bars.at(hIdx);
+        currPrice = hIdx >= 0 ? bars.at(hIdx) : undefined;
 
         if (currPrice?.bid && currPrice?.ask) {
             hasBidAsk = true;
