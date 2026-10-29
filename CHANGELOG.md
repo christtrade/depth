@@ -12,9 +12,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The baseline chart type's base line value is now fixed to screen pixels, and is now draggable. Used
   to be fixed to the start of loaded data.
 - `chart.isRealtime()`: whether the adapter's realtime feed is subscribed.
+- `SimulatedMarketAdapter` takes `realtime: true` to run as a live feed: one path from
+  `historyBars` back up to now, the forming bar streamed every `realtimeUpdateMs`. A seed gives a
+  different series than before since volume is drawn when a bar opens now
 
 ## Fixed
 - Line and step line charts crashed when there was no open bar.
+- `SimulatedMarketAdapter` got its volatility scale wrong for bars under a minute.
 - An ohlcv feed with no supplemental bars didn't draw its forming bar until it closed. Its price
   line was stuck on the last closed bar too.
 - The price line was missing whenever the horizon sat past the last bars open, like a live

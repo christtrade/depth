@@ -10,6 +10,7 @@
 // Usage:
 //   const adapter = createSimulatedAdapter();                    // defaults
 //   const adapter = createSimulatedAdapter({ seed: 42, startPrice: 50000 });
+//   const adapter = createSimulatedAdapter({ realtime: true });  // live feed up to now
 
 import type {
     IDataAdapter,
@@ -35,6 +36,17 @@ export interface SimulatedAdapterConfig {
     tickSize?: number;
     /** Override regime parameters if you want to tune the sim. */
     regimes?: Partial<Record<Regime, Partial<RegimeParams>>>;
+    /**
+     * Run as a live feed: one price path from `historyBars` back up to now, with the
+     * forming bar streamed through `subscribeRealtime`. Nothing past now is served,
+     * and every fetch reads the same path. Bars come at `barDurationNs` only - the
+     * chart aggregates coarser timeframes. Default false.
+     */
+    realtime?: boolean;
+    /** Realtime only: ms between updates. Default 250. */
+    realtimeUpdateMs?: number;
+    /** Realtime only: bars of history before the first fetch's now. Default 10_000. */
+    historyBars?: number;
 }
 
 // -
@@ -163,14 +175,46 @@ function regimeDuration(params: RegimeParams, rand: () => number): number {
     return Math.max(1, Math.round(-params.avgDuration * Math.log(Math.max(rand(), 1e-10))));
 }
 
-function simulateBar(
+// A bar mid-simulation. `frac` is how much of it has run, so a live bar can stop at "now"
+interface FormingBar {
+    time: number;
+    params: RegimeParams;
+    dt: number;
+    garchVar: number;
+    /** Per-bar log drift, applied pro rata to each step. */
+    drift: number;
+    open: number;
+    high: number;
+    low: number;
+    price: number;
+    /** The whole bar's volume - a forming bar shows its share. */
+    volume: number;
+    frac: number;
+}
+
+function initState(params: RegimeParams, startPrice: number, rand: () => number): SimState {
+    return {
+        price: startPrice,
+        garchVar: params.baseVol ** 2,
+        regime: 'MEAN_REVERTING',
+        regimeBarsLeft: regimeDuration(params, rand),
+        ouMean: startPrice,
+    };
+}
+
+function openBar(
     state: SimState,
-    params: RegimeParams,
+    regimes: Record<Regime, RegimeParams>,
     barsPerYear: number,
-    intrabbarTicks: number,
-    tickSize: number,
     rand: () => number,
-): OhlcvBar & { _closePrice: number; _time: string } {
+    time: number,
+): FormingBar {
+    state.regimeBarsLeft--;
+    if (state.regimeBarsLeft <= 0) {
+        state.regime = pickNextRegime(state.regime, rand);
+        state.regimeBarsLeft = regimeDuration(regimes[state.regime], rand);
+    }
+    const params = regimes[state.regime];
     const dt = 1 / barsPerYear;
     const sqrtDt = Math.sqrt(dt);
 
@@ -187,48 +231,55 @@ function simulateBar(
     );
     state.garchVar = newVar;
 
-
-    // Simulate intra-bar price path (GBM + optional OU) to get realistic H/L
-    let p = state.price;
-    let high = p;
-    let low = p;
-
-    const tickDt = dt / intrabbarTicks;
-
-    // OU: drift term pulls toward ouMean
-    const ouDriftPerTick = params.ouSpeed * (Math.log(state.ouMean) - Math.log(p)) * tickDt;
-    const gbmDriftPerTick = (params.drift - 0.5 * newVar) * tickDt;
-
-    for (let t = 0; t < intrabbarTicks; t++) {
-        const shock = studentT(rand, params.tDof) * Math.sqrt(newVar * tickDt);
-        const logReturn = gbmDriftPerTick + ouDriftPerTick + shock;
-        p = p * Math.exp(logReturn);
-        if (p > high) high = p;
-        if (p < low) low = p;
-    }
-
-    const close = p;
-    const open = state.price;
-
-    // Update OU mean slowly (exponential smoothing)
-    state.ouMean = 0.995 * state.ouMean + 0.005 * close;
-
-    // Round to tick size
-    const snap = (x: number) => Math.round(x / tickSize) * tickSize;
-
-    const volume = Math.round(
-        500 + rand() * 4500 + (newVar / longRunVar) * 2000, // vol spikes on high GARCH vol
-    );
+    const p = state.price;
+    // gbm drift + the ou pull toward oumean
+    const drift =
+        (params.drift - 0.5 * newVar) * dt +
+        params.ouSpeed * (Math.log(state.ouMean) - Math.log(p)) * dt;
 
     return {
-        time: 0, // filled by caller
-        open: snap(open),
-        high: snap(Math.max(open, high, close)), // H >= O,C always
-        low: snap(Math.min(open, low, close)), // L <= O,C always
-        close: snap(close),
-        volume,
-        _closePrice: close,
-        _time: '',
+        time,
+        params,
+        dt,
+        garchVar: newVar,
+        drift,
+        open: p,
+        high: p,
+        low: p,
+        price: p,
+        volume: 500 + rand() * 4500 + (newVar / longRunVar) * 2000,
+        frac: 0,
+    };
+}
+
+// steps of at most 1/intrabarticks of a bar
+function advanceBar(b: FormingBar, toFrac: number, intrabarTicks: number, rand: () => number) {
+    if (toFrac <= b.frac) return;
+    const steps = Math.max(1, Math.ceil((toFrac - b.frac) * intrabarTicks - 1e-9));
+    const f = (toFrac - b.frac) / steps;
+    const sd = Math.sqrt(b.garchVar * b.dt * f);
+    for (let t = 0; t < steps; t++) {
+        b.price *= Math.exp(b.drift * f + studentT(rand, b.params.tDof) * sd);
+        if (b.price > b.high) b.high = b.price;
+        if (b.price < b.low) b.low = b.price;
+    }
+    b.frac = toFrac;
+}
+
+function closeBar(state: SimState, b: FormingBar) {
+    state.price = b.price;
+    state.ouMean = 0.995 * state.ouMean + 0.005 * b.price;
+}
+
+function toOhlcv(b: FormingBar, tickSize: number): OhlcvBar {
+    const snap = (x: number) => Math.round(x / tickSize) * tickSize;
+    return {
+        time: b.time,
+        open: snap(b.open),
+        high: snap(b.high),
+        low: snap(b.low),
+        close: snap(b.price),
+        volume: Math.round(b.volume * b.frac),
     };
 }
 
@@ -256,7 +307,87 @@ export class SimulatedMarketAdapter implements IDataAdapter {
             intrabbarTicks: cfg.intrabbarTicks ?? 20,
             tickSize: cfg.tickSize ?? 0.25,
             regimes: merged,
+            realtime: cfg.realtime ?? false,
+            realtimeUpdateMs: cfg.realtimeUpdateMs ?? 250,
+            historyBars: cfg.historyBars ?? 10_000,
         };
+        // only subscribe when live
+        if (this.cfg.realtime) this.subscribeRealtime = (onBar) => this._subscribe(onBar);
+    }
+
+    subscribeRealtime?: (onBar: (bar: BarResponse) => void) => () => void;
+
+    private live: {
+        rand: () => number;
+        state: SimState;
+        closed: OhlcvBar[];
+        forming: FormingBar;
+        servedTo: number;
+    } | null = null;
+
+    private get barsPerYear(): number {
+        return (252 * 390 * 60_000_000_000) / Number(this.cfg.barDurationNs);
+    }
+
+    private _liveTo(nowMs: number) {
+        const { barDurationNs, startPrice, seed, regimes, intrabbarTicks, historyBars } = this.cfg;
+        const durMs = Number(barDurationNs / 1_000_000n);
+        if (!this.live) {
+            const rand = mulberry32(seed);
+            const state = initState(regimes.MEAN_REVERTING, startPrice, rand);
+            const origin = Math.floor(nowMs / durMs) * durMs - historyBars * durMs;
+            const forming = openBar(state, regimes, this.barsPerYear, rand, origin);
+            this.live = { rand, state, closed: [], forming, servedTo: 0 };
+        }
+        const live = this.live;
+        while (live.forming.time + durMs <= nowMs) {
+            advanceBar(live.forming, 1, intrabbarTicks, live.rand);
+            closeBar(live.state, live.forming);
+            live.closed.push(toOhlcv(live.forming, this.cfg.tickSize));
+            live.forming = openBar(
+                live.state,
+                regimes,
+                this.barsPerYear,
+                live.rand,
+                live.forming.time + durMs,
+            );
+        }
+        advanceBar(live.forming, (nowMs - live.forming.time) / durMs, intrabbarTicks, live.rand);
+        return live;
+    }
+
+    private _subscribe(onBar: (bar: BarResponse) => void): () => void {
+        let sent = this.live?.servedTo ?? -1;
+        const id = setInterval(() => {
+            const live = this._liveTo(Date.now());
+            if (sent < 0) sent = live.closed.length;
+            const bars = live.closed.slice(sent);
+            bars.push(toOhlcv(live.forming, this.cfg.tickSize));
+            sent = live.closed.length;
+            onBar({ events: [], ohlcvBars: bars, hasMore: false });
+        }, this.cfg.realtimeUpdateMs);
+        return () => clearInterval(id);
+    }
+
+    private _fetchLive(request: FetchRequest): BarResponse {
+        const nowMs = Date.now();
+        const live = this._liveTo(nowMs);
+        const { fromMs, toMs } = request.range;
+        const { closed, forming } = live;
+        let lo = 0,
+            hi = closed.length;
+        while (lo < hi) {
+            const mid = (lo + hi) >>> 1;
+            if (closed[mid].time < fromMs) lo = mid + 1;
+            else hi = mid;
+        }
+        const bars: OhlcvBar[] = [];
+        for (let i = lo; i < closed.length && closed[i].time < toMs; i++) bars.push({ ...closed[i] });
+        if (forming.time >= fromMs && forming.time < toMs) {
+            bars.push(toOhlcv(forming, this.cfg.tickSize));
+            live.servedTo = closed.length;
+        }
+        return { events: [], ohlcvBars: bars, hasMore: false };
     }
 
     async searchSymbols(): Promise<SymbolInfo[]> {
@@ -274,16 +405,15 @@ export class SimulatedMarketAdapter implements IDataAdapter {
                 minTick: 0.25,
                 precision: 2,
             },
+            // live bars only come at barDurationns, so the chart has to aggregate the rest
+            ...(this.cfg.realtime && { supportedResolutions: [this.cfg.barDurationNs] }),
         };
     }
 
     async fetchBars(request: FetchRequest): Promise<BarResponse> {
-        const { barDurationNs, intrabbarTicks, tickSize, startPrice, seed } = this.cfg;
-
-        // Number of 1-min bars per trading year (252 days x 6.5 h x 60 min).
-        // If your bars aren't 1-min, scale accordingly.
-        const barMinutes = Number(barDurationNs / 60_000_000_000n);
-        const barsPerYear = (252 * 390) / barMinutes;
+        if (this.cfg.realtime) return this._fetchLive(request);
+        const { barDurationNs, intrabbarTicks, tickSize, startPrice, seed, regimes } = this.cfg;
+        const barsPerYear = this.barsPerYear;
 
         const rand = mulberry32(seed);
 
@@ -295,42 +425,14 @@ export class SimulatedMarketAdapter implements IDataAdapter {
         // pathological range can't allocate forever).
         const COUNT = Math.max(1, Math.min(20_000, Number((toNs - barStart) / barDurationNs)));
 
-        // Initialise simulation state
-        const initRegime: Regime = 'MEAN_REVERTING';
-        const initParams = this.cfg.regimes[initRegime];
-        const state: SimState = {
-            price: startPrice,
-            garchVar: initParams.baseVol ** 2,
-            regime: initRegime,
-            regimeBarsLeft: regimeDuration(initParams, rand),
-            ouMean: startPrice,
-        };
-
+        const state = initState(regimes.MEAN_REVERTING, startPrice, rand);
         const bars: OhlcvBar[] = [];
 
         for (let i = 0; i < COUNT; i++) {
-            // Regime transition check
-            state.regimeBarsLeft--;
-            if (state.regimeBarsLeft <= 0) {
-                state.regime = pickNextRegime(state.regime, rand);
-                state.regimeBarsLeft = regimeDuration(this.cfg.regimes[state.regime], rand);
-            }
-
-            const params = this.cfg.regimes[state.regime];
-            const bar = simulateBar(state, params, barsPerYear, intrabbarTicks, tickSize, rand);
-
-            // Advance state price to close
-            state.price = bar._closePrice;
-
-            bars.push({
-                time: Number(barStart / 1_000_000n),
-                open: bar.open,
-                high: bar.high,
-                low: bar.low,
-                close: bar.close,
-                volume: bar.volume,
-            });
-
+            const bar = openBar(state, regimes, barsPerYear, rand, Number(barStart / 1_000_000n));
+            advanceBar(bar, 1, intrabbarTicks, rand);
+            closeBar(state, bar);
+            bars.push(toOhlcv(bar, tickSize));
             barStart += barDurationNs;
         }
 
