@@ -21,6 +21,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   chart right after loading or switching timeframe
 - The clock on a live chart only moved when a bar opened. It runs on the wall clock now while
   following a realtime feed, and on the horizon otherwise.
+- A live chart didnt slide right when a new bar opened, like playback does. The first slide after
+  loading mid-bar also came up short of a full bar.
 
 ## [0.21.0] - 2026-10-27
 

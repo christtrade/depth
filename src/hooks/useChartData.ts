@@ -1168,13 +1168,18 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             p.onDataBoundsChange?.(ds, de);
             const playFrom = payload.playFromIso ? isoToNs(payload.playFromIso) : de;
             p.horizonRef.current = playFrom;
-            prevHorizonBarRef.current = playFrom;
             playheadIdxRef.current = 0;
             replayedUpToRef.current = 0;
             openBarRef.current = null;
             openBarTsRef.current = 0n;
             const PAD = 14n * 24n * 60n * 60n * 1_000_000_000n;
             p.sessionMapperRef.current.build(p.resolvedSessionRef.current, ds - PAD, de + PAD);
+
+            prevHorizonBarRef.current = ohlcvBucketRange(
+                playFrom,
+                _activeTfBarNs,
+                p.sessionMapperRef.current,
+            ).start;
             ohlcvBarsRef.current.display = displayFor(
                 raw,
                 ohlcvBarsRef.current.sourceBarNs,
@@ -1430,7 +1435,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             const followLive = !isPlayingRef.current && p.horizonRef.current >= oldEnd;
             const effHorizon = followLive ? de : p.horizonRef.current;
             p.horizonRef.current = effHorizon;
-            prevHorizonBarRef.current = effHorizon;
+            followHorizonBar(effHorizon);
             syncOhlcvOpenBar(effHorizon);
             {
                 const s = getSessionStatus(p.resolvedSessionRef.current, effHorizon);
@@ -1739,13 +1744,8 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
     );
 
     // applyHorizon / seekHorizon
-    const applyHorizon = useCallback((horizon: bigint, triggerResample = true, hotPath = false) => {
-        const cb = compactBufRef.current;
-        const newIdx = findFloorIndex(cb, horizon);
-        const prevIdx = playheadIdxRef.current;
+    const followHorizonBar = useCallback((horizon: bigint) => {
         const barNs = p.activeTimeframeRef.current.barNs;
-        const isForward = newIdx >= prevIdx;
-
         // Same bucketing as the bars themselves, so the follow-scroll steps at the
         // moment a new candle actually opens rather than at an epoch multiple.
         const newHorizonBar = ohlcvBucketRange(horizon, barNs, p.sessionMapperRef.current).start;
@@ -1841,7 +1841,16 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 }
             }
         }
+    }, []);
 
+    const applyHorizon = useCallback((horizon: bigint, triggerResample = true, hotPath = false) => {
+        const cb = compactBufRef.current;
+        const newIdx = findFloorIndex(cb, horizon);
+        const prevIdx = playheadIdxRef.current;
+        const barNs = p.activeTimeframeRef.current.barNs;
+        const isForward = newIdx >= prevIdx;
+
+        followHorizonBar(horizon);
         p.onHorizonUpdate(horizon);
         // Let the status bar recompute if the cursor is parked on/right of the
         // forming bar - there's no mouse movement to drive status:compute there.
