@@ -40,6 +40,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Switching to a timeframe fetched at a new resolution while panned back only loaded around the
   view. On a live chart that left a hole up to the live bar since only playback pages forward.
   The new window runs to where the old data ended.
+- A resolution swap put the horizon back where the chart first loaded. On a live chart that's
+  behind the data, so it stopped following and updates stopped drawing. A swap keeps the panes
+  horizon now and follows the new edge if it was live.
 - An ohlcv feed with no supplemental bars didn't draw its forming bar until it closed. Its price
   line was stuck on the last closed bar too.
 - The price line was missing whenever the horizon sat past the last bars open, like a live

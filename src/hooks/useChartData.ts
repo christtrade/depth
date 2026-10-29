@@ -1163,10 +1163,20 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             };
             const ds = BigInt(payload.dataStart) * 1_000_000n;
             const de = BigInt(payload.dataEnd) * 1_000_000n;
+            const oldEnd = datasetEndRef.current;
             datasetStartRef.current = ds;
             datasetEndRef.current = de;
             p.onDataBoundsChange?.(ds, de);
-            const playFrom = payload.playFromIso ? isoToNs(payload.playFromIso) : de;
+            // a swap keeps the panes horizon, following the edge if it was live
+            // playFromIso is the engine's load time horizon, long stale on a live chart
+            const h = p.horizonRef.current;
+            const playFrom = payload.resolutionSwap
+                ? !isPlayingRef.current && h >= oldEnd
+                    ? de
+                    : h
+                : payload.playFromIso
+                  ? isoToNs(payload.playFromIso)
+                  : de;
             p.horizonRef.current = playFrom;
             playheadIdxRef.current = 0;
             replayedUpToRef.current = 0;
