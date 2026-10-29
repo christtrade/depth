@@ -4141,7 +4141,7 @@ function drawCandleChart(
         if (openBar && openBarTsMs !== -1) {
             const lastBucketMs =
                 bucketOrderMs.length > 0 ? bucketOrderMs[bucketOrderMs.length - 1] : -1;
-            if (lastBucketMs < openBarTsMs && openBarTsMs < Number(horizon / 1_000_000n)) {
+            if (lastBucketMs < openBarTsMs && openBarTsMs <= Number(horizon / 1_000_000n)) {
                 collectCandle(openBar, openBarTs);
             }
         }
@@ -4374,7 +4374,7 @@ function aggregateCandles(
         if (openBar && openBarTsMs !== -1) {
             const lastBucketMs =
                 bucketOrderMs.length > 0 ? bucketOrderMs[bucketOrderMs.length - 1] : -1;
-            if (lastBucketMs < openBarTsMs && openBarTsMs < Number(horizon / 1_000_000n)) {
+            if (lastBucketMs < openBarTsMs && openBarTsMs <= Number(horizon / 1_000_000n)) {
                 out.push({
                     ts: openBarTs,
                     open: openBar.open,

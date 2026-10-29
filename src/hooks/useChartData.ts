@@ -775,10 +775,9 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 diagDominant: 'none',
             };
         } else {
-            // Last display bar strictly before this bucket. display is time-sorted, so
-            // binary-search for the insertion point rather than filtering the whole array.
             const disp = ohlcvBarsRef.current.display;
-            const prevIdx = disp.lowerBound(barTimeMs) - 1;
+            const atEdge = horizon >= datasetEndRef.current;
+            const prevIdx = disp.lowerBound(atEdge ? barEndMs : barTimeMs) - 1;
             const bar = prevIdx >= 0 ? disp.at(prevIdx) : undefined;
             if (!bar) return;
             openBarRef.current = {

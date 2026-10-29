@@ -14,6 +14,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Fixed
 - Line and step line charts crashed when there was no open bar.
+- An ohlcv feed with no supplemental bars didn't draw its forming bar until it closed. Its price
+  line was stuck on the last closed bar too.
 
 ## [0.21.0] - 2026-10-27
 
