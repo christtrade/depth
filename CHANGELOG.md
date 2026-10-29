@@ -15,6 +15,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `SimulatedMarketAdapter` takes `realtime: true` to run as a live feed: one path from
   `historyBars` back up to now, the forming bar streamed every `realtimeUpdateMs`. A seed gives a
   different series than before since volume is drawn when a bar opens now
+- `features.timeframe.lockedReason`: the message for a timeframe `features.timeframe.timeframes`
+  leaves out, for when your plan isn't called Pro.
+
+## Changed
+- A locked timeframe says why. One the adapter can't serve says it isn't supported, and why. One
+  `features` leaves out says it's unavailable, or whatever `lockedReason` returns. Every lock used
+  to say "Pro timeframe". The `timeframe:add-failed` messages match the tooltips now.
 
 ## Fixed
 - Line and step line charts crashed when there was no open bar.

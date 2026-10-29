@@ -16,8 +16,10 @@ import { ChevronLeft, ChevronRight, Minus, Plus, RotateCcw } from 'lucide-react'
 import { ChartPane, Indicator } from './lib/types/indicator-types';
 import {
     TimeframeUnit,
+    lockedReason,
     servableBarNs,
     tfViewSpan,
+    unsupportedReason,
     timeframeFromBarNs,
     type Timeframe,
 } from './lib/timeframes';
@@ -1744,29 +1746,14 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
     // of states the data layer won't serve. Enforcement that matters belongs to
     // whatever serves the bytes.
     const applyTimeframe = (tf: Timeframe, fromSync = false) => {
-        const allowed = features?.timeframe?.timeframes ?? 'any';
-        if (allowed !== 'any' && !allowed.includes(tf.label)) {
-            eventBus?.emit('timeframe:add-failed', {
-                message: 'Timeframe not allowed',
-                code: 'TIMEFRAME_NOT_ALLOWED',
-                label: tf.label,
-            });
-            return;
-        }
-
         // Nothing the adapter serves can be aggregated into this timeframe
         // Drawing it would look bad as there would be one candle per source bar with holes between
         const supported = resolvedSymbolInfoRef.current?.supportedResolutions;
-        const need = servableBarNs(supported, tf.barNs);
-        if (need === null) {
-            const finest = supported?.length
-                ? supported.reduce((a, b) => (b < a ? b : a))
-                : null;
+        const reason = lockedReason(tf, supported, features?.timeframe);
+        if (reason) {
             eventBus?.emit('timeframe:add-failed', {
-                message: finest
-                    ? `${cellSymbolRef.current} has no data finer than ${timeframeFromBarNs(finest).label}`
-                    : `${tf.label} cannot be built from this symbol's data`,
-                code: 'TIMEFRAME_BELOW_RESOLUTION',
+                message: reason,
+                code: unsupportedReason(tf, supported) ? 'TIMEFRAME_BELOW_RESOLUTION' : 'TIMEFRAME_NOT_ALLOWED',
                 label: tf.label,
             });
             return;

@@ -139,6 +139,31 @@ export function servableBarNs(
     return best;
 }
 
+// why `tf`  cant be served from `supported`. null when it can
+export function unsupportedReason(
+    tf: Timeframe,
+    supported: readonly bigint[] | undefined,
+): string | null {
+    if (servableBarNs(supported, tf.barNs) !== null) return null;
+    const finest = supported?.length ? supported.reduce((a, b) => (b < a ? b : a)) : null;
+    // a 90s chart off 1m data is unbuildable even tho its coarser
+    return finest !== null && finest > tf.barNs
+        ? `${tf.label} isn't supported, there's no data finer than ${timeframeFromBarNs(finest).label}`
+        : `${tf.label} isn't supported, it can't be built from this data`;
+}
+
+export function lockedReason(
+    tf: Timeframe,
+    supported: readonly bigint[] | undefined,
+    gate: { timeframes?: string[] | 'any'; lockedReason?: (timeframe: string) => string } | undefined,
+): string | null {
+    const unsupported = unsupportedReason(tf, supported);
+    if (unsupported) return unsupported;
+    const allowed = gate?.timeframes ?? 'any';
+    if (allowed === 'any' || allowed.includes(tf.label)) return null;
+    return gate?.lockedReason?.(tf.label) ?? `${tf.label} is unavailable`;
+}
+
 // Custom timeframe parsing
 /**
  * Parse a user-entered string like "213m", "2h", "45s", "3d" into a Timeframe.

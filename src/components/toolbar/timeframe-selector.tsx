@@ -9,7 +9,8 @@ import {
     parseCustomTimeframe,
     loadFavoriteTimeframes,
     saveFavoriteTimeframes,
-    servableBarNs,
+    lockedReason,
+    unsupportedReason,
     type Timeframe,
 } from '../../lib/timeframes';
 import type { FeaturesOptions } from '../../core/DepthChart';
@@ -94,21 +95,12 @@ export function TimeframeSelector({
     // entitlement, not visibility: gated timeframes still render, wearing a lock.
     // features is optional on the public API, so an embed that passes none
     // gets no gate at all.
-    const allowedTfs = features?.timeframe?.timeframes ?? 'any';
-    const allowCustom = features?.timeframe?.allowCustom ?? true;
+    const gate = features?.timeframe;
+    const allowCustom = gate?.allowCustom ?? true;
 
-    // the other half of the lock, where the data adapter just doesnt support the tf
-    const isUnservable = useCallback(
-        (tf: Timeframe) => servableBarNs(supportedResolutions, tf.barNs) === null,
-        [supportedResolutions],
-    );
-    const isLocked = useCallback(
-        (label: string) => {
-            if (allowedTfs !== 'any' && !allowedTfs.includes(label)) return true;
-            const tf = allTfs.find((t) => t.label === label) ?? parseCustomTimeframe(label);
-            return tf ? isUnservable(tf) : false;
-        },
-        [allowedTfs, allTfs, isUnservable],
+    const lockReason = useCallback(
+        (tf: Timeframe) => lockedReason(tf, supportedResolutions, gate),
+        [supportedResolutions, gate],
     );
 
     // resolve favorites to definitions, drop dangling labels, sort ascending
@@ -141,15 +133,15 @@ export function TimeframeSelector({
 
     const handleSelect = useCallback(
         (tf: Timeframe) => {
-            if (isLocked(tf.label)) {
+            const reason = lockReason(tf);
+            if (reason) {
                 // the host owns the explanation - close and report, so the chart
                 // never lands on a timeframe it can't get data for
-                const unservable = isUnservable(tf);
                 eventBus?.emit('timeframe:add-failed', {
-                    message: unservable
-                        ? 'No data at this resolution for this symbol'
-                        : 'Timeframe not allowed',
-                    code: unservable ? 'TIMEFRAME_BELOW_RESOLUTION' : 'TIMEFRAME_NOT_ALLOWED',
+                    message: reason,
+                    code: unsupportedReason(tf, supportedResolutions)
+                        ? 'TIMEFRAME_BELOW_RESOLUTION'
+                        : 'TIMEFRAME_NOT_ALLOWED',
                     label: tf.label,
                 });
                 setOpenWithCallback(false);
@@ -158,7 +150,7 @@ export function TimeframeSelector({
             onChange(tf);
             setOpenWithCallback(false);
         },
-        [onChange, isLocked, isUnservable, eventBus],
+        [onChange, lockReason, supportedResolutions, eventBus],
     );
 
     const toggleFavorite = useCallback((label: string) => {
@@ -192,10 +184,13 @@ export function TimeframeSelector({
             return;
         }
 
-        if (isLocked(parsed.label)) {
+        const reason = lockReason(parsed);
+        if (reason) {
             eventBus?.emit('timeframe:add-failed', {
-                message: 'Timeframe not allowed',
-                code: 'TIMEFRAME_NOT_ALLOWED',
+                message: reason,
+                code: unsupportedReason(parsed, supportedResolutions)
+                    ? 'TIMEFRAME_BELOW_RESOLUTION'
+                    : 'TIMEFRAME_NOT_ALLOWED',
                 label: parsed.label,
             });
             setOpenWithCallback(false);
@@ -207,7 +202,7 @@ export function TimeframeSelector({
         setInputError('');
         onChange(parsed);
         setOpenWithCallback(false);
-    }, [customInput, allTfs, onAddCustom, onChange, allowCustom, isLocked, eventBus]);
+    }, [customInput, allTfs, onAddCustom, onChange, allowCustom, lockReason, supportedResolutions, eventBus]);
 
     const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         setInputError('');
@@ -222,7 +217,7 @@ export function TimeframeSelector({
                     key={tf.label}
                     tf={tf}
                     active={value.label === tf.label}
-                    locked={isLocked(tf.label)}
+                    lockReason={lockReason(tf)}
                     onSelect={handleSelect}
                 />
             ))}
@@ -247,7 +242,7 @@ export function TimeframeSelector({
                                                 tf={tf}
                                                 active={value.label === tf.label}
                                                 pinned={favorites.includes(tf.label)}
-                                                locked={isLocked(tf.label)}
+                                                lockReason={lockReason(tf)}
                                                 onSelect={handleSelect}
                                                 onTogglePin={() => toggleFavorite(tf.label)}
                                             />
@@ -266,7 +261,7 @@ export function TimeframeSelector({
                                                 tf={tf}
                                                 active={value.label === tf.label}
                                                 pinned={favorites.includes(tf.label)}
-                                                locked={isLocked(tf.label)}
+                                                lockReason={lockReason(tf)}
                                                 onSelect={handleSelect}
                                                 onTogglePin={() => toggleFavorite(tf.label)}
                                                 onRemove={() => {
@@ -346,14 +341,15 @@ export function TimeframeSelector({
 function QuickPick({
     tf,
     active,
-    locked,
+    lockReason,
     onSelect,
 }: {
     tf: Timeframe;
     active: boolean;
-    locked?: boolean;
+    lockReason?: string | null;
     onSelect: (tf: Timeframe) => void;
 }) {
+    const locked = !!lockReason;
     return (
         locked ? (
             <Tooltip delayDuration={100}>
@@ -377,7 +373,7 @@ function QuickPick({
                     </button>
                 </TooltipTrigger>
                 <TooltipContent className='bg-background border border-border'>
-                    {tf.label} is a Pro timeframe
+                    {lockReason}
                 </TooltipContent>
             </Tooltip>
         ) : (
@@ -413,7 +409,7 @@ function TfChip({
     tf,
     active,
     pinned,
-    locked,
+    lockReason,
     onSelect,
     onTogglePin,
     onRemove,
@@ -421,11 +417,12 @@ function TfChip({
     tf: Timeframe;
     active: boolean;
     pinned: boolean;
-    locked?: boolean;
+    lockReason?: string | null;
     onSelect: (tf: Timeframe) => void;
     onTogglePin: () => void;
     onRemove?: () => void;
 }) {
+    const locked = !!lockReason;
     return (
         locked ? (
             <Tooltip delayDuration={100}>
@@ -461,7 +458,7 @@ function TfChip({
                     </div>
                 </TooltipTrigger>
                 <TooltipContent className='bg-background border border-border'>
-                    {tf.label} is a Pro timeframe
+                    {lockReason}
                 </TooltipContent>
             </Tooltip>
         ) : (

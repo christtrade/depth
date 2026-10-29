@@ -108,6 +108,8 @@ export interface FeaturesOptions {
     timeframe?: {
         timeframes?: string[] | 'any';
         allowCustom?: boolean;
+        /** The reason for a timeframe `timeframes` leaves out that shows up in its tooltip  */
+        lockedReason?: (timeframe: string) => string;
     };
 }
 
