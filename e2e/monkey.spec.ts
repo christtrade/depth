@@ -1,13 +1,15 @@
 // random, impatient, human (ish) input
 //   MONKEY_SEEDS=10 MONKEY_MS=60000 npm run e2e   more and longer
 //   MONKEY_SEED=1234 npx playwright test monkey   replay one
+//   MONKEY_BASE=5000                              seeds from 5000 on. ci moves it every run
 // replays pick the same actions in the same order. timing still differs a bit, since loads are async
 import { expect, test, type Page } from '@playwright/test';
 import { chartBox, drawsSomething, inside, settled, watchErrors } from './helpers';
 
+const BASE = Number(process.env.MONKEY_BASE ?? 1000);
 const SEEDS = process.env.MONKEY_SEED
     ? [Number(process.env.MONKEY_SEED)]
-    : Array.from({ length: Number(process.env.MONKEY_SEEDS ?? 3) }, (_, i) => 1000 + i);
+    : Array.from({ length: Number(process.env.MONKEY_SEEDS ?? 3) }, (_, i) => BASE + i);
 const RUN_MS = Number(process.env.MONKEY_MS ?? 15_000);
 
 const URLS = ['/', '/?live=1', '/?live=1&budget=4000000'];

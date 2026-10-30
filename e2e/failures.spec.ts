@@ -77,7 +77,9 @@ test('a timeframe switch that fails keeps the bars on screen', async ({ page }) 
     await settled(page);
 
     await faults(page, { down: true });
-    await pickTimeframe(page, '1s').catch(() => {});
+
+    await page.getByRole('button', { name: 'All timeframes' }).click();
+    await page.getByRole('button', { name: '1s', exact: true }).click();
     await expect(page.getByText("Can't reach the data source"), 'says so, once').toHaveCount(1);
     await expect(overlay(page)).toHaveCount(0);
     expect(await drawsSomething(page)).toBe(true);
