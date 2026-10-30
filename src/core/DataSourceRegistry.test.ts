@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
 
 import { DataSourceRegistry, type PluginDataSource } from './DataSourceRegistry';
+import { BarStore } from './BarStore';
 import {
     makeTimeRange,
+    type EvictedBars,
     type FetchRequest,
     type RealtimeRequest,
     type SymbolInfo,
@@ -151,6 +153,20 @@ describe('the adapter it hands DataEngine', () => {
         assert.equal(response.hasMore, false);
         assert.equal(seen[0].direction, 'forward');
         assert.equal(seen[0].symbolInfo.symbol, 'X:ONE');
+    });
+
+    it('passes evicted bars to the source', () => {
+        const seen: EvictedBars[] = [];
+        registry.register(source({ onEvict: (e) => void seen.push(e) }));
+        const adapter = registry.adapterFor('X:ONE')!;
+        const evicted = {
+            symbolInfo: info('X:ONE'),
+            timeframe: { label: '1m', barNs: 60_000_000_000n },
+            range: makeTimeRange(0n, 60_000_000_000n),
+            bars: BarStore.from([{ time: 0, open: 1, high: 1, low: 1, close: 1, volume: 1 }]),
+        } as unknown as EvictedBars;
+        adapter.onEvict!(evicted);
+        assert.equal(seen[0], evicted);
     });
 });
 

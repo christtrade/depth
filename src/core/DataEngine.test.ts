@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import { DataEngine } from './DataEngine';
 import { ChartState, type ChartStateShape } from './ChartState';
 import { TypedEventBus } from './TypedEventBus';
-import type { IDataAdapter, SymbolInfo } from '../interfaces/IDataAdapter';
+import type { EvictedBars, IDataAdapter, SymbolInfo } from '../interfaces/IDataAdapter';
 import { DataSourceRegistry, type PluginDataSource } from './DataSourceRegistry';
 import type { Timeframe } from '../lib/timeframes';
 
@@ -99,8 +99,11 @@ function tfEngine(opts: {
     barren?: bigint[];
     supplemental?: bigint;
     maxBytes?: number;
+    onEvict?: 'throws' | 'rejects';
 }) {
     const fetches: Fetch[] = [];
+    // copied out, since the view goes stale once the engine moves on
+    const evicted: { symbol: string; barNs: bigint; fromNs: bigint; toNs: bigint; times: number[] }[] = [];
     const subs: { req: any; onBar: (bar: any) => void; open: boolean }[] = [];
     const bus = new TypedEventBus();
     const tf = tfOf(opts.timeframe);
@@ -144,6 +147,17 @@ function tfEngine(opts: {
             const sub = { req, onBar, open: true };
             subs.push(sub);
             return () => (sub.open = false);
+        },
+        onEvict: (e: EvictedBars) => {
+            evicted.push({
+                symbol: e.symbolInfo.symbol,
+                barNs: e.timeframe.barNs,
+                fromNs: e.range.fromNs,
+                toNs: e.range.toNs,
+                times: [...e.bars.time],
+            });
+            if (opts.onEvict === 'throws') throw new Error('disk full');
+            if (opts.onEvict === 'rejects') return Promise.reject(new Error('disk full'));
         },
     } as unknown as IDataAdapter;
 
@@ -190,7 +204,7 @@ function tfEngine(opts: {
         return gaps;
     };
 
-    return { bus, de, state, fetches, subs, announce, switchTo, settle, storePeriods };
+    return { bus, de, state, fetches, subs, evicted, announce, switchTo, settle, storePeriods };
 }
 
 /** Fetches issued at `barNs`, and the widest span any one of them asked for. */
@@ -653,6 +667,80 @@ describe('data budget', () => {
         assert.equal(replaced.n, 1);
         assert.equal(de.getSnapshot().bars.time.at(-1), T2026 + 19 * 60_000);
     });
+});
+
+describe('onEvict', () => {
+    const pageBackFar = async (t: ReturnType<typeof tfEngine>) => {
+        await t.de.load('NQ');
+        t.announce(0, MIN, T2026 - 100 * 60_000, T2026);
+        await t.settle();
+        t.bus.emit('data:request-backward', { viewMin: nsOf(T2026 - 3000 * 60_000), symbol: 'NQ' });
+        await t.settle();
+    };
+
+    it('gets the bars the budget drops', async () => {
+        const t = tfEngine({ timeframe: MIN, loadFrom: T2026 - 1000 * 60_000, loadTo: T2026, maxBytes: 200_000 });
+        await pageBackFar(t);
+
+        assert.equal(t.evicted.length, 1);
+        const e = t.evicted[0];
+        assert.equal(e.barNs, MIN);
+        assert.equal(e.times[0], T2026 - 3000 * 60_000, 'from the oldest page');
+        assert.equal(e.times.at(-1), T2026 - 201 * 60_000, 'up to the kept edge');
+        assert.equal(e.fromNs, nsOf(e.times[0]));
+        assert.equal(e.toNs, nsOf(T2026 - 200 * 60_000), 'to the last bars close');
+        assert.equal(e.times.length, 2800);
+    });
+
+    it('gets the whole old window on a switch, without the forming bar', async () => {
+        const { de, evicted, announce, switchTo, settle } = tfEngine({
+            timeframe: HOUR,
+            loadFrom: T2026 - 30 * 86_400_000,
+            loadTo: T2026,
+        });
+        await de.load('NQ');
+        announce(0, HOUR, T2026 - 100 * 3_600_000, T2026);
+        await settle();
+        const old = [...de.getSnapshot().bars.time];
+
+        switchTo(MIN, T2026 - 100 * 60_000, T2026);
+        await settle();
+
+        assert.equal(evicted.length, 1);
+        assert.equal(evicted[0].barNs, HOUR);
+        assert.deepEqual(evicted[0].times, old.slice(0, -1));
+    });
+
+    it('gets everything on destroy', async () => {
+        const { de, evicted, announce, settle } = tfEngine({
+            timeframe: MIN,
+            loadFrom: T2026 - 1000 * 60_000,
+            loadTo: T2026,
+        });
+        await de.load('NQ');
+        announce(0, MIN, T2026 - 100 * 60_000, T2026);
+        await settle();
+        const held = de.getSnapshot().bars.length;
+
+        de.destroy();
+        assert.equal(evicted.length, 1);
+        assert.equal(evicted[0].times.length, held - 1, 'all but the forming bar');
+    });
+
+    for (const fails of ['throws', 'rejects'] as const) {
+        it(`still evicts when onEvict ${fails}`, async () => {
+            const t = tfEngine({
+                timeframe: MIN,
+                loadFrom: T2026 - 1000 * 60_000,
+                loadTo: T2026,
+                maxBytes: 200_000,
+                onEvict: fails,
+            });
+            await pageBackFar(t);
+            assert.equal(t.evicted.length, 1);
+            assert.equal(t.de.getSnapshot().bars.time[0], T2026 - 200 * 60_000);
+        });
+    }
 });
 
 describe('symbol search with plugin sources', () => {

@@ -12,6 +12,7 @@ import type {
     AdapterCapabilities,
     BarPreviewResponse,
     BarResponse,
+    EvictedBars,
     FetchRequest,
     IDataAdapter,
     RealtimeRequest,
@@ -87,6 +88,9 @@ export interface PluginDataSource {
      * no feed of its own to subscribe to.
      */
     onTick?(params: { symbol: string; trade: SerialTrade; barNs: bigint }): BarResponse | null;
+
+    /** Bars leaving memory. Same contract as {@link IDataAdapter.onEvict}. */
+    onEvict?(evicted: EvictedBars): void | Promise<void>;
 
     /**
      * Declare supplemental resolutions and how symbol search is filtered. See
@@ -339,6 +343,7 @@ export class DataSourceRegistry {
         if (source.fetchPreview) adapter.fetchPreview = (r) => source.fetchPreview!(r);
         if (source.getCapabilities) adapter.getCapabilities = () => this.capsOf(source) ?? {};
         if (source.connect) adapter.connect = () => source.connect!();
+        if (source.onEvict) adapter.onEvict = (e) => source.onEvict!(e);
 
         // one sink per source covers both feeds: its own subscription and the
         // onTick bridge, which has no socket to unsubscribe from

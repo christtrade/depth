@@ -344,6 +344,7 @@ export type {
     BarPreviewResponse,
     BarResponse,
     DataAdapterErrorCode,
+    EvictedBars,
     FetchRequest,
     PreProcessedPayload,
     RealtimeRequest,

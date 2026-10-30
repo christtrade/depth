@@ -5,6 +5,7 @@
 export type { MboEvent } from '../lib/types';
 import { ReactNode } from 'react';
 import type { Timeframe } from '../lib/timeframes';
+import type { BarStore } from '../core/BarStore';
 
 export type DataLevel = 'l3' | 'l2' | 'ohlcv' | 'tick';
 // Trading session
@@ -350,6 +351,20 @@ export interface RealtimeRequest {
     supplementalBarNs?: bigint;
 }
 
+/** Bars leaving the chart's memory. See {@link IDataAdapter.onEvict} */
+export interface EvictedBars {
+    symbolInfo: SymbolInfo;
+    /** The resolution the bars were fetched at. */
+    timeframe: Timeframe;
+    /** From the first bar's open to the last bar's close */
+    range: TimeRange;
+    /**
+     * A read-only view onto the memory being freed, not a copy. Copy what you
+     * keep past the call (`bars.slice()`), or the whole buffer stays alive.
+     */
+    bars: BarStore;
+}
+
 export interface SupplementalBarSet {
     /** barNs of the finer-resolution data */
     resolution: bigint;
@@ -510,8 +525,21 @@ export interface IDataAdapter {
         request: RealtimeRequest,
         onBar: (bar: BarResponse) => void,
     ): () => void;
+    //TODO: add descriptions for these 2 too
     connect?(): Promise<void>;
     destroy?(): void;
+    /**
+     * Closed bars the chart is about to drop: evicted for `dataBudget`,
+     * replaced by a timeframe switch or a reload, a symbol unloaded, or the
+     * chart destroyed. Cache them however you like and check that cache first
+     * in `fetchBars`, so panning back costs no network.
+     *
+     * This is a fire and forget. The chart doesn't wait for a returned promise, so a
+     * `fetchBars` for the same span can arrive before your write lands. So keep
+     * the pending write around and then answer from it. Writes started on page
+     * unload may never finish.
+     */
+    onEvict?(evicted: EvictedBars): void | Promise<void>;
     /**
      * Declare what supplemental resolutions this adapter can provide.
      * Called once after resolveSymbol(). The engine attaches the finest

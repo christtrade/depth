@@ -90,6 +90,23 @@ export class BarStore {
         return s;
     }
 
+    /** Bars `from` (inclusive) to `to` (exclusive) sharing this stores memory, no copy. Read-only, and stale once this one changes */
+    view(from = 0, to = this.length): BarStore {
+        from = Math.max(0, from);
+        to = Math.min(this.length, to);
+        const len = Math.max(0, to - from);
+        const s = new BarStore();
+        for (const c of COLS) s.buf[c] = this[c].subarray(from, from + len);
+        if (this.bid) {
+            s.bidBuf = this.bid.subarray(from, from + len);
+            s.askBuf = this.ask!.subarray(from, from + len);
+        }
+        s.cap = len;
+        s.length = len;
+        s.changed();
+        return s;
+    }
+
     /** Bytes held, including spare capacity. */
     get bytes(): number {
         const cols = COLS.length + (this.bidBuf ? 2 : 0);

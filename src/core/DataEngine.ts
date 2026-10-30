@@ -394,6 +394,7 @@ export class DataEngine {
     }
 
     setAdapter(adapter: IDataAdapter): void {
+        for (const st of this._states.values()) this._dropMaster(st);
         this.realtimeUnsub?.();
         this.realtimeUnsub = null;
         this.realtimeKey = '';
@@ -481,7 +482,7 @@ export class DataEngine {
         st.loadedTo = null;
         st.hasMoreHistory = true;
         st.hasMoreForward = true;
-        st.master = null;
+        this._dropMaster(st);
         st.fetchBarNs = 0n;
         st.stageToken++;
         st.staging = null;
@@ -578,7 +579,7 @@ export class DataEngine {
         st.loadedTo = null;
         st.hasMoreHistory = true;
         st.hasMoreForward = true;
-        st.master = null;
+        this._dropMaster(st);
         st.fetchBarNs = 0n;
         st.stageToken++;
         st.staging = null;
@@ -891,6 +892,7 @@ export class DataEngine {
         for (const unsub of this.unsubs) unsub();
         this.unsubs.length = 0;
 
+        for (const st of this._states.values()) this._dropMaster(st);
         this.realtimeUnsub?.();
         this.realtimeUnsub = null;
         if (this.budgetTimer !== null) clearTimeout(this.budgetTimer);
@@ -1817,6 +1819,7 @@ export class DataEngine {
             if (excess <= 0) return;
             if (symbol === this.activeSymbol || this._onScreen(symbol)) continue;
             excess -= st.master!.ohlcvBars.bytes;
+            this._dropMaster(st);
             this._states.delete(symbol);
         }
 
@@ -1901,7 +1904,7 @@ export class DataEngine {
             if (this.playheadNs + p > to) to = this.playheadNs + p;
         }
         // and live edge when streaming
-        const live = this.realtimeUnsub !== null && symbol === this.activeSymbol;
+        const live = this._streaming(symbol);
         return {
             fromMs: Number(from / 1_000_000n),
             toMs: live ? Infinity : Number(to / 1_000_000n),
@@ -1912,6 +1915,8 @@ export class DataEngine {
     private _cut(st: SymbolState, lo: number, hi: number): void {
         const master = st.master!;
         const old = master.ohlcvBars;
+        this._evict(st, old, 0, lo);
+        this._evict(st, old, hi, old.length);
         const kept = old.slice(lo, hi, Math.ceil((hi - lo) / 4));
         master.ohlcvBars = kept;
         const first = kept.time[0];
@@ -1936,6 +1941,42 @@ export class DataEngine {
         void this._emitLoad(st, /* rehydrate */ false, /* replaced */ true).catch((err) =>
             console.error('[DataEngine] eviction _emitLoad failed', err),
         );
+    }
+
+    private _streaming(symbol: string): boolean {
+        return this.realtimeUnsub !== null && symbol === this.activeSymbol;
+    }
+
+    private _dropMaster(st: SymbolState): void {
+        if (st.master) this._evict(st, st.master.ohlcvBars);
+        st.master = null;
+    }
+
+    // hands bars lo, hi of a store about to be dropped to the adapters onevict
+    private _evict(st: SymbolState, bars: BarStore, lo = 0, hi = bars.length): void {
+        const info = st.symbolInfo;
+        if (!info || st.master?.dataLevel !== 'ohlcv') return;
+        const adapter = this._adapterFor(info.symbol);
+        if (!adapter?.onEvict) return;
+
+        // the forming bar isnt closed yet
+        if (hi === bars.length && this._streaming(info.symbol)) hi--;
+        if (hi <= lo) return;
+
+        const view = bars.view(lo, hi);
+        const from = BigInt(Math.round(view.time[0])) * 1_000_000n;
+        const to = BigInt(Math.round(view.time[view.length - 1])) * 1_000_000n + st.fetchBarNs;
+        try {
+            const pending = adapter.onEvict({
+                symbolInfo: info,
+                timeframe: this._fetchTimeframe(st, st.fetchBarNs),
+                range: makeTimeRange(from, to),
+                bars: view,
+            });
+            if (pending) pending.catch((err) => console.error('[DataEngine] onEvict failed', err));
+        } catch (err) {
+            console.error('[DataEngine] onEvict failed', err);
+        }
     }
 
     /**
@@ -2069,6 +2110,7 @@ export class DataEngine {
             return;
         }
 
+        this._dropMaster(st);
         st.loadedFrom = BigInt(processed.dataStart) * 1_000_000n;
         st.loadedTo = BigInt(processed.dataEnd) * 1_000_000n;
         st.hasMoreHistory = response.hasMore;

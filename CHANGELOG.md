@@ -22,6 +22,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   every panes view, and those page back in when panning to them. Panning back a year at 1s
   used to grow the store until the tab died.
 - `BarStore.slice(from, to, slack)`.
+- `onEvict(evicted)` on adapters and plugin data sources. Passes the closed bars the chart is about to
+  drop, for any reason (the budget, a timeframe switch, a reload, destroy). Cache them and answer
+  `fetchBars` from that cache, so panning back costs no network. Not awaited.
+- `BarStore.view(from, to)`, a no-copy read-only view.
 
 ## Changed
 - **Breaking:** `subscribeRealtime(request, onBar)`, on adapters and plugin data sources. `request`
