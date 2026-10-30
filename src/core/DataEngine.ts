@@ -35,6 +35,7 @@ import {
 import { processTickChunk, type TickDataChunk } from './processing/tick-processor';
 import { processL2Chunk, type L2DataChunk } from './processing/l2-processor';
 import { type DataChunk, isEmptyChunk } from './processing/data-chunk';
+import { type Forming, formingOf, joinForming } from './processing/forming';
 import { isoToNs } from '../lib/sampler';
 import type { DataSourceRegistry } from './DataSourceRegistry';
 import {
@@ -128,6 +129,32 @@ function _nsToIso(ns: bigint): string {
     const ms = Number(ns / 1_000_000n);
     const subMs = Number(ns % 1_000_000n);
     return new Date(ms).toISOString().slice(0, -1) + String(subMs).padStart(6, '0') + 'Z';
+}
+
+const BYTES_PER_EVENT = 20;
+
+function firstTsAtOrAfter(arr: { ts: bigint }[], ns: bigint): number {
+    let lo = 0;
+    let hi = arr.length;
+    while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        if (arr[mid].ts < ns) lo = mid + 1;
+        else hi = mid;
+    }
+    return lo;
+}
+
+// compactbuf event ts is in first 8 bytes
+function firstEventAtOrAfter(buf: ArrayBuffer, ns: bigint): number {
+    const view = new DataView(buf);
+    let lo = 0;
+    let hi = buf.byteLength / BYTES_PER_EVENT;
+    while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        if (view.getBigInt64(mid * BYTES_PER_EVENT, true) < ns) lo = mid + 1;
+        else hi = mid;
+    }
+    return lo;
 }
 
 // l3 / tick path
@@ -256,6 +283,7 @@ interface SymbolState {
     reachesLive: boolean;
     pendingForwardViewMax: bigint | null;
     retry: { backward: Retry; forward: Retry };
+    forming: Forming | null;
 }
 
 // a direction whose last fetch failed: no new one b4 `at` and one `timer` to try again
@@ -409,6 +437,7 @@ export class DataEngine {
                 reachesLive: true,
                 pendingForwardViewMax: null,
                 retry: { backward: noRetry(), forward: noRetry() },
+                forming: null,
             };
             this._states.set(symbol, st);
         }
@@ -686,6 +715,7 @@ export class DataEngine {
         st.hasMoreHistory = response.hasMore;
         st.fetchBarNs = fetchBarNs;
         st.master = this._buildMaster(st, processed, fetchBarNs);
+        st.forming = formingOf(st.master.dataLevel, response, this._chunkBarNs());
 
         this._syncShared();
         this._syncRealtime();
@@ -1042,7 +1072,6 @@ export class DataEngine {
             .then((response) => {
                 if (this.destroyed) return;
                 recovered(st.retry.forward);
-                const processed = this._process(response, st);
 
                 // nothing past this window, so stop future forward fetches and let
                 // playback know it hit the real end so it pauses instead of stalling
@@ -1051,13 +1080,7 @@ export class DataEngine {
                     this.eventBus.emit('data:no-more-forward', { symbol });
                 }
 
-                if (processed && !isEmptyChunk(processed)) {
-                    st.loadedTo = BigInt(processed.dataEnd) * 1_000_000n;
-                    this._growMaster(st, processed);
-                    this._emitAppend(st, processed).catch((err) =>
-                        console.error('[DataEngine] forward _emitAppend failed', err),
-                    );
-                }
+                this._appendResponse(st, response, 'forward');
 
                 // across the hole, so the feed picks up from here
                 if (response.hasMore === false && !st.reachesLive) {
@@ -1533,23 +1556,57 @@ export class DataEngine {
     private _handleRealtimeBar(st: SymbolState, bar: BarResponse): void {
         if (this.destroyed) return;
         if (!st.master) return;
-        const processed = this._process(bar, st);
-        if (!processed || isEmptyChunk(processed)) return;
+        if (this._appendResponse(st, bar, 'realtime')) st.hasMoreForward = true;
+    }
+
+    // the bucket size _process builds footprints at
+    private _chunkBarNs(): bigint {
+        return this.state.get('timeframe').barNs;
+    }
+
+    // a forward page or live chunk onto the right edge. false when it brought nothing new
+    private _appendResponse(st: SymbolState, response: BarResponse, from: string): boolean {
+        if (!st.master) return false;
+        const level = st.master.dataLevel;
+        const barNs = this._chunkBarNs();
+        // the seam comes back on every page and chunk, and the forming bucket gets rebuilt whole
+        const joined = joinForming(level, st.forming, response, barNs);
+        if (!joined) return false;
+        const processed = this._process(joined.response, st);
+        if (!processed || isEmptyChunk(processed)) return false;
 
         st.loadedTo = BigInt(processed.dataEnd) * 1_000_000n;
-        st.hasMoreForward = true;
-        this._growMaster(st, processed);
+        this._growMaster(st, processed, joined.trimFromNs);
+        st.forming = formingOf(level, joined.response, barNs);
         this._emitAppend(st, processed).catch((err) =>
-            console.error('[DataEngine] realtime _emitAppend failed', err),
+            console.error(`[DataEngine] ${from} _emitAppend failed`, err),
         );
+        return true;
     }
 
     // Master mutations
 
-    private _growMaster(st: SymbolState, chunk: DataChunk): void {
+    // `trimFromNs` means the chunk rebuilt everything from there on, so the held copy goes first
+    private _growMaster(st: SymbolState, chunk: DataChunk, trimFromNs: bigint | null = null): void {
         const master = st.master;
         if (!master) return;
         const dl = master.dataLevel;
+
+        if (trimFromNs !== null && (dl === 'l3' || dl === 'tick')) {
+            master.trades = master.trades.slice(0, firstTsAtOrAfter(master.trades, trimFromNs));
+            master.priceHistory = master.priceHistory.slice(
+                0,
+                firstTsAtOrAfter(master.priceHistory, trimFromNs),
+            );
+            master.footprintBars = master.footprintBars.slice(
+                0,
+                firstTsAtOrAfter(master.footprintBars, trimFromNs),
+            );
+            if (dl === 'l3') {
+                const keep = firstEventAtOrAfter(master.compactBuf, trimFromNs);
+                master.compactBuf = master.compactBuf.slice(0, keep * BYTES_PER_EVENT);
+            }
+        }
 
         switch (dl) {
             case 'l3': {
@@ -2044,6 +2101,7 @@ export class DataEngine {
     private _dropMaster(st: SymbolState): void {
         if (st.master) this._evict(st, st.master.ohlcvBars);
         st.master = null;
+        st.forming = null;
     }
 
     // hands bars lo, hi of a store about to be dropped to the adapters onevict
@@ -2217,6 +2275,7 @@ export class DataEngine {
         st.pendingForwardViewMax = null;
         st.fetchBarNs = fetchBarNs;
         st.master = this._buildMaster(st, processed, fetchBarNs);
+        st.forming = formingOf(st.master.dataLevel, response, this._chunkBarNs());
 
         this._syncShared();
         this._syncRealtime();

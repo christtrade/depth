@@ -57,6 +57,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   to say "Pro timeframe". The `timeframe:add-failed` messages match the tooltips now.
 
 ## Fixed
+- Tick and l3 update. every live chunk added a 2nd footprint bar for the forming minute instead of
+  just growing the existing one. Uses both chunks to rebuild it whole now and resent items are dropped.
 - A failed tf switch or prefetch covered the whole chart with the error screen even tho the bars were
   still there. Now a toast with bars on screen, error screen when there's nothing for the chart to show
 - Toasts never worked in the built package. The chart mounts its own toaster now, one per page,

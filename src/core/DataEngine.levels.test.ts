@@ -122,6 +122,25 @@ function assertTradesAre(p: any, symbol: string, fromMs: number, toMs: number) {
     }
 }
 
+// l3 only - every event the generator prints for the span
+// once, in order
+function assertEventsAre(p: any, symbol: string, fromMs: number, toMs: number) {
+    if (p.dataLevel !== 'l3') return;
+    const want = simMboEvents(priceOf(symbol), fromMs, toMs);
+    const view = new DataView(p.compactBuf);
+    const held = p.compactBuf.byteLength / 20;
+    assert.equal(held, want.length, `${held} events held, ${want.length} in the span`);
+    for (let i = 0; i < want.length; i++) {
+        const ts = view.getBigInt64(i * 20, true);
+        const oid = view.getUint8(i * 20 + 16) | (view.getUint8(i * 20 + 17) << 8) | (view.getUint8(i * 20 + 18) << 16);
+        const wantOid = parseInt(want[i].order_id, 10) & 0xffffff;
+        assert.ok(
+            ts === nsOf(Date.parse(want[i].ts_event)) && oid === wantOid,
+            `event ${i}: ${ts}/${oid}, expected ${want[i].ts_event}/${wantOid}`,
+        );
+    }
+}
+
 // one footprint bar per period, in order, no repeats
 function assertFootprintsClean(p: any, barNs: bigint) {
     const ts: bigint[] = p.footprintBars.map((b: any) => b.ts);
@@ -163,6 +182,62 @@ for (const level of ['tick', 'l3'] as const) {
                 `reached the asked-for view, fetched ${JSON.stringify(fetches)}`,
             );
             assertTradesAre(p, 'NQ', firstMs(p), T0);
+            assertFootprintsClean(p, MIN);
+        });
+
+        it('pages forward without repeating the seam', async () => {
+            const { bus, de, next, moveEdge } = levelEngine(level);
+            const loaded = next('data:load');
+            await de.load('NQ');
+            await loaded;
+            moveEdge(T0 + 10 * MIN_MS);
+            const appended = next('data:append');
+            bus.emit('data:prefetch', { symbol: 'NQ' });
+            const p = await appended;
+            assertTradesAre(p, 'NQ', T0 - 30 * MIN_MS, T0 + 10 * MIN_MS);
+            assertEventsAre(p, 'NQ', T0 - 30 * MIN_MS, T0 + 10 * MIN_MS);
+            assertFootprintsClean(p, MIN);
+        });
+
+        it('live chunks inside one minute leave one bar for it', async () => {
+            const { de, next, announce, push, settle } = levelEngine(level);
+            const loaded = next('data:load');
+            await de.load('NQ');
+            await loaded;
+            // inside whats loaded so the announce doesnt reload
+            announce(MIN, T0 - 20 * MIN_MS, T0);
+            await settle();
+            let appended = next('data:append');
+            push(T0, T0 + 15_000);
+            await appended;
+            appended = next('data:append');
+            push(T0 + 15_000, T0 + 30_000);
+            const p = await appended;
+            assertTradesAre(p, 'NQ', T0 - 30 * MIN_MS, T0 + 30_000);
+            assertEventsAre(p, 'NQ', T0 - 30 * MIN_MS, T0 + 30_000);
+            assertFootprintsClean(p, MIN);
+            const last = p.footprintBars.at(-1);
+            assert.equal(last.ts, nsOf(T0), 'the forming minute');
+            const vol = simTicks(priceOf('NQ'), T0, T0 + 30_000).reduce((s, t) => s + t.size, 0);
+            assert.equal(last.totalVol, vol, 'holds both chunks, once');
+        });
+
+        it('a live chunk that re-sends the seam keeps one copy of it', async () => {
+            const { de, next, announce, push, settle } = levelEngine(level);
+            const loaded = next('data:load');
+            await de.load('NQ');
+            await loaded;
+            announce(MIN, T0 - 20 * MIN_MS, T0);
+            await settle();
+            let appended = next('data:append');
+            push(T0, T0 + 15_000);
+            await appended;
+            // `since` is inclusive, so an adapter could send the last held ms again
+            appended = next('data:append');
+            push(T0 + 15_000 - 100, T0 + 30_000);
+            const p = await appended;
+            assertTradesAre(p, 'NQ', T0 - 30 * MIN_MS, T0 + 30_000);
+            assertEventsAre(p, 'NQ', T0 - 30 * MIN_MS, T0 + 30_000);
             assertFootprintsClean(p, MIN);
         });
 
