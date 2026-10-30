@@ -165,6 +165,8 @@ export interface ChartEvents {
         symbol?: string;
     };
     'data:rehydrate': void;
+    /** Load a symbol from scratch again after a load failed. The focused one if no symbol. */
+    'data:retry': { symbol?: string };
 
     'data:load': {
         symbol: string;

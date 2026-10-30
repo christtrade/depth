@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import { DataEngine } from './DataEngine';
 import { ChartState, type ChartStateShape } from './ChartState';
 import { TypedEventBus } from './TypedEventBus';
-import type { EvictedBars, IDataAdapter, SymbolInfo } from '../interfaces/IDataAdapter';
+import { DataAdapterError, type EvictedBars, type IDataAdapter, type SymbolInfo } from '../interfaces/IDataAdapter';
 import { DataSourceRegistry, type PluginDataSource } from './DataSourceRegistry';
 import type { Timeframe } from '../lib/timeframes';
 
@@ -96,6 +96,7 @@ function tfEngine(opts: {
     loadTo: number;
     supported?: bigint[];
     fail?: () => boolean;
+    failWith?: () => Error;
     barren?: bigint[];
     supplemental?: bigint;
     maxBytes?: number;
@@ -128,7 +129,7 @@ function tfEngine(opts: {
                     ? { fromNs: req.supplementalRange.fromNs, toNs: req.supplementalRange.toNs }
                     : undefined,
             });
-            if (opts.fail?.()) throw new Error('adapter is down');
+            if (opts.fail?.()) throw opts.failWith?.() ?? new Error('adapter is down');
 
             if (opts.barren?.includes(req.timeframe.barNs)) {
                 return { events: [], ohlcvBars: [], hasMore: false };
@@ -776,6 +777,40 @@ describe('a fetch that fails', () => {
         return { ...t, source };
     };
     const after = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    it("passes on the adapter's own error code, and its message", async () => {
+        const errors: { code: string; message: string }[] = [];
+        const t = tfEngine({
+            timeframe: MIN,
+            loadFrom: T2026 - 1000 * 60_000,
+            loadTo: T2026,
+            fail: () => true,
+            failWith: () => new DataAdapterError('rate_limited', 'slow down', 429),
+        });
+        t.bus.on('data:status', ({ status, error }) => status === 'error' && errors.push(error!));
+        await t.de.load('NQ');
+        assert.deepEqual(errors, [{ code: 'rate_limited', message: 'slow down' }]);
+    });
+
+    it('loads again on data:retry once the source is back', async () => {
+        const { bus, de, settle, source } = flaky();
+        source.down = true;
+        await de.load('NQ');
+        assert.equal(de.getSnapshot().bars.length, 0);
+
+        source.down = false;
+        bus.emit('data:retry', { symbol: 'NQ' });
+        await settle();
+        assert.ok(de.getSnapshot().bars.length > 0);
+    });
+
+    it('falls back to its own code for a plain Error', async () => {
+        const errors: string[] = [];
+        const t = tfEngine({ timeframe: MIN, loadFrom: T2026 - 1000 * 60_000, loadTo: T2026, fail: () => true });
+        t.bus.on('data:status', ({ status, error }) => status === 'error' && errors.push(error!.code));
+        await t.de.load('NQ');
+        assert.deepEqual(errors, ['fetch_failed']);
+    });
 
     it('tries the page into history again later, instead of skipping it', async () => {
         const { bus, de, fetches, announce, settle, source } = flaky();

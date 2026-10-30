@@ -57,6 +57,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   to say "Pro timeframe". The `timeframe:add-failed` messages match the tooltips now.
 
 ## Fixed
+- A failed load always said "Couldn't load data", since the engine swapped the adapter's
+  `DataAdapterError` code for its own. It passes the adapter's code on now, so the chart says
+  rate limited, offline, no access etc.
+- "Try again" on a failed load did nothing - it still messaged a data worker that's long gone.
+  It sends the new `data:retry` event now, and the engine loads the symbol again.
 - One failed page of history and the chart wouldnt allow that range to get requested again. It got
   marked as loaded,and the pan stops the view before what's loaded so it never asked again. Now it
   tries again a couple times, delaying each time (1s -> 2s -> ... -> 30s). Same for forward pages.

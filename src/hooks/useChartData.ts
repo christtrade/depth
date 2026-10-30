@@ -319,7 +319,6 @@ export interface ChartDataResult {
     runHorizonAdvance: (horizon: bigint) => void;
     updatePriceHistoryToRawIdx: (rawIdx: number) => void;
     findPriceHistoryIdx: (horizon: bigint) => number;
-    loadData: () => void;
 }
 
 // Hook
@@ -1109,16 +1108,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             }
             p.renderEngineRef.current?.markDirty('base');
         }
-    };
-
-    const loadData = () => {
-        dataWorkerRef.current?.postMessage({
-            requestId: nanoid(),
-            event: 'load',
-            barNs: p.activeTimeframeRef.current.barNs,
-            horizon: p.horizonRef.current,
-            fpOptions: fpSettingsFromRef(),
-        });
     };
 
     // Ingest
@@ -2392,6 +2381,5 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         runHorizonAdvance,
         updatePriceHistoryToRawIdx,
         findPriceHistoryIdx,
-        loadData,
     };
 }

@@ -973,7 +973,6 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         rebuildContrastBitmap,
         updatePriceHistoryToRawIdx,
         findPriceHistoryIdx,
-        loadData,
     } = chartData;
 
     // hand the forming bar to DepthChart so ctx.openBar() can reach it. a getter,
@@ -1910,11 +1909,9 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
                 symbol={resolvedSymbolInfoRef.current?.longName ?? cellSymbolRef.current}
                 timeframe={activeTimeframe?.label}
                 onRetry={() => {
-                    // Clear the error before retrying - re-emitting 'error' here
-                    // (as this used to) just puts the overlay straight back up.
                     setErrorInfo(null);
                     setStatus('loading');
-                    loadData();
+                    eventBus.emit('data:retry', { symbol: cellSymbolRef.current });
                 }}
             />
         );

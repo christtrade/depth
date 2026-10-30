@@ -1703,6 +1703,9 @@ export class DataEngine {
                 this._fetchBackward(this._targetSymbol(symbol), viewMin);
             }),
             this.eventBus.on('data:rehydrate', () => this.rehydrate()),
+            this.eventBus.on('data:retry', ({ symbol }) => {
+                this.load(symbol ?? this.activeSymbol).catch(() => {});
+            }),
             this.eventBus.on('data:pane-resolution', ({ id, symbol, barNs, viewFrom, viewTo }) =>
                 this._onPaneResolution(id, symbol, barNs, viewFrom, viewTo),
             ),
@@ -1858,13 +1861,11 @@ export class DataEngine {
         });
     }
 
-    private _emitAdapterError(code: string, err: unknown, symbol?: string): void {
-        const message =
-            err instanceof DataAdapterError
-                ? err.message
-                : err instanceof Error
-                  ? err.message
-                  : String(err);
+    // the adapters own code when it gave one
+    // to like differentiate between rate limited vs offline etc
+    private _emitAdapterError(fallbackCode: string, err: unknown, symbol?: string): void {
+        const code = err instanceof DataAdapterError ? err.code : fallbackCode;
+        const message = err instanceof Error ? err.message : String(err);
         this.eventBus.emit('data:status', {
             status: 'error',
             error: { code, message },
