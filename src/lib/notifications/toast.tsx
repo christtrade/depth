@@ -1,6 +1,6 @@
 // sonner is bundled into depth, so a host's <Toaster/> is another copy of it that never hears about
 // these. depth mounts its own, named, so a host sharing the copy (source builds) doesn't get each twice
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { toast as sonner, Toaster, type ExternalToast } from 'sonner';
 import type { TypedEventBus } from '../../core/TypedEventBus';
 
@@ -36,5 +36,21 @@ export function DepthToaster({ eventBus, dark: initialDark }: { eventBus: TypedE
     }, []);
     useEffect(() => eventBus.on('theme:change', (theme) => setDark(theme.dark !== false)), [eventBus]);
 
-    return mine ? <Toaster id={TOASTER_ID} theme={dark ? 'dark' : 'light'} position="bottom-right" /> : null;
+    if (!mine) return null;
+
+    return (
+        <Toaster
+            id={TOASTER_ID}
+            theme={dark ? 'dark' : 'light'}
+            position="bottom-right"
+            style={THEMED}
+            toastOptions={{ classNames: { description: '!text-muted-foreground' } }}
+        />
+    );
 }
+
+const THEMED = {
+    '--normal-bg': 'hsl(var(--popover))',
+    '--normal-text': 'hsl(var(--popover-foreground))',
+    '--normal-border': 'hsl(var(--border))',
+} as CSSProperties;

@@ -57,8 +57,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   to say "Pro timeframe". The `timeframe:add-failed` messages match the tooltips now.
 
 ## Fixed
+- A failed tf switch or prefetch covered the whole chart with the error screen even tho the bars were
+  still there. Now a toast with bars on screen, error screen when there's nothing for the chart to show
 - Toasts never worked in the built package. The chart mounts its own toaster now, one per page,
-  following the theme.
+  in the theme's colours.
 - A failed load always said "Couldn't load data", since the engine swapped the adapter's
   `DataAdapterError` code for its own. It passes the adapter's code on now, so the chart says
   rate limited, offline, no access etc.

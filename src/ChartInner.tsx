@@ -59,7 +59,12 @@ import { FeaturesOptions } from './core/DepthChart';
 import { StatusBar } from './components/chart/status-bar';
 import { PaneLegend, PaneLegendScale } from './components/chart/pane-legend';
 import { DataStatus, HeatmapSpinner } from './components/chart/data-status';
-import { ChartErrorOverlay, ChartLoadingOverlay } from './components/chart/chart-status-overlay';
+import {
+    ChartErrorOverlay,
+    ChartLoadingOverlay,
+    describeDataError,
+} from './components/chart/chart-status-overlay';
+import { toast } from './lib/notifications/toast';
 import { useChartData, autoFitPriceAxis, applyHorizonScrollEasing } from './hooks/useChartData';
 import { useChartInteraction } from './hooks/useChartInteraction';
 import { useChartHandlers } from './hooks/useChartHandlers';
@@ -1227,7 +1232,11 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
             // symbol on one pane flashes "Getting market data" on all of them.
             // No symbol = chart-wide, so every cell takes it.
             if (symbol !== undefined && symbol !== cellSymbolRef.current) return;
-            if (status === 'ready' && symbol !== undefined) paneHasDataRef.current = true;
+            const toastId = `data-error:${cellSymbolRef.current}`;
+            if (status === 'ready' && symbol !== undefined) {
+                paneHasDataRef.current = true;
+                toast.dismiss(toastId);
+            }
             // a switch whose fetch failed is never going to landd so just .unfreeze and
             // stay on the timeframe we have the data for
             if (status === 'error') clearPendingSwitch();
@@ -1237,6 +1246,17 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
             // a chart up, let it refresh underneath us and swap in the new data
             // when it lands rather than blanking a pane the user didn't touch.
             if (status === 'loading' && symbol !== undefined && paneHasDataRef.current) return;
+            // same for a failure - a page or a switch that failed is no reason to hide the bars
+            // that's already loaded
+            if (status === 'error' && paneHasDataRef.current) {
+                const { title, body } = describeDataError(
+                    error?.code ?? 'unknown',
+                    error?.message,
+                    resolvedSymbolInfoRef.current?.longName ?? cellSymbolRef.current,
+                );
+                toast.error(title, { id: toastId, description: body });
+                return;
+            }
             setStatus(status);
             if (error) setErrorInfo(error);
         });

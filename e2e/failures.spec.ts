@@ -21,7 +21,8 @@ const widestGap = (page: Page) =>
         return widest;
     });
 
-const overlay = (page: Page) => page.getByText(/Couldn't load data|Can't reach the data source|Rate limited/);
+// the full screen error, as opposed to a toast saying the same thing
+const overlay = (page: Page) => page.getByRole('button', { name: 'Try again' });
 
 test('down from the start: says why, and Try again recovers', async ({ page }) => {
     const errors = watchErrors(page);
@@ -77,7 +78,7 @@ test('a timeframe switch that fails keeps the bars on screen', async ({ page }) 
 
     await faults(page, { down: true });
     await pickTimeframe(page, '1s').catch(() => {});
-    await page.waitForTimeout(800);
+    await expect(page.getByText("Can't reach the data source"), 'says so, once').toHaveCount(1);
     await expect(overlay(page)).toHaveCount(0);
     expect(await drawsSomething(page)).toBe(true);
     expect(thrown(errors)).toEqual([]);

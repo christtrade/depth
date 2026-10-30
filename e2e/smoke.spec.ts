@@ -77,6 +77,30 @@ test("depth's toasts show up, once", async ({ page }) => {
     await expect(page.getByText('something broke')).toBeVisible();
 });
 
+for (const theme of ['dark', 'light', 'gruvboxlight']) {
+    test(`toasts take the ${theme} theme's colours, not plain black or white`, async ({ page }) => {
+        await page.goto('/');
+        await settled(page);
+        await page.evaluate((id) => {
+            const chart = (window as any).__chart;
+            chart.setTheme(id);
+            chart.eventBus.emit('error', { message: `themed ${id}` });
+        }, theme);
+        const toast = page.locator('[data-sonner-toast]', { hasText: `themed ${theme}` });
+        await expect(toast).toBeVisible();
+
+        const [got, want] = await toast.evaluate((el) => {
+            const probe = document.createElement('div');
+            probe.style.background = 'hsl(var(--popover))';
+            document.querySelector('.depth-root')!.appendChild(probe);
+            const want = getComputedStyle(probe).backgroundColor;
+            probe.remove();
+            return [getComputedStyle(el).backgroundColor, want];
+        });
+        expect(got).toBe(want);
+    });
+}
+
 test('picks a timeframe from the full list with the keyboard', async ({ page }) => {
     await page.goto('/');
     await settled(page);
