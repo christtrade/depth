@@ -42,12 +42,21 @@ export async function chartBox(page: Page) {
 // positive dx pans back in time
 export async function drag(page: Page, dx: number, dy = 0, steps = 20): Promise<void> {
     const box = await chartBox(page);
-    const x = box.x + box.width / 2;
+    const [from, to] = inside(box, dx);
     const y = box.y + box.height / 2;
-    await page.mouse.move(x, y);
+    await page.mouse.move(from, y);
     await page.mouse.down();
-    await page.mouse.move(x + dx, y + dy, { steps });
+    await page.mouse.move(to, y + dy, { steps });
     await page.mouse.up();
+}
+
+// start & end x for a drag of ~dx that stays on the chart.
+// firefox under playwright reports a pointer that left the viewport as clientX 0 with no button held, and never lets go
+export function inside(box: { x: number; width: number }, dx: number): [number, number] {
+    const margin = 60;
+    const reach = Math.min(Math.abs(dx), box.width - 2 * margin - 80);
+    const from = dx >= 0 ? box.x + margin : box.x + box.width - margin - 80;
+    return [from, from + Math.sign(dx) * reach];
 }
 
 export async function wheel(page: Page, dy: number, times = 1): Promise<void> {

@@ -3,7 +3,7 @@
 //   MONKEY_SEED=1234 npx playwright test monkey   replay one
 // replays pick the same actions in the same order. timing still differs a bit, since loads are async
 import { expect, test, type Page } from '@playwright/test';
-import { chartBox, drawsSomething, settled, watchErrors } from './helpers';
+import { chartBox, drawsSomething, inside, settled, watchErrors } from './helpers';
 
 const SEEDS = process.env.MONKEY_SEED
     ? [Number(process.env.MONKEY_SEED)]
@@ -50,28 +50,28 @@ const ACTIONS: { name: string; weight: number; run: (page: Page, r: Rand) => Pro
         name: 'drag',
         weight: 6,
         run: async (page, r) => {
-            const from = await somewhereOnChart(page, r);
-            const dx = int(r, -1500, 1500);
+            const { y } = await somewhereOnChart(page, r);
+            const [x0, x1] = inside(await chartBox(page), int(r, -1500, 1500));
             const dy = int(r, -80, 80);
             const steps = int(r, 2, 40);
-            await page.mouse.move(from.x, from.y);
+            await page.mouse.move(x0, y);
             await page.mouse.down();
-            await page.mouse.move(from.x + dx, from.y + dy, { steps });
+            await page.mouse.move(x1, y + dy, { steps });
             await page.mouse.up();
-            return `drag ${dx},${dy} in ${steps}`;
+            return `drag ${Math.round(x1 - x0)},${dy} in ${steps}`;
         },
     },
     {
         name: 'fling',
         weight: 2,
         run: async (page, r) => {
-            const from = await somewhereOnChart(page, r);
-            const dx = int(r, -600, 600);
-            await page.mouse.move(from.x, from.y);
+            const { y } = await somewhereOnChart(page, r);
+            const [x0, x1] = inside(await chartBox(page), int(r, -600, 600));
+            await page.mouse.move(x0, y);
             await page.mouse.down();
-            await page.mouse.move(from.x + dx, from.y, { steps: 2 });
+            await page.mouse.move(x1, y, { steps: 2 });
             await page.mouse.up();
-            return `fling ${dx}`;
+            return `fling ${Math.round(x1 - x0)}`;
         },
     },
     {
@@ -99,16 +99,17 @@ const ACTIONS: { name: string; weight: number; run: (page: Page, r: Rand) => Pro
         name: 'timeframe mid-drag',
         weight: 1,
         run: async (page, r) => {
-            const from = await somewhereOnChart(page, r);
+            const { y } = await somewhereOnChart(page, r);
+            const [x0, x1] = inside(await chartBox(page), 400);
             const tf = pick(r, TIMEFRAMES);
-            await page.mouse.move(from.x, from.y);
+            await page.mouse.move(x0, y);
             await page.mouse.down();
-            await page.mouse.move(from.x + 200, from.y, { steps: 5 });
+            await page.mouse.move((x0 + x1) / 2, y, { steps: 5 });
 
             await page.evaluate((label) => {
                 (window as any).__chart.setTimeframe(label);
             }, tf);
-            await page.mouse.move(from.x + 400, from.y, { steps: 5 });
+            await page.mouse.move(x1, y, { steps: 5 });
             await page.mouse.up();
             return `timeframe ${tf} mid-drag`;
         },

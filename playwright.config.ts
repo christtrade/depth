@@ -1,6 +1,18 @@
 import { defineConfig, devices } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 
 const PORT = 4317;
+
+// webkit (safari). playwright builds it for ubundu/debian, mac and windows only. elsewhere
+// (arch (the goat), etc) it cant start so its left out and npm run e2e:docker runs it in playwrights image
+function webkitRunsHere(): boolean {
+    if (process.platform !== 'linux') return true;
+    try {
+        return /^ID(_LIKE)?=.*\b(ubuntu|debian)\b/m.test(readFileSync('/etc/os-release', 'utf8'));
+    } catch {
+        return false;
+    }
+}
 
 export default defineConfig({
     testDir: 'e2e',
@@ -17,5 +29,9 @@ export default defineConfig({
         port: PORT,
         reuseExistingServer: true,
     },
-    projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+    projects: [
+        { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+        { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+        ...(webkitRunsHere() ? [{ name: 'webkit', use: { ...devices['Desktop Safari'] } }] : []),
+    ],
 });
