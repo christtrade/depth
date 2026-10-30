@@ -67,6 +67,15 @@ async function visit(page: Page, url: string) {
     expect(errors).toEqual([]);
 }
 
+test('picks a timeframe from the full list with the keyboard', async ({ page }) => {
+    await page.goto('/');
+    await settled(page);
+    await page.getByRole('button', { name: 'All timeframes' }).click();
+    await page.getByRole('button', { name: '30s', exact: true }).focus();
+    await page.keyboard.press('Enter');
+    await expect.poll(() => page.evaluate(() => (window as any).__chart.getTimeframe())).toBe('30s');
+});
+
 test('a visitor on historical data', async ({ page }) => {
     await visit(page, '/');
 });

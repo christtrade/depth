@@ -57,6 +57,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   to say "Pro timeframe". The `timeframe:add-failed` messages match the tooltips now.
 
 ## Fixed
+- The timeframes in the full list werent buttons, so you couldn't tab to them or pick one with
+  the keyboard.
+- `SimulatedMarketAdapter` didnt declare `supportedResolutions` unless live, so the chart thought
+  it served any timeframe. Switching to 1s gave minute bars. It declares `barDurationNs` now,
+  and the chart builds coarser timeframes out of those.
 - Line and step line charts crashed when there was no open bar.
 - `SimulatedMarketAdapter` got its volatility scale wrong for bars under a minute.
 - `SimulatedMarketAdapter` gave every bar a minute's volume, so 1s bars came out 60x too heavy.

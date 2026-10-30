@@ -112,4 +112,14 @@ describe('SimulatedMarketAdapter realtime', () => {
         assert.equal(h[0].open, 21000);
         for (let i = 1; i < h.length; i++) assert.equal(h[i].open, h[i - 1].close);
     });
+
+    // the chart assumed it served any period, asked for 1s and got minutes back
+    it('declares the one resolution it makes bars at, live or not', () => {
+        const SEC_NS = 1_000_000_000n;
+        for (const realtime of [false, true]) {
+            const sim = new SimulatedMarketAdapter({ seed: 7, realtime, barDurationNs: 5n * SEC_NS });
+            assert.deepEqual(sim.resolveSymbol().supportedResolutions, [5n * SEC_NS]);
+        }
+        assert.deepEqual(new SimulatedMarketAdapter().resolveSymbol().supportedResolutions, [60n * SEC_NS]);
+    });
 });

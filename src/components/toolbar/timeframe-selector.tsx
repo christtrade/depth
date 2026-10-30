@@ -423,65 +423,32 @@ function TfChip({
     onRemove?: () => void;
 }) {
     const locked = !!lockReason;
-    return (
-        locked ? (
-            <Tooltip delayDuration={100}>
-                <TooltipTrigger asChild>
-                    <div
-                        className={cn(
-                            'group relative flex items-center h-6 rounded text-xs select-none cursor-pointer transition-all duration-100 font-[500] pl-2',
-                            onRemove ? 'pr-1' : 'pr-1.5',
-                            locked
-                                ? 'bg-transparent text-slate-600 border border-dashed border-raised hover:text-brand-300/80 hover:border-brand-400/30'
-                                : active
-                                  ? 'bg-card text-white border border-border'
-                                  : 'bg-card text-slate-500 border border-raised hover:text-slate-200 hover:border-slate-600 hover:bg-raised',
-                        )}
-                        onClick={() => onSelect(tf)}
-                    >
-                        {tf.label}
-
-                        <Lock size={8} className="ml-1.5 shrink-0" />
-
-                        {onRemove && (
-                            <button
-                                className="ml-0.5 opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-all"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onRemove();
-                                }}
-                                aria-label="Delete timeframe"
-                            >
-                                <X size={8} />
-                            </button>
-                        )}
-                    </div>
-                </TooltipTrigger>
-                <TooltipContent className='bg-background border border-border'>
-                    {lockReason}
-                </TooltipContent>
-            </Tooltip>
-        ) : (
-            <div
-                className={cn(
-                    'group relative flex items-center h-6 rounded text-xs select-none cursor-pointer transition-all duration-100 font-[500] pl-2',
-                    onRemove ? 'pr-1' : 'pr-1.5',
-                    locked
-                        ? 'bg-transparent text-slate-600 border border-dashed border-raised hover:text-brand-300/80 hover:border-brand-400/30'
-                        : active
-                          ? 'bg-card text-white border border-border'
-                          : 'bg-card text-slate-500 border border-raised hover:text-slate-200 hover:border-slate-600 hover:bg-raised',
-                )}
-                onClick={() => onSelect(tf)}
-            >
+    const chip = (
+        <div
+            className={cn(
+                'group relative flex items-center h-6 rounded text-xs select-none cursor-pointer transition-all duration-100 font-[500] pl-2',
+                onRemove ? 'pr-1' : 'pr-1.5',
+                locked
+                    ? 'bg-transparent text-slate-600 border border-dashed border-raised hover:text-brand-300/80 hover:border-brand-400/30'
+                    : active
+                      ? 'bg-card text-white border border-border'
+                      : 'bg-card text-slate-500 border border-raised hover:text-slate-200 hover:border-slate-600 hover:bg-raised',
+            )}
+            onClick={() => onSelect(tf)}
+        >
+            <button type="button" aria-pressed={active} className="outline-none focus-visible:underline">
                 {tf.label}
+            </button>
 
+            {locked ? (
+                <Lock size={8} className="ml-1.5 shrink-0" />
+            ) : (
                 <button
                     className={cn(
                         'ml-1.5 transition-all',
                         pinned
                             ? 'text-brand-500'
-                            : 'text-slate-600 opacity-0 group-hover:opacity-100 hover:text-slate-300',
+                            : 'text-slate-600 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-slate-300',
                     )}
                     onClick={(e) => {
                         e.stopPropagation();
@@ -491,20 +458,28 @@ function TfChip({
                 >
                     <Star size={9} className={pinned ? 'fill-current' : ''} />
                 </button>
+            )}
 
-                {onRemove && (
-                    <button
-                        className="ml-0.5 opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-all"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onRemove();
-                        }}
-                        aria-label="Delete timeframe"
-                    >
-                        <X size={8} />
-                    </button>
-                )}
-            </div>
-        )
+            {onRemove && (
+                <button
+                    className="ml-0.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-slate-600 hover:text-red-400 transition-all"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onRemove();
+                    }}
+                    aria-label="Delete timeframe"
+                >
+                    <X size={8} />
+                </button>
+            )}
+        </div>
+    );
+
+    if (!locked) return chip;
+    return (
+        <Tooltip delayDuration={100}>
+            <TooltipTrigger asChild>{chip}</TooltipTrigger>
+            <TooltipContent className="bg-background border border-border">{lockReason}</TooltipContent>
+        </Tooltip>
     );
 }

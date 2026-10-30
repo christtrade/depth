@@ -66,8 +66,7 @@ export async function pickTimeframe(page: Page, label: string): Promise<void> {
         await pill.first().click();
     } else {
         await page.getByRole('button', { name: 'All timeframes' }).click();
-        // the chips in the full list are divs, not buttons
-        await page.getByText(label, { exact: true }).first().click();
+        await page.getByRole('button', { name: label, exact: true }).first().click();
     }
     await expect.poll(() => page.evaluate(() => (window as any).__chart.getTimeframe())).toBe(label);
 }

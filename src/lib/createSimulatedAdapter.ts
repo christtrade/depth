@@ -409,8 +409,9 @@ export class SimulatedMarketAdapter implements IDataAdapter {
                 minTick: 0.25,
                 precision: 2,
             },
-            // live bars only come at barDurationns, so the chart has to aggregate the rest
-            ...(this.cfg.realtime && { supportedResolutions: [this.cfg.barDurationNs] }),
+            // bars only ever come at bardurationns
+            // so the chart builds every coarser timeframe from them
+            supportedResolutions: [this.cfg.barDurationNs],
         };
     }
 
