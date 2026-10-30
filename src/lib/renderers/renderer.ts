@@ -16,6 +16,7 @@ import { ohlcvBucketRange, snapTsToBarGrid } from '../bar-grid';
 import { getEffectiveDpr, snapToDevicePx } from '../dpr';
 import { formatPrice, resolveTickSize } from '../priceFormat';
 import { PriceTransition } from '../priceTransition';
+import { hasHole } from '../view-edges';
 import {
     PricePoint,
     OrdinalModel,
@@ -3023,6 +3024,9 @@ function drawPriceLabel(
     let currPrice = null;
 
     let hasBidAsk = false;
+    // a hole before the horizon means we don't know the price there, and last
+    // year's close drawn as the price line reads as the current one
+    let stale = false;
 
     if (dataLevel === 'l3') {
         const idx = nearestIndex(priceHistory, bounds.tMax);
@@ -3042,8 +3046,9 @@ function drawPriceLabel(
 
         price = bars.at(Math.min(idx, bars.length - 1));
         currPrice = hIdx >= 0 ? bars.at(hIdx) : undefined;
+        stale = hasHole(BigInt(Math.round(bars.time[bars.length - 1])) * 1_000_000n, horizon, barNs);
 
-        if (currPrice?.bid && currPrice?.ask) {
+        if (currPrice?.bid && currPrice?.ask && !stale) {
             hasBidAsk = true;
         }
     }
@@ -3128,7 +3133,7 @@ function drawPriceLabel(
     }
 
     let lastCandle: { open: number; high: number; low: number; close: number } | null = null;
-    if (barNs > 0n && chartSettings.priceLineVisible) {
+    if (barNs > 0n && chartSettings.priceLineVisible && !stale) {
         const cutTs = horizon > 0n ? horizon : bounds.tMax;
         const lastBarTs = (cutTs / barNs) * barNs;
 

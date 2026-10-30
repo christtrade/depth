@@ -44,7 +44,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A timeframe switch that would go over `dataBudget` loads around the view only, and leaves a hole
   up to the live edge. Panning right pages across it, and the realtime feed waits until a forward
   fetch says `hasMore: false`. Same when the budget evicts the live edge. Adapters have to say
-  `hasMore: false` going forward at now, or the feed never picks back up.
+  `hasMore: false` going forward at now, or the feed never picks back up. No price, bid or ask
+  line while there's a hole, since the price at the horizon isn't known.
 - **Breaking:** `data:request-forward` takes `viewMax`, and pages up to it in one go.
 - **Breaking:** removed `ohlcvBars` from `getData()` and the plugin data snapshot. Use `bars`, or
   `bars.toArray()` for objects
