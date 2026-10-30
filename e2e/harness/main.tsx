@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { useDepthChart } from '@christtrade/depth';
+import { Toaster } from 'sonner';
 import { HarnessAdapter } from './adapter';
 
 const DAY_MS = 86_400_000;
@@ -47,6 +48,7 @@ function App() {
                 <button onClick={() => chart.playback.pause()}>Pause</button>
             </div>
             <div style={{ flex: 1, minHeight: 0 }}>{element}</div>
+            <Toaster />
         </div>
     );
 }

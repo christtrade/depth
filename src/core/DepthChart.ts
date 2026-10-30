@@ -67,7 +67,7 @@ import { BUILTIN_THEMES, ThemeRegistry } from './ThemeRegistry';
 import { ThemeStyle } from './theme-style';
 import type { ThemeDef } from '../interfaces/plugins/IChartPlugin';
 import type { StyleField } from '../components/drawings/drawing-settings-dialog';
-import { toast } from 'sonner';
+import { toast } from '../lib/notifications/toast';
 import type { NotifyOptions, PluginExecutionSurface, PluginStateSnapshot } from './PluginRegistry';
 import { PlaybackMode, type PrefetchOptions } from '../hooks/usePlaybackEngine';
 import {

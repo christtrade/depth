@@ -67,6 +67,16 @@ async function visit(page: Page, url: string) {
     expect(errors).toEqual([]);
 }
 
+test("depth's toasts show up, once", async ({ page }) => {
+    await page.goto('/');
+    await settled(page);
+    await page.evaluate(() => {
+        (window as any).__chart.eventBus.emit('error', { message: 'something broke' });
+    });
+    await expect(page.getByText('something broke')).toHaveCount(1);
+    await expect(page.getByText('something broke')).toBeVisible();
+});
+
 test('picks a timeframe from the full list with the keyboard', async ({ page }) => {
     await page.goto('/');
     await settled(page);

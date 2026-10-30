@@ -11,7 +11,7 @@
 //  and bracket edits read as calm confirmations instead of a traffic light.
 //  numerics are tabular so values line up across stacked toasts.
 import type { ReactNode } from 'react';
-import { toast as sonnerToast } from 'sonner';
+import { toast as sonnerToast } from './toast';
 import {
     ArrowDownRight,
     ArrowUpRight,

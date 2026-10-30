@@ -57,6 +57,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   to say "Pro timeframe". The `timeframe:add-failed` messages match the tooltips now.
 
 ## Fixed
+- Toasts never worked in the built package. The chart mounts its own toaster now, one per page,
+  following the theme.
 - A failed load always said "Couldn't load data", since the engine swapped the adapter's
   `DataAdapterError` code for its own. It passes the adapter's code on now, so the chart says
   rate limited, offline, no access etc.

@@ -37,7 +37,7 @@ import { Popover, PopoverContent, PopoverTrigger } from './components/ui/popover
 import { armTool, CURSOR_TOOL, type ActiveDrawingTool } from './lib/types/drawing-types';
 import { Button } from './components/ui/button';
 import { usePlaybackEngine, type PrefetchOptions } from './hooks/usePlaybackEngine';
-import { toast } from 'sonner';
+import { DepthToaster, toast } from './lib/notifications/toast';
 import { TypedEventBus, type ChartEvents } from './core/TypedEventBus';
 import {
     DepthChart,
@@ -1762,6 +1762,7 @@ export default function Depth({
                         onClose={() => setChartSettingsOpen(false)}
                     />
                 )}
+                <DepthToaster eventBus={eventBus} dark={_chart.getTheme().dark !== false} />
             </div>
         </TooltipProvider>
     );
