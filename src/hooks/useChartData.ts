@@ -39,6 +39,7 @@ import { type HeatmapRequest } from '../lib/types/heatmap-types';
 import { serializeBounds } from '../lib/types/heatmap-types';
 import { applyHeatmapContrast } from '../lib/renderers/renderer';
 import { X_AXIS_HEIGHT } from '../lib/renderers/renderer';
+import { hasHole } from '../lib/view-edges';
 import { nanoid } from 'nanoid';
 
 // Local types
@@ -693,6 +694,13 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         phCursorRef.current = -1;
     }, []);
 
+    // whether new data whose end moved from oldEnd to de takes the horizon along
+    const followsEdge = (oldEnd: bigint, de: bigint): boolean => {
+        const h = p.horizonRef.current;
+        if (isPlayingRef.current || h < oldEnd) return false;
+        return !hasHole(oldEnd, h, p.activeTimeframeRef.current.barNs) || de >= h;
+    };
+
     const syncOhlcvOpenBar = useCallback((horizon: bigint) => {
         if (dataLevelRef.current !== 'ohlcv') return;
         // Having no supplemental bars is an ordinary state, not a reason to skip:
@@ -1168,12 +1176,12 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             datasetEndRef.current = de;
             p.onDataBoundsChange?.(ds, de);
             // a swap keeps the panes horizon, following the edge if it was live and
-            // the new data still reaches it. one that stops short leaves a hole up
-            // to the live bar, and the horizon stays put on the far side.
+            // the new data still reaches it. a hole up to the live bar keeps it on the
+            // far side, so an eviction landing then doesn't drag it back a year.
             // playFromIso is the engine's load time horizon, long stale on a live chart
             const h = p.horizonRef.current;
             const playFrom = payload.replaced
-                ? !isPlayingRef.current && h >= oldEnd && de >= oldEnd
+                ? followsEdge(oldEnd, de) && de >= oldEnd
                     ? de
                     : h
                 : payload.playFromIso
@@ -1440,11 +1448,10 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                     }
                 }
             }
-            // Only jump the horizon to the new edge when we're idle AND already
-            // sitting at the live edge (live-follow). During playback the engine
-            // owns the horizon; appended data is future data and must not yank it
-            // - that yank is what snapped whole batches onto the chart.
-            const followLive = !isPlayingRef.current && p.horizonRef.current >= oldEnd;
+            // follow the new edge only when idle at the live edge. during playback
+            // the engine owns the horizon, and yanking it snapped whole batches on.
+            // a page into a hole isn't the live edge either, until it reaches it
+            const followLive = followsEdge(oldEnd, de);
             const effHorizon = followLive ? de : p.horizonRef.current;
             p.horizonRef.current = effHorizon;
             followHorizonBar(effHorizon);
@@ -1504,10 +1511,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             const de = BigInt(dataEnd) * 1_000_000n;
             const oldEnd = datasetEndRef.current;
             datasetEndRef.current = de;
-            // See OHLCV path above: only follow the edge when idle at the live
-            // edge; during playback keep the playback-owned horizon so future
-            // data doesn't snap onto the chart.
-            const followLive = !isPlayingRef.current && p.horizonRef.current >= oldEnd;
+            const followLive = followsEdge(oldEnd, de);
             const effHorizon = followLive ? de : p.horizonRef.current;
             const newPlayFromIdx = findFloorIndex(compactBufRef.current, effHorizon);
             playheadIdxRef.current = newPlayFromIdx;

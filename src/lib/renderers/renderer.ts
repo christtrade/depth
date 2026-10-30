@@ -4147,7 +4147,9 @@ function drawCandleChart(
         }
     }
     if (candleCache !== null) {
-        const cutTs = horizon > 0n ? horizon : bounds.tMax;
+        // stop at the view: a horizon a year past it is 31M steps at 1s
+        const viewEnd = bounds.tMax + barNs;
+        const cutTs = horizon > 0n && horizon < viewEnd ? horizon : viewEnd;
         const openBarTs = openBar ? openBar.ts : -1n;
         const firstBar = (bounds.tMin / barNs) * barNs;
         const lastBar = (cutTs / barNs) * barNs;
@@ -4385,7 +4387,8 @@ function aggregateCandles(
             }
         }
     } else if (candleCache !== null) {
-        const cutTs = horizon > 0n ? horizon : bounds.tMax;
+        const viewEnd = bounds.tMax + barNs;
+        const cutTs = horizon > 0n && horizon < viewEnd ? horizon : viewEnd;
         const openBarTs = openBar ? openBar.ts : -1n;
         const firstBar = (bounds.tMin / barNs) * barNs;
         const lastBar = (cutTs / barNs) * barNs;

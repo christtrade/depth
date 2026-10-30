@@ -3,7 +3,7 @@ import type { ViewBounds } from './types';
 
 // data stopping more than a bar short of the horizon is a hole, left by a switch
 // that only loaded around the view. pans may go into it and page forward
-function hasHole(dataEnd: bigint, horizon: bigint, barNs: bigint): boolean {
+export function hasHole(dataEnd: bigint, horizon: bigint, barNs: bigint): boolean {
     return horizon > dataEnd + barNs;
 }
 
