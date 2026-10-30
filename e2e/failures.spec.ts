@@ -64,9 +64,14 @@ test('a failed page mid-session leaves the chart up', async ({ page }) => {
     const firstBefore = await page.evaluate(() => (window as any).__chart.getData().bars.time[0] as number);
     await faults(page, { down: false });
     for (let i = 0; i < 12; i++) await drag(page, 900, 0, 10);
+    // the retry waits out its backoff (up to 30s), so the page can come in after settled() says done
+    await expect
+        .poll(() => page.evaluate(() => (window as any).__chart.getData().bars.time[0] as number), {
+            message: 'paged in history once the source was back',
+            timeout: 35_000,
+        })
+        .toBeLessThan(firstBefore);
     await settled(page);
-    const firstAfter = await page.evaluate(() => (window as any).__chart.getData().bars.time[0] as number);
-    expect(firstAfter, 'paged in history once the source was back').toBeLessThan(firstBefore);
     expect(await widestGap(page), 'no hole where the page failed').toBeLessThanOrEqual(1);
     expect(thrown(errors)).toEqual([]);
 });
