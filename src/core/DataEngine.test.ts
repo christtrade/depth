@@ -715,6 +715,26 @@ describe('a switch over the budget', () => {
         assert.equal(feed.req.since, nsOf(t.de.getSnapshot().bars.time.at(-1)!), 'from where the data ends');
     });
 
+    it('pages at least the scroll window, however small the budget', async () => {
+        const { bus, de, fetches, announce, switchTo, settle } = tfEngine({
+            timeframe: HOUR,
+            loadFrom: T2026 - 30 * DAY_MS,
+            loadTo: T2026,
+            maxBytes: 1_000,
+        });
+        await de.load('NQ');
+        announce(0, HOUR, T2026 - 100 * 3_600_000, T2026);
+        await settle();
+        switchTo(MIN, viewFrom, viewFrom + 100 * 60_000);
+        await settle();
+
+        // past the view plus its padding, where the loaded window ends
+        bus.emit('data:request-forward', { viewMax: nsOf(viewFrom + 250 * 60_000), symbol: 'NQ' });
+        await settle();
+        const page = at(fetches, MIN).all.filter((f) => f.direction === 'forward').at(-1)!;
+        assert.ok(page.toNs - page.fromNs >= 60n * MIN, `an hour at least, got ${(page.toNs - page.fromNs) / MIN}m`);
+    });
+
     it('ignores pans forward while the data reaches the live edge', async () => {
         const { bus, de, fetches, announce, settle } = tfEngine({
             timeframe: MIN,

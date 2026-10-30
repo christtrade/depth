@@ -950,11 +950,12 @@ export class DataEngine {
         let win = spanNs && spanNs > this.scrollWindowNs ? spanNs : this.scrollWindowNs;
         if (viewMax !== undefined) {
             // past the view in one go, but a zoomed-out pan can't fetch more than the budget holds
-            const reach = viewMax - st.loadedTo + SWITCH_PAD_BARS * st.fetchBarNs;
-            if (reach > win) win = reach;
+            // never under the scroll window though, or a small budget pages a few bars at a time
+            let reach = viewMax - st.loadedTo + SWITCH_PAD_BARS * st.fetchBarNs;
             if (Number.isFinite(this.maxBytes)) {
-                win = bigMin(win, BigInt(Math.floor(this.maxBytes / 2 / BAR_BYTES)) * st.fetchBarNs);
+                reach = bigMin(reach, BigInt(Math.floor(this.maxBytes / 2 / BAR_BYTES)) * st.fetchBarNs);
             }
+            if (reach > win) win = reach;
         }
 
         st.forwardInFlight = true;
