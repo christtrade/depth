@@ -1,18 +1,10 @@
-// Architecture:
-//   INIT:   Parse all timestamps once. Build master snapshot array at a fixed
-//           fine interval covering the entire dataset.
-//           Snapshots are built in async chunks to avoid blocking the worker thread.
-//   RENDER: Binary-search to find visible snapshots. Bucket -> pixels.
-//           Renders directly to a single full-width OffscreenCanvas - no tile
-//           compositing, no price-range cache invalidation.
-//           Target: <100ms per render at 1600px width.
-
 import {
     type HeatmapRequest,
     type HeatmapResponse,
     type WorkerInitMessage,
 } from './types/heatmap-types';
 import type { MboEvent, BookState } from './types';
+import { createCompactBuffer, sliceToMboEvents } from './compact-buffer';
 import type { ViewBounds } from './types';
 
 // LOD levels
@@ -42,10 +34,11 @@ type Snapshot = {
 // One snapshot array per LOD level, indexed same as LOD_INTERVALS_NS.
 let lodSnapshots: Snapshot[][] = [];
 let masterSnapshots: Snapshot[] = []; // alias -> finest level for compat
-let datasetTMax = 0n;
 // Pending render request received before init completed
 let pendingRender: (HeatmapRequest & { type: 'render' }) | null = null;
+let lastRender: (HeatmapRequest & { type: 'render' }) | null = null;
 let initDone = false;
+let buildGen = 0;
 
 // Render serialisation
 // Only one render runs at a time. If a new render request arrives while one
@@ -70,38 +63,34 @@ function flushRender() {
 }
 
 // Message router
-self.onmessage = async (
-    e: MessageEvent<WorkerInitMessage | HeatmapRequest | { type: 'append'; events: MboEvent[] }>,
-) => {
+self.onmessage = async (e: MessageEvent<WorkerInitMessage | HeatmapRequest>) => {
     const msg = e.data;
 
     if (msg.type === 'init') {
-        // Full rebuild - discard any stale snapshots first
-        lodSnapshots = [];
-        masterSnapshots = [];
-        initDone = false;
-        await buildMasterSnapshots((msg as WorkerInitMessage).events);
+        // the old snapshots keep drawing while this builds, and a newer init stops it
+        const gen = ++buildGen;
+        const cb = createCompactBuffer(0);
+        cb._buf = msg.buf;
+        cb._view = new DataView(msg.buf);
+        cb.length = cb.capacity = msg.length;
+        const built = await buildMasterSnapshots(sliceToMboEvents(cb, 0, msg.length), gen);
+        if (!built) return;
         initDone = true;
         if (pendingRender) {
             const req = pendingRender;
             pendingRender = null;
             pendingRenderReq = req;
             flushRender();
-        }
-        return;
-    }
-
-    if ((msg as any).type === 'append') {
-        // Incremental extension - build snapshots only for the new events and
-        // append them to the existing LOD arrays. Much cheaper than full rebuild.
-        const newEvents = (msg as any).events as MboEvent[];
-        if (newEvents?.length > 0 && initDone) {
-            await appendSnapshots(newEvents);
+        } else if (lastRender) {
+            // same view, new data
+            pendingRenderReq = lastRender;
+            flushRender();
         }
         return;
     }
 
     if (msg.type === 'render') {
+        lastRender = msg;
         if (!initDone) {
             pendingRender = msg;
             return;
@@ -155,7 +144,8 @@ function isoToNs(isoString: string): bigint {
 // stays responsive to incoming render requests during long dataset loads.
 const INIT_CHUNK_SIZE = 5_000;
 
-async function buildMasterSnapshots(events: MboEvent[]) {
+// false when a newer init took over
+async function buildMasterSnapshots(events: MboEvent[], gen: number): Promise<boolean> {
     // Single pass through the event log. For each LOD level we maintain an
     // independent nextSnapTime cursor and append to its own array.
     //@ts-ignore
@@ -168,6 +158,7 @@ async function buildMasterSnapshots(events: MboEvent[]) {
     for (let i = 0; i < events.length; i++) {
         if (i > 0 && i % INIT_CHUNK_SIZE === 0) {
             await new Promise<void>((resolve) => setTimeout(resolve, 0));
+            if (gen !== buildGen) return false;
         }
 
         const event = events[i];
@@ -188,83 +179,18 @@ async function buildMasterSnapshots(events: MboEvent[]) {
         applyEvent(book, event);
     }
 
+    if (gen !== buildGen) return false;
     // Push a trailing snapshot at the actual last event timestamp for all levels.
     if (events.length > 0) {
         for (let lvl = 0; lvl < levels; lvl++) {
             snapsArrays[lvl].push(snapshotToArrays(book, lastEventTs));
         }
-        datasetTMax = lastEventTs;
     }
 
     lodSnapshots = snapsArrays;
     masterSnapshots = snapsArrays[0]; // finest level - keeps compat with any direct refs
-
-    // Sync the persistent append book so incremental appends start from the
-    // correct book state rather than an empty book.
-    appendBook.bids.clear();
-    appendBook.asks.clear();
-    for (const [k, v] of book.bids as Map<string, any>) appendBook.bids.set(k, { ...v });
-    for (const [k, v] of book.asks as Map<string, any>) appendBook.asks.set(k, { ...v });
+    return true;
 }
-
-/**
- * Incrementally extend the LOD pyramids with new events.
- * Picks up exactly where buildMasterSnapshots left off - no full rebuild needed.
- */
-async function appendSnapshots(events: MboEvent[]) {
-    const levels = LOD_INTERVALS_NS.length;
-    if (lodSnapshots.length !== levels) return; // safety: init not done yet
-
-    // Reconstruct the book state at the end of the existing data by replaying
-    // the trailing events. We only need book state - so we re-derive it from
-    // the last snapshot's ts and replay forward. Since we don't store the book
-    // between calls, we replay only the new events against a blank book, then
-    // merge with the last known snapshot via a "continuation book".
-    //
-    // Simpler approach that works correctly: keep a persistent book alongside
-    // the snapshots. We track it in appendBook below.
-    const book = appendBook; // mutable, persisted between append calls
-
-    const nextSnapTimes: bigint[] = LOD_INTERVALS_NS.map((interval, lvl) => {
-        const last = lodSnapshots[lvl];
-        if (last.length === 0) return 0n;
-        // Next expected snapshot time = last stored ts + interval
-        return last[last.length - 1].ts + interval;
-    });
-
-    for (let i = 0; i < events.length; i++) {
-        if (i > 0 && i % INIT_CHUNK_SIZE === 0) {
-            await new Promise<void>((resolve) => setTimeout(resolve, 0));
-        }
-
-        const event = events[i];
-        const ts = isoToNs(event.ts_event);
-
-        for (let lvl = 0; lvl < levels; lvl++) {
-            const interval = LOD_INTERVALS_NS[lvl];
-            while (ts >= nextSnapTimes[lvl]) {
-                lodSnapshots[lvl].push(snapshotToArrays(book, nextSnapTimes[lvl]));
-                nextSnapTimes[lvl] += interval;
-            }
-        }
-
-        applyEvent(book, event);
-        datasetTMax = ts;
-    }
-
-    // Push a trailing snapshot at the last event
-    if (events.length > 0) {
-        for (let lvl = 0; lvl < levels; lvl++) {
-            lodSnapshots[lvl].push(snapshotToArrays(book, datasetTMax));
-        }
-    }
-
-    masterSnapshots = lodSnapshots[0];
-}
-
-// Persistent book for incremental append - survives between append calls
-//@ts-ignore
-const appendBook: BookState = { bids: new Map(), asks: new Map() };
 
 /** Pick the LOD level whose interval best matches the current ns-per-pixel density. */
 function pickLodLevel(nsPerPixel: number): Snapshot[] {

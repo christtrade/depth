@@ -57,6 +57,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   to say "Pro timeframe". The `timeframe:add-failed` messages match the tooltips now.
 
 ## Fixed
+- The l3 heatmap never drew. Its worker waited for the order events but nothing ever sent them. It
+  gets them on every load, page and live chunk now, and keeps drawing the old ones while it rebuilds.
 - Tick and l3 update. every live chunk added a 2nd footprint bar for the forming minute instead of
   just growing the existing one. Uses both chunks to rebuild it whole now and resent items are dropped.
 - A failed tf switch or prefetch covered the whole chart with the error screen even tho the bars were

@@ -12,7 +12,6 @@ import {
     getEvent,
 } from '../lib/compact-buffer';
 import {
-    sliceToMboEventsAsync,
     deserializePriceHistoryFromBuf,
     deserializeOhlcvCacheFromBuf,
 } from '../lib/slice-worker-client';
@@ -35,7 +34,7 @@ import {
     prependAggregatedOhlcvBars,
 } from '../lib/bar-aggregate';
 import { getSessionStatus, type SessionStatus } from '../core/SessionUtils';
-import { type HeatmapRequest } from '../lib/types/heatmap-types';
+import { type HeatmapRequest, type WorkerInitMessage } from '../lib/types/heatmap-types';
 import { serializeBounds } from '../lib/types/heatmap-types';
 import { applyHeatmapContrast } from '../lib/renderers/renderer';
 import { X_AXIS_HEIGHT } from '../lib/renderers/renderer';
@@ -835,6 +834,16 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         workerRequestIdRef.current++;
     }, []);
 
+    // send a copy so the charts own buffer stays usable while the worker builds
+    const sendHeatmapInit = useCallback(() => {
+        const cb = compactBufRef.current;
+        const worker = workerRef.current;
+        if (!worker || !cb.length) return;
+        const buf = cb._buf.slice(0, cb.length * 20);
+        const msg: WorkerInitMessage = { type: 'init', buf, length: cb.length };
+        worker.postMessage(msg, [buf]);
+    }, []);
+
     const runIndicatorWorker = useCallback((trades: SerialTrade[], barNs: bigint) => {
         const worker = indicatorWorkerRef.current;
         if (!worker) return;
@@ -1376,12 +1385,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 );
             }
             if (workerRef.current) {
-                sliceToMboEventsAsync(
-                    compactBufRef.current,
-                    0,
-                    compactBufRef.current.length,
-                    'init',
-                ).catch(() => {});
+                sendHeatmapInit();
                 workerReadyRef.current = true;
                 scheduleResample();
             }
@@ -1549,13 +1553,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             p.pushDrawParamsRef.current();
             p.renderEngineRef.current?.markAllDirty();
             runIndicatorWorker(getTradesUpToHorizon(p.horizonRef.current), activeTfBarNs);
-            if (workerRef.current)
-                sliceToMboEventsAsync(
-                    compactBufRef.current,
-                    0,
-                    compactBufRef.current.length,
-                    'append',
-                ).catch(() => {});
+            sendHeatmapInit();
             scheduleResample();
         } catch (e) {
             console.error('[chart] ingestAppendedData failed', e);
@@ -1636,6 +1634,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             cb.firstTs = ds;
             cb.lastTs = datasetEndRef.current;
             compactBufRef.current = cb;
+            sendHeatmapInit();
             allTradesRef.current = newTrades;
             allPriceHistoryRef.current = newHistory;
             tradesRef.current = newTrades;

@@ -8,6 +8,7 @@ import {
     type RealtimeRequest,
     type SymbolInfo,
 } from '@christtrade/depth';
+import { simMboEvents } from '../../src/lib/sim-levels';
 
 // what the adapter does wrong, changeable whlile the page runs
 export interface Faults {
@@ -19,6 +20,7 @@ export interface Faults {
 
 const SEC_NS = 1_000_000_000n;
 const SEC_MS = 1000;
+const L3_PAGE_MS = 30 * 60_000;
 
 const SYMBOL: SymbolInfo = {
     symbol: 'HARNESS',
@@ -65,16 +67,17 @@ export class HarnessAdapter implements IDataAdapter {
         private readonly endMs: () => number,
         live: boolean,
         readonly faults: Faults = { down: false, failRate: 0, slowMs: 0, code: 'network_error' },
+        private readonly level: 'ohlcv' | 'l3' = 'ohlcv',
     ) {
-        if (live) this.subscribeRealtime = (req, onBar) => this.stream(req, onBar);
+        if (live && level === 'ohlcv') this.subscribeRealtime = (req, onBar) => this.stream(req, onBar);
     }
 
     resolveSymbol(): SymbolInfo {
-        return SYMBOL;
+        return { ...SYMBOL, dataLevel: this.level };
     }
 
     async searchSymbols(): Promise<SymbolInfo[]> {
-        return [SYMBOL];
+        return [this.resolveSymbol()];
     }
 
     async fetchBars({ range, timeframe, direction }: FetchRequest): Promise<BarResponse> {
@@ -83,8 +86,15 @@ export class HarnessAdapter implements IDataAdapter {
         if (f.down || Math.random() < f.failRate) {
             throw new DataAdapterError(f.code, `harness: ${direction} fetch failed on purpose`);
         }
-        const durMs = Number(timeframe.barNs / 1_000_000n);
         const end = this.endMs();
+        if (this.level === 'l3') {
+            // at most half an hour a fetch, a day of l3 is millions of events
+            const to = Math.min(range.toMs, end);
+            const from = Math.max(this.startMs, range.fromMs, to - L3_PAGE_MS);
+            const hasMore = direction === 'forward' ? range.toMs < end : from > this.startMs;
+            return { events: simMboEvents(price, from, to, { slotMs: 250 }), hasMore };
+        }
+        const durMs = Number(timeframe.barNs / 1_000_000n);
         const from = Math.max(this.startMs, Math.ceil(range.fromMs / durMs) * durMs);
         const to = Math.min(range.toMs, end);
         const bars: OhlcvBar[] = [];

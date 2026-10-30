@@ -1,4 +1,3 @@
-import type { MboEvent } from '.';
 import type { ViewBounds } from '.';
 
 export type SerializedBounds = {
@@ -8,9 +7,11 @@ export type SerializedBounds = {
     pMax: number;
 };
 
+// a copy of the charts compact buffer. the worker decodes it itself
 export type WorkerInitMessage = {
     type: 'init';
-    events: MboEvent[];
+    buf: ArrayBuffer;
+    length: number;
 };
 
 // pan/zoom just sends view bounds - worker handles everything else internally

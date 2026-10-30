@@ -8,9 +8,11 @@ const DAY_MS = 86_400_000;
 const params = new URLSearchParams(location.search);
 const live = params.get('live') === '1';
 const budget = params.get('budget');
+const level = params.get('level') === 'l3' ? 'l3' : 'ohlcv';
 
 const win = window as any;
 win.__status = [];
+win.__heatmaps = 0;
 
 function App() {
     const { adapter, end } = useMemo(() => {
@@ -20,7 +22,7 @@ function App() {
             failRate: Number(params.get('fail') ?? 0),
             slowMs: Number(params.get('slow') ?? 0),
             code: (params.get('code') as any) ?? 'network_error',
-        });
+        }, level);
         // tests flip these while the page runs
         win.__faults = adapter.faults;
         return { adapter, end };
@@ -38,7 +40,14 @@ function App() {
 
     useEffect(() => {
         win.__chart = chart;
-        return chart.eventBus.on('data:status', ({ status }) => win.__status.push(status));
+        const offs = [
+            chart.eventBus.on('data:status', ({ status }) => win.__status.push(status)),
+            // a heatmap bitmap made it back from the worker
+            chart.eventBus.on('heatmap:status', ({ recalculating }) => {
+                if (!recalculating) win.__heatmaps++;
+            }),
+        ];
+        return () => offs.forEach((off) => off());
     }, [chart]);
 
     return (
