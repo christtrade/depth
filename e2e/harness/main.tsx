@@ -14,7 +14,14 @@ win.__status = [];
 function App() {
     const { adapter, end } = useMemo(() => {
         const end = live ? Date.now() : Date.UTC(2026, 0, 1);
-        const adapter = new HarnessAdapter(end - 400 * DAY_MS, () => (live ? Date.now() : end), live);
+        const adapter = new HarnessAdapter(end - 400 * DAY_MS, () => (live ? Date.now() : end), live, {
+            down: params.get('down') === '1',
+            failRate: Number(params.get('fail') ?? 0),
+            slowMs: Number(params.get('slow') ?? 0),
+            code: (params.get('code') as any) ?? 'network_error',
+        });
+        // tests flip these while the page runs
+        win.__faults = adapter.faults;
         return { adapter, end };
     }, []);
 

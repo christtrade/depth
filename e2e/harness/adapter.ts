@@ -1,11 +1,21 @@
-import type {
-    BarResponse,
-    FetchRequest,
-    IDataAdapter,
-    OhlcvBar,
-    RealtimeRequest,
-    SymbolInfo,
+import {
+    DataAdapterError,
+    type BarResponse,
+    type DataAdapterErrorCode,
+    type FetchRequest,
+    type IDataAdapter,
+    type OhlcvBar,
+    type RealtimeRequest,
+    type SymbolInfo,
 } from '@christtrade/depth';
+
+// what the adapter does wrong, changeable whlile the page runs
+export interface Faults {
+    down: boolean;
+    failRate: number;
+    slowMs: number;
+    code: DataAdapterErrorCode;
+}
 
 const SEC_NS = 1_000_000_000n;
 const SEC_MS = 1000;
@@ -54,6 +64,7 @@ export class HarnessAdapter implements IDataAdapter {
         // the live edge. now when live, a fixed tiem otherwise
         private readonly endMs: () => number,
         live: boolean,
+        readonly faults: Faults = { down: false, failRate: 0, slowMs: 0, code: 'network_error' },
     ) {
         if (live) this.subscribeRealtime = (req, onBar) => this.stream(req, onBar);
     }
@@ -67,6 +78,11 @@ export class HarnessAdapter implements IDataAdapter {
     }
 
     async fetchBars({ range, timeframe, direction }: FetchRequest): Promise<BarResponse> {
+        const f = this.faults;
+        if (f.slowMs) await new Promise((r) => setTimeout(r, f.slowMs * (0.5 + Math.random())));
+        if (f.down || Math.random() < f.failRate) {
+            throw new DataAdapterError(f.code, `harness: ${direction} fetch failed on purpose`);
+        }
         const durMs = Number(timeframe.barNs / 1_000_000n);
         const end = this.endMs();
         const from = Math.max(this.startMs, Math.ceil(range.fromMs / durMs) * durMs);
