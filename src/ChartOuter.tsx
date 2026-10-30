@@ -928,16 +928,10 @@ export default function Depth({
             }),
             eventBus.on('data:load', (payload) => {
                 setDataLevel(payload.dataLevel);
-                // A rehydrate is the same window handed over again (a pane
-                // mounting, or moving onto a symbol another pane already has).
-                // Treated as a load it would rewind the engine to the start of
-                // that window and re-settle every bar in it, which can fill a
-                // live working order somewhere back in the past. A resolution
-                // swap is the same span at a new bar period, with the same
-                // hazard and a cursor that cant just carry over by index.
+                // dont do a full load to avoid filling live orders from back in the past
                 ingestForExecution(
                     payload,
-                    payload.resolutionSwap ? 'swap' : payload.rehydrate ? 'append' : 'load',
+                    payload.replaced ? 'swap' : payload.rehydrate ? 'append' : 'load',
                 );
             }),
             // Bars streamed in ahead of the playhead. These have to reach the

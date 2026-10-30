@@ -4,16 +4,17 @@ const COLS = ['time', 'open', 'high', 'low', 'close', 'volume'] as const;
 const MIN_CAPACITY = 16;
 
 /**
- * OHLCV bars as columns, sorted by `time`
+ * ohlcv bars as columns
  *
- * A bar is ~48 bytes here against ~176 as an object, and there's nothing for
- * the GC to walk. Prepend and append are amortized O(bars added), so paging
- * history in doesn't copy what's already loaded.
+ * A bar as an object is ~176, here it's ~48 bytes + there's nothing for the
+ * gc to walk. prepend and append are amortized 0(bars added).
  *
- * `time`, `open` ... are views starting at index 0. Read them off the store
- * when you use them - any mutation can swap them for new views, so one held
- * across a mutation reads stale data. `version` bumps on every mutation; key
- * caches on it, not on the store, since the store's identity never changes.
+ * time, open, etc are views starting at idx 0. If you're going to use this,
+ * read the bars off the store when you use them cause any mutation can swap
+ * them for new views, so one held across a mutation reads stale data.
+ * version bumps on every mutation and key caches on it too.
+ * The chart hands out a new store on every `data:load` so dont hold one
+ * across that either.
  */
 export class BarStore {
     time: Float64Array = new Float64Array(0);
@@ -66,6 +67,25 @@ export class BarStore {
             s.askBuf!.set(this.ask!);
         }
         s.length = this.length;
+        s.changed();
+        return s;
+    }
+
+    /** Bars `from` (inclusive) to `to` (exclusive) as a copy, with room for `slack` more split between both ends */
+    slice(from = 0, to = this.length, slack = 0): BarStore {
+        from = Math.max(0, from);
+        to = Math.min(this.length, to);
+        const len = Math.max(0, to - from);
+        const s = new BarStore(len + slack);
+        const head = Math.floor((s.cap - len) / 2);
+        for (const c of COLS) s.buf[c].set(this[c].subarray(from, to), head);
+        if (this.bid) {
+            s.addBidAsk();
+            s.bidBuf!.set(this.bid.subarray(from, to), head);
+            s.askBuf!.set(this.ask!.subarray(from, to), head);
+        }
+        s.head = head;
+        s.length = len;
         s.changed();
         return s;
     }

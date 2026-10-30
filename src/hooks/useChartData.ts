@@ -1170,7 +1170,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             // a swap keeps the panes horizon, following the edge if it was live
             // playFromIso is the engine's load time horizon, long stale on a live chart
             const h = p.horizonRef.current;
-            const playFrom = payload.resolutionSwap
+            const playFrom = payload.replaced
                 ? !isPlayingRef.current && h >= oldEnd
                     ? de
                     : h
@@ -1218,7 +1218,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 }
             }
 
-            if (!payload.resolutionSwap) {
+            if (!payload.replaced) {
                 const timeSpan = 800_000_000_000n;
                 const offset = 100_000_000_000n;
                 p.viewRef.current = {
@@ -1233,7 +1233,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             p.transformer.setSession(p.resolvedSessionRef.current);
             p.renderEngineRef.current?.setView(p.viewRef.current);
             const _SCRIPTED = '__scripted__';
-            const _keptInds = payload.resolutionSwap
+            const _keptInds = payload.replaced
                 ? p.indicatorsRef.current
                 : p.indicatorsRef.current.filter((i) => i.workerInit === _SCRIPTED);
             p.indicatorsRef.current = _keptInds;

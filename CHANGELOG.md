@@ -17,6 +17,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   different series than before since volume is drawn when a bar opens now
 - `features.timeframe.lockedReason`: the message for a timeframe `features.timeframe.timeframes`
   leaves out, for when your plan isn't called Pro.
+- `dataBudget: { maxBytes }`, a cap on the ohlcv bars the chart holds across every symbol. Uses 256 MB
+  as default and `Infinity` for none. Past it, drops unused symbols, then bars far from
+  every panes view, and those page back in when panning to them. Panning back a year at 1s
+  used to grow the store until the tab died.
+- `BarStore.slice(from, to, slack)`.
 
 ## Changed
 - **Breaking:** `subscribeRealtime(request, onBar)`, on adapters and plugin data sources. `request`
@@ -25,6 +30,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   symbol or resolution changes, so an adapter no longer guesses the timeframe from its last fetch.
   A plugin source's `onTick` builds bars of the subscription's symbol and size, not the last
   fetch's.
+- **Breaking:** `data:load`'s `resolutionSwap` is `replaced` now, since evicting bars swaps the
+  window too. A `BarStore` from `getData()` or `data:load` goes stale on the next `data:load`.
 - **Breaking:** removed `ohlcvBars` from `getData()` and the plugin data snapshot. Use `bars`, or
   `bars.toArray()` for objects
 - A locked timeframe says why. One the adapter can't serve says it isn't supported, and why. One

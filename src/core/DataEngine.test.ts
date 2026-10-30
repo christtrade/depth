@@ -98,6 +98,7 @@ function tfEngine(opts: {
     fail?: () => boolean;
     barren?: bigint[];
     supplemental?: bigint;
+    maxBytes?: number;
 }) {
     const fetches: Fetch[] = [];
     const subs: { req: any; onBar: (bar: any) => void; open: boolean }[] = [];
@@ -153,6 +154,7 @@ function tfEngine(opts: {
         },
         horizon: new Date(opts.loadTo).toISOString(),
         timeframe: tf as never,
+        dataBudget: { maxBytes: opts.maxBytes },
     });
     de.setAdapter(adapter);
 
@@ -569,6 +571,87 @@ describe('realtime', () => {
         const before = de.getSnapshot().bars.length;
         subs[0].onBar({ events: [], ohlcvBars: [{ time: T2026, open: 9, high: 9, low: 9, close: 9, volume: 1 }], hasMore: false });
         assert.equal(de.getSnapshot().bars.length, before, 'stale bar ignored');
+    });
+});
+
+describe('data budget', () => {
+    // 1000 1m bars on load, 48 B a bar
+    const budgeted = () =>
+        tfEngine({ timeframe: MIN, loadFrom: T2026 - 1000 * 60_000, loadTo: T2026, maxBytes: 200_000 });
+
+    const replacedLoads = (bus: TypedEventBus) => {
+        const seen = { n: 0 };
+        bus.on('data:load', (p) => {
+            if (p.replaced) seen.n++;
+        });
+        return seen;
+    };
+
+    it('drops history far from the view and pages it back in', async () => {
+        const { bus, de, fetches, announce, settle } = budgeted();
+        const replaced = replacedLoads(bus);
+
+        await de.load('NQ');
+        announce(0, MIN, T2026 - 100 * 60_000, T2026);
+        await settle();
+
+        bus.emit('data:request-backward', { viewMin: nsOf(T2026 - 3000 * 60_000), symbol: 'NQ' });
+        await settle();
+
+        const bars = de.getSnapshot().bars;
+        assert.equal(replaced.n, 1, 'panes got the smaller store');
+        assert.ok(bars.bytes <= 100_000, `under half the budget, got ${bars.bytes}`);
+        // the view plus a screen of pan room either side
+        assert.equal(bars.time[0], T2026 - 200 * 60_000);
+        assert.equal(bars.time.at(-1), T2026 - 60_000);
+
+        bus.emit('data:request-backward', { viewMin: nsOf(T2026 - 300 * 60_000), symbol: 'NQ' });
+        await settle();
+        const back = fetches.at(-1)!;
+        assert.equal(back.direction, 'backward');
+        assert.equal(back.toNs, nsOf(T2026 - 200 * 60_000), 'from the new edge');
+    });
+
+    it('drops a symbol no pane shows', async () => {
+        const { bus, de, fetches, announce, settle } = budgeted();
+
+        await de.load('ES');
+        await de.load('NQ');
+        announce(0, MIN, T2026 - 100 * 60_000, T2026);
+        await settle();
+
+        bus.emit('data:request-backward', { viewMin: nsOf(T2026 - 3000 * 60_000), symbol: 'NQ' });
+        await settle();
+
+        const before = fetches.length;
+        bus.emit('chart:set-symbol', { symbol: 'ES', id: 0 });
+        await settle();
+        const refetch = fetches.slice(before);
+        assert.ok(
+            refetch.some((f) => f.symbol === 'ES' && f.direction === 'initial'),
+            'ES loads from scratch',
+        );
+    });
+
+    it('leaves room so live bars dont evict again', async () => {
+        const { bus, de, subs, announce, settle } = budgeted();
+        const replaced = replacedLoads(bus);
+
+        await de.load('NQ');
+        announce(0, MIN, T2026 - 100 * 60_000, T2026);
+        await settle();
+        bus.emit('data:request-backward', { viewMin: nsOf(T2026 - 3000 * 60_000), symbol: 'NQ' });
+        await settle();
+        assert.equal(replaced.n, 1);
+
+        const feed = subs.at(-1)!;
+        for (let i = 0; i < 20; i++) {
+            const time = T2026 + i * 60_000;
+            feed.onBar({ events: [], ohlcvBars: [{ time, open: 1, high: 2, low: 0.5, close: 1.5, volume: 1 }], hasMore: false });
+        }
+        await settle();
+        assert.equal(replaced.n, 1);
+        assert.equal(de.getSnapshot().bars.time.at(-1), T2026 + 19 * 60_000);
     });
 });
 

@@ -61,6 +61,7 @@ export interface DataEngineConfig {
     fpOptions?: FootprintOptions;
     initialWindowNs?: bigint;
     scrollWindowNs?: bigint;
+    dataBudget?: { maxBytes?: number };
     timeframe: Timeframe;
     /** Active symbol - passed in every FetchRequest so one adapter serves many symbols. */
     symbol?: string;
@@ -215,6 +216,7 @@ function _chunkToMasterFields(
 const SWITCH_PAD_BARS = 300n;
 /** Window to load when no pane has said where it is looking, in bars either side. */
 const SWITCH_FALLBACK_BARS = 1000n;
+const DEFAULT_MAX_BYTES = 256 * 2 ** 20;
 
 function _gcd(a: bigint, b: bigint): bigint {
     while (b > 0n) [a, b] = [b, a % b];
@@ -333,6 +335,10 @@ export class DataEngine {
     };
 
     private maxLookbackBars: number;
+    private readonly maxBytes: number;
+    private budgetTimer: ReturnType<typeof setTimeout> | null = null;
+    private budgetWarned = false;
+    private playheadNs: bigint | null = null;
 
     constructor(
         private readonly eventBus: TypedEventBus,
@@ -345,6 +351,7 @@ export class DataEngine {
         this.scrollWindowNs = config.scrollWindowNs ?? 3_600_000_000_000n;
         this.activeSymbol = config.symbol ?? '';
         this.maxLookbackBars = 0;
+        this.maxBytes = config.dataBudget?.maxBytes ?? DEFAULT_MAX_BYTES;
 
         this.config = config;
 
@@ -642,6 +649,7 @@ export class DataEngine {
 
         this._syncShared();
         this._syncRealtime();
+        this._scheduleBudget();
         await this._emitLoad(st);
 
         // a pane can announce a different timeframe while this fetch is in
@@ -885,6 +893,8 @@ export class DataEngine {
 
         this.realtimeUnsub?.();
         this.realtimeUnsub = null;
+        if (this.budgetTimer !== null) clearTimeout(this.budgetTimer);
+        this.budgetTimer = null;
         this._cancelSymbolSearch();
         this.symbolSearchCache.clear();
         this.symbolUniverse = null;
@@ -1507,6 +1517,7 @@ export class DataEngine {
 
         master.barNs = this._masterBarNs(st);
         this._syncShared();
+        this._scheduleBudget();
     }
 
     private _prependMaster(st: SymbolState, chunk: DataChunk): void {
@@ -1554,6 +1565,7 @@ export class DataEngine {
 
         master.barNs = this._masterBarNs(st);
         this._syncShared();
+        this._scheduleBudget();
     }
 
     // the period to declare for a symbol's master: for ohlcv the resolution its
@@ -1643,6 +1655,9 @@ export class DataEngine {
                 });
             }),
             this.eventBus.on('timeframe:change', ({ tf }) => this._onTimeframeChange(tf.barNs)),
+            this.eventBus.on('playback:seek', ({ tNs }) => {
+                this.playheadNs = tNs;
+            }),
         );
     }
 
@@ -1688,7 +1703,7 @@ export class DataEngine {
     private async _emitLoad(
         st: SymbolState,
         rehydrate = false,
-        resolutionSwap = false,
+        replaced = false,
     ): Promise<void> {
         const master = st.master;
         if (!master) return;
@@ -1699,7 +1714,7 @@ export class DataEngine {
             session: st.session,
             playFromIso: this.horizonIso,
             rehydrate,
-            resolutionSwap,
+            replaced,
             ...ingestBufs,
         });
     }
@@ -1774,6 +1789,153 @@ export class DataEngine {
             if (pane.symbol === symbol && pane.barNs > 0n) return true;
         }
         return false;
+    }
+
+    // Memory budget
+
+    private _scheduleBudget(): void {
+        if (this.budgetTimer !== null || !Number.isFinite(this.maxBytes)) return;
+        this.budgetTimer = setTimeout(() => {
+            this.budgetTimer = null;
+            this._enforceBudget();
+        }, 0);
+    }
+
+    // evicts down to half the budget so the next few pages dont set it off again
+    private _enforceBudget(): void {
+        if (this.destroyed) return;
+        const held = [...this._states].filter(([, st]) => st.master?.dataLevel === 'ohlcv');
+        let total = 0;
+        for (const [, st] of held) total += st.master!.ohlcvBars.bytes;
+        if (total <= this.maxBytes) {
+            this.budgetWarned = false;
+            return;
+        }
+        let excess = total - this.maxBytes / 2;
+
+        for (const [symbol, st] of held) {
+            if (excess <= 0) return;
+            if (symbol === this.activeSymbol || this._onScreen(symbol)) continue;
+            excess -= st.master!.ohlcvBars.bytes;
+            this._states.delete(symbol);
+        }
+
+        type Seg = { symbol: string; st: SymbolState; front: boolean; bars: number; rowBytes: number };
+        const segs: Seg[] = [];
+        const bounds = new Map<SymbolState, { lo: number; hi: number }>();
+        for (const [symbol, st] of held) {
+            if (!this._states.has(symbol) || st.staging) continue;
+            // keep protected data
+            const keep = this._protectedRange(symbol, st);
+            if (!keep) continue;
+
+            const bars = st.master!.ohlcvBars;
+            // a page in flight lands against the edge it was asked from
+            const lo = st.backwardInFlight ? 0 : bars.lowerBound(keep.fromMs);
+            const hi = st.forwardInFlight ? bars.length : bars.upperBound(keep.toMs);
+            if (hi <= lo) continue;
+
+            bounds.set(st, { lo, hi });
+            const rowBytes = (bars.bid ? 8 : 6) * 8;
+            if (lo > 0) segs.push({ symbol, st, front: true, bars: lo, rowBytes });
+            if (hi < bars.length) segs.push({ symbol, st, front: false, bars: bars.length - hi, rowBytes });
+        }
+
+        // a quarter of slack on every cut, so count a dropped bar at 1.25 rows
+        const drops = new Map<SymbolState, { front: number; back: number; symbol: string }>();
+        segs.sort((a, b) => b.bars * b.rowBytes - a.bars * a.rowBytes);
+        for (const seg of segs) {
+            if (excess <= 0) break;
+            const n = Math.min(seg.bars, Math.ceil(excess / (seg.rowBytes * 1.25)));
+            excess -= n * seg.rowBytes * 1.25;
+            
+            const d = drops.get(seg.st) ?? { front: 0, back: 0, symbol: seg.symbol };
+            if (seg.front) d.front = n;
+            else d.back = n;
+            drops.set(seg.st, d);
+        }
+
+        for (const [st, d] of drops) {
+            const bars = st.master!.ohlcvBars;
+            const { hi: keepHi } = bounds.get(st)!;
+            // cut on bucket edges to avoid drawing a half candle on the coarsest pane
+            const periodMs = Number(this._lookbackBarNs(d.symbol) / 1_000_000n) || 1;
+            const bucket = (t: number) => Math.floor(t / periodMs) * periodMs;
+            const lo = d.front > 0 ? bars.lowerBound(bucket(bars.time[d.front])) : 0;
+            let hi = bars.length;
+            if (d.back > 0) hi = Math.max(keepHi, bars.lowerBound(bucket(bars.time[bars.length - d.back])));
+            if (lo > 0 || hi < bars.length) this._cut(st, lo, hi);
+        }
+
+        if (excess > this.maxBytes / 2 && !this.budgetWarned) {
+            this.budgetWarned = true;
+            console.warn('[DataEngine] what the panes show is over the data budget, keeping it');
+        }
+    }
+
+    // the protected range is just what data we should never evict.
+    // like every pane's view on this symbol (with pane room) and indicator lookback,
+    // the playhead and the live edge while streaming. null when no pane says where its looking
+    private _protectedRange(
+        symbol: string,
+        st: SymbolState,
+    ): { fromMs: number; toMs: number } | null {
+        let from: bigint | null = null;
+        let to: bigint | null = null;
+        //protect panes' views
+        for (const pane of this.paneResolutions.values()) {
+            if (pane.symbol !== symbol || pane.viewFrom === null || pane.viewTo === null) continue;
+            const pad = bigMin(pane.viewTo - pane.viewFrom, SWITCH_PAD_BARS * st.fetchBarNs);
+            //also take indicator lookback into account
+            const f = pane.viewFrom - pad - BigInt(this.maxLookbackBars) * pane.barNs;
+            const t = pane.viewTo + pad;
+            if (from === null || f < from) from = f;
+            if (to === null || t > to) to = t;
+        }
+        if (from === null || to === null) return null;
+
+        // and playhead
+        if (this.playheadNs !== null) {
+            const p = this._lookbackBarNs(symbol);
+            if (this.playheadNs - p < from) from = this.playheadNs - p;
+            if (this.playheadNs + p > to) to = this.playheadNs + p;
+        }
+        // and live edge when streaming
+        const live = this.realtimeUnsub !== null && symbol === this.activeSymbol;
+        return {
+            fromMs: Number(from / 1_000_000n),
+            toMs: live ? Infinity : Number(to / 1_000_000n),
+        };
+    }
+
+    // keep bars [lo, hi) and hand panes the smaller store
+    private _cut(st: SymbolState, lo: number, hi: number): void {
+        const master = st.master!;
+        const old = master.ohlcvBars;
+        const kept = old.slice(lo, hi, Math.ceil((hi - lo) / 4));
+        master.ohlcvBars = kept;
+        const first = kept.time[0];
+        const last = kept.time[kept.length - 1];
+        if (lo > 0) {
+            master.dataStart = first;
+            st.loadedFrom = BigInt(Math.round(first)) * 1_000_000n;
+            st.hasMoreHistory = true;
+        }
+        if (hi < old.length) {
+            master.dataEnd = last;
+            st.loadedTo = BigInt(Math.round(last)) * 1_000_000n;
+            st.hasMoreForward = true;
+        }
+        if (master.supplemental) {
+            const end = last + Number(st.fetchBarNs / 1_000_000n);
+            for (const s of master.supplemental) {
+                s.bars = s.bars.filter((b) => b.time >= first && b.time < end);
+            }
+        }
+        this._syncShared();
+        void this._emitLoad(st, /* rehydrate */ false, /* replaced */ true).catch((err) =>
+            console.error('[DataEngine] eviction _emitLoad failed', err),
+        );
     }
 
     /**
@@ -1916,7 +2078,8 @@ export class DataEngine {
 
         this._syncShared();
         this._syncRealtime();
-        await this._emitLoad(st, /* rehydrate */ false, /* resolutionSwap */ true);
+        this._scheduleBudget();
+        await this._emitLoad(st, /* rehydrate */ false, /* replaced */ true);
     }
 
     // Helpers

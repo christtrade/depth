@@ -201,7 +201,8 @@ export interface ChartEvents {
          * of rewinding and settling the window again.
          */
         rehydrate?: boolean;
-        resolutionSwap?: boolean;
+        /** The window was swapped for another one - a resolution switch or data eviction. */
+        replaced?: boolean;
         /** Pre-bucketed ingest result from DataEngine (non-ohlcv data levels only). */
         ingestOhlcvBuf?: ArrayBuffer;
         ingestBucketedPhBuf?: ArrayBuffer;

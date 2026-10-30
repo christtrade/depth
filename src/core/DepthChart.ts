@@ -150,6 +150,7 @@ export type AccountOptions = {
     fillSearch?: Partial<FillSearchOptions>;
 };
 
+//TODO: add descriptions here for each option
 export interface ChartOptions {
     dataAdapter: IDataAdapter;
     initialLoad: { start: string | number; end: string | number };
@@ -161,6 +162,7 @@ export interface ChartOptions {
     fpOptions?: FootprintOptions;
     initialWindowNs?: bigint;
     prefetchWindowNs?: bigint;
+    dataBudget?: { maxBytes?: number };
     executionAdapter?: IExecutionAdapter;
 
     hideToolbar?: boolean;
@@ -528,6 +530,7 @@ export class DepthChart {
             horizon: horizon,
             fpOptions: options.fpOptions,
             initialWindowNs: options.initialWindowNs,
+            dataBudget: options.dataBudget,
             timeframe,
             symbol: options.symbol,
             plugins: this.dataSources,
