@@ -177,6 +177,10 @@ export {
 // Mock adapters, for testing
 export { SimulatedMarketAdapter, createSimulatedAdapter } from '../lib/createSimulatedAdapter';
 
+// Adapter wrappers
+export { withOpfsCache } from '../lib/withOpfsCache';
+export type { CachedAdapter, OpfsCacheOptions } from '../lib/withOpfsCache';
+
 // Account manager
 export { AccountManager } from './AccountManager';
 export type { AccountOptions, AccountSaveState } from './AccountManager';

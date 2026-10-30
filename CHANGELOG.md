@@ -27,6 +27,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   drop, for any reason (the budget, a timeframe switch, a reload, destroy). Cache them and answer
   `fetchBars` from that cache, so panning back costs no network. Not awaited.
 - `BarStore.view(from, to)`, a no-copy read-only view.
+- `withOpfsCache(adapter, { maxBytes, dir })` writes evicted bars to the origin private file system
+  and answers `fetchBars` from it when it covers the whole range, so panning back over dropped
+  history skips the network. 1 GB by default, oldest chunks go first. `clearCache()` empties it.
+  Without opfs available the adapter stays unchanged.
 
 ## Changed
 - **Breaking:** `subscribeRealtime(request, onBar)`, on adapters and plugin data sources. `request`
