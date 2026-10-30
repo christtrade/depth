@@ -39,7 +39,7 @@ import { type HeatmapRequest } from '../lib/types/heatmap-types';
 import { serializeBounds } from '../lib/types/heatmap-types';
 import { applyHeatmapContrast } from '../lib/renderers/renderer';
 import { X_AXIS_HEIGHT } from '../lib/renderers/renderer';
-import { hasHole } from '../lib/view-edges';
+import { followsEdge as followsDataEdge } from '../lib/view-edges';
 import { nanoid } from 'nanoid';
 
 // Local types
@@ -694,12 +694,14 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         phCursorRef.current = -1;
     }, []);
 
-    // whether new data whose end moved from oldEnd to de takes the horizon along
-    const followsEdge = (oldEnd: bigint, de: bigint): boolean => {
-        const h = p.horizonRef.current;
-        if (isPlayingRef.current || h < oldEnd) return false;
-        return !hasHole(oldEnd, h, p.activeTimeframeRef.current.barNs) || de >= h;
-    };
+    const followsEdge = (oldEnd: bigint, newEnd: bigint): boolean =>
+        followsDataEdge({
+            horizon: p.horizonRef.current,
+            oldEnd,
+            newEnd,
+            barNs: p.activeTimeframeRef.current.barNs,
+            playing: isPlayingRef.current,
+        });
 
     const syncOhlcvOpenBar = useCallback((horizon: bigint) => {
         if (dataLevelRef.current !== 'ohlcv') return;

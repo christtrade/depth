@@ -7,6 +7,19 @@ export function hasHole(dataEnd: bigint, horizon: bigint, barNs: bigint): boolea
     return horizon > dataEnd + barNs;
 }
 
+// whether new data whose end moved from oldEnd to newEnd takes the horizon along.
+// only when idle at the live edge, and a page into a hole only once it reaches it
+export function followsEdge(e: {
+    horizon: bigint;
+    oldEnd: bigint;
+    newEnd: bigint;
+    barNs: bigint;
+    playing: boolean;
+}): boolean {
+    if (e.playing || e.horizon < e.oldEnd) return false;
+    return !hasHole(e.oldEnd, e.horizon, e.barNs) || e.newEnd >= e.horizon;
+}
+
 // newest time a pan may reach
 export function panEnd(dataEnd: bigint, horizon: bigint, barNs: bigint): bigint {
     if (horizon <= 0n) return dataEnd;
