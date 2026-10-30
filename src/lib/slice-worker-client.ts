@@ -1,26 +1,3 @@
-/**
- * KEY DESIGN PRINCIPLE - NO MAIN-THREAD DESERIALIZATION:
- *
- * The onmessage handler does ZERO object allocation. It reattaches ArrayBuffers
- * and resolves with raw Float64Array-backed data only. Callers that need JS
- * objects (TradePoint[], PriceHistory[], Map) call the exported lazy helpers.
- *
- * Public API:
- *   sliceToMboEventsAsync   - off-thread slice, returns MboEvent[]
- *   prependMergeAsync       - off-thread prepend (raw buffer result)
- *   loadIngestAsync         - off-thread load post-processing (raw buffer result)
- *   appendIngestAsync       - off-thread append (raw buffer result)
- *
- * Raw-buffer result helpers (call ONLY when you actually need JS objects,
- * never in the hot onmessage path):
- *   deserializeTradesFromBuf
- *   deserializePriceHistoryFromBuf
- *   deserializeOhlcvCacheFromBuf
- *   serializeTrades / serializePriceHistory / serializeOhlcvCache
- *
- *   destroySliceWorker()
- */
-
 import type { CompactBuffer } from '../lib/compact-buffer';
 import type { MboEvent, PriceHistory } from '../lib/types';
 import type {
@@ -32,7 +9,7 @@ import type {
     LoadIngestResponse,
     AppendIngestRequest,
     AppendIngestResponse,
-} from './slice.worker';
+} from './slice-handlers';
 
 // Types
 type TradePoint = { ts: bigint; price: number; size: number; side: string };
