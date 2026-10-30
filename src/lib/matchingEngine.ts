@@ -703,6 +703,7 @@ export function createL3MatchingEngine(
         | {
               kind: 'ohlcv';
               bars: BarStore;
+              owned: boolean;
               suppBars: SuppBar[];
               /** Bar period in ns. Tells a completed bar from the forming one. */
               barNs: bigint;
@@ -712,20 +713,17 @@ export function createL3MatchingEngine(
 
     let _nonL3: NonL3Mode | null = null;
     let _nonL3Cursor = 0;
+    // end of the last ohlcv bar replayed
+    let _ohlcvReplayedTo = 0n;
     let _nonL3SuppCursor = 0;
     let _nonL3LastTs = 0n;
     /** Last horizon passed to seekToOhlcv - drives rewind detection there. */
     let _nonL3LastSeekTs = 0n;
 
-    function ownBars(bars: OhlcvBar[] | BarStore): BarStore {
-        if (bars instanceof BarStore) {
-            const t = bars.time;
-            let sorted = true;
-            for (let i = 1; i < t.length && sorted; i++) sorted = t[i] >= t[i - 1];
-            if (sorted) return bars.clone();
-            bars = bars.toArray();
-        }
-        return BarStore.from(sortedByTime(bars));
+    // a barstore is shared as is since replay finds its place by time
+    function holdBars(bars: OhlcvBar[] | BarStore): { bars: BarStore; owned: boolean } {
+        if (bars instanceof BarStore) return { bars, owned: false };
+        return { bars: BarStore.from(sortedByTime(bars)), owned: true };
     }
 
     function sortedByTime(bars: OhlcvBar[]): OhlcvBar[] {
@@ -2145,55 +2143,55 @@ export function createL3MatchingEngine(
     }
     //  Non-L3 data ingestion
     function ingestOhlcvBars(bars: OhlcvBar[] | BarStore, barNs?: bigint): void {
-        const own = ownBars(bars);
+        const held = holdBars(bars);
         _nonL3 = {
             kind: 'ohlcv',
-            bars: own,
+            ...held,
             suppBars: [],
-            barNs: barNs && barNs > 0n ? barNs : inferBarNs(own),
+            barNs: barNs && barNs > 0n ? barNs : inferBarNs(held.bars),
         };
         _nonL3Cursor = 0;
+        _ohlcvReplayedTo = 0n;
         _nonL3SuppCursor = 0;
         _nonL3LastTs = 0n;
         _cb = createCompactBuffer(0);
         _processedUpToIdx = 0;
     }
 
-    /**
-     * Extend the bar buffer forward, leaving the replay cursor where it is.
-     *
-     * `ingestOhlcvBars` is a reset - it swaps in a whole new dataset and rewinds
-     * to the start of time, which is right for a load or a jump but wrong for a
-     * stream. Data arriving as the playhead nears the loaded edge comes in here
-     * instead, or every forward extension replays the whole history on the next
-     * seek.
-     *
-     * Bars at or after the first incoming timestamp are replaced rather than
-     * appended: the tail of the buffer is normally a bar that was still forming
-     * when it was last handed over, and comes back complete.
-     */
+    // extend the bars fwd wihout rewinding replay (unlike ingestohlcvbars).
+    // bars from the first incoming one on are replaced - the old tail is usually
+    // a bar that was still forming
     function appendOhlcvBars(bars: OhlcvBar[] | BarStore, barNs?: bigint): void {
         if (_nonL3?.kind !== 'ohlcv' || bars.length === 0) {
             if (bars.length) ingestOhlcvBars(bars, barNs);
             return;
         }
         const data = _nonL3;
-        const incoming = sortedByTime(bars instanceof BarStore ? bars.toArray() : bars);
+        if (barNs && barNs > 0n) data.barNs = barNs;
 
-        // reaching further back than what we hold means a different window, not
-        // an extension - the cursor indexes into the old one, so rebuild
+        // the same window handed over again, maybe as a new store
+        if (bars instanceof BarStore) {
+            data.bars = bars;
+            data.owned = false;
+            return;
+        }
+
+        const incoming = sortedByTime(bars);
+        // reaching further back than what we hold is a different window
         if (data.bars.length > 0 && incoming[0].time < data.bars.time[0]) {
             ingestOhlcvBars(incoming, barNs);
             return;
         }
 
+        if (!data.owned) {
+            // the chart grows its store before announcing the chunk
+            const t = data.bars.time;
+            if (t.length && t[t.length - 1] >= incoming[incoming.length - 1].time) return;
+            data.bars = data.bars.clone();
+            data.owned = true;
+        }
         data.bars.replaceRange(incoming[0].time, Infinity, []);
         data.bars.append(incoming);
-
-        // only reachable if the overlap swallowed bars the replay had already
-        // consumed, i.e. the feed rewrote history behind the horizon
-        if (_nonL3Cursor > data.bars.length) _nonL3Cursor = data.bars.length;
-        if (barNs && barNs > 0n) data.barNs = barNs;
     }
 
     /**
@@ -2204,17 +2202,13 @@ export function createL3MatchingEngine(
             ingestOhlcvBars(bars, barNs);
             return;
         }
-        // the end of the lat bar played
-        const consumedTo = _nonL3LastTs > 0n ? _nonL3LastTs + _nonL3.barNs : 0n;
         _nonL3 = {
             kind: 'ohlcv',
-            bars: ownBars(bars),
+            ...holdBars(bars),
             suppBars: [],
             barNs: barNs > 0n ? barNs : _nonL3.barNs,
         };
         _nonL3SuppCursor = 0;
-        _nonL3Cursor =
-            consumedTo > 0n ? _nonL3.bars.lowerBound(Number(consumedTo / 1_000_000n)) : 0;
     }
 
     /** Sub-bar counterpart of appendOhlcvBars - same cursor-preserving splice. */
@@ -2367,15 +2361,16 @@ export function createL3MatchingEngine(
         // that doesnt cross a bar boundary still has to rewind the sub-bar cursor
         // or those sub-bars stay silently consumed
         if (tNs < _nonL3LastSeekTs) {
-            _nonL3Cursor = 0;
+            _ohlcvReplayedTo = 0n;
             _nonL3SuppCursor = 0;
         }
         _nonL3LastSeekTs = tNs;
 
-        while (_nonL3Cursor < data.bars.length) {
+        // found by time, since the store can grow at the front, get cut or be swapped between seeks
+        let i = _ohlcvReplayedTo > 0n ? data.bars.lowerBound(Number(_ohlcvReplayedTo / 1_000_000n)) : 0;
+        for (; i < data.bars.length; i++) {
             // views read per bar: onTick runs listeners, which can grow the store
             const { time, open, high, low, close, bid, ask } = data.bars;
-            const i = _nonL3Cursor;
             const barTsNs = BigInt(time[i]) * 1_000_000n;
             const bar = { open: open[i], high: high[i], low: low[i], close: close[i] };
             // NaN where a bar had none, which `??` wouldn't catch
@@ -2387,8 +2382,8 @@ export function createL3MatchingEngine(
             // sls firing early, stamped at the bar open. the forming bar gets
             // handled below off finer sub-bars.
             if (barTsNs + barPeriodNs > tNs) break;
-            _nonL3Cursor++;
             _nonL3LastTs = barTsNs;
+            _ohlcvReplayedTo = barTsNs + barPeriodNs;
 
             const barTsMsNum = Number(barTsNs);
             const openBid = barBid ?? bar.open - hs;
@@ -2633,6 +2628,7 @@ export function createL3MatchingEngine(
         _cb = createCompactBuffer(0);
         _nonL3 = null;
         _nonL3Cursor = 0;
+        _ohlcvReplayedTo = 0n;
         _nonL3SuppCursor = 0;
         _nonL3LastTs = 0n;
     }

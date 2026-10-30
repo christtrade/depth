@@ -33,6 +33,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Without opfs available the adapter stays unchanged.
 
 ## Changed
+- The matching engine reads the chart's bar store instead of keeping its own copy. A `BarStore`
+  passed to `ingestOhlcvBars` or `swapOhlcvBars` is read in place now and not copied. Replay finds
+  its place by time, so the store can grow at either end or get cut under it.
 - **Breaking:** `subscribeRealtime(request, onBar)`, on adapters and plugin data sources. `request`
   is a `RealtimeRequest`: the symbol, the resolution to stream at, where the chart's data ends
   (`since`, to backfill from) and `supplementalBarNs`. The engine subscribes again whenever the

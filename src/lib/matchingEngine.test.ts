@@ -10,6 +10,7 @@ import {
     type PlaceOrderRequest,
 } from './matchingEngine';
 import { getTickValue } from './types/trading-types';
+import { BarStore } from '../core/BarStore';
 
 // The engine talks to trading state through a handful of setters. None of them
 // matter here - these tests are about what the engine does before it has been
@@ -79,6 +80,70 @@ describe('a book with no price yet', () => {
         engine.seekTo(T0 + BAR_NS * 2n);
 
         assert.equal(engine.getPrice(), 101.5);
+    });
+});
+
+describe("reading the chart's store", () => {
+    const at = (k: bigint, low: number, close: number) => ({
+        time: Number((T0 + k * BAR_NS) / 1_000_000n),
+        open: 100,
+        high: 101,
+        low,
+        close,
+        volume: 10,
+    });
+
+    it('reads it in place instead of copying', () => {
+        const { state } = stubTradingState();
+        const engine = createL3MatchingEngine(state, { symbolInfo: SYMBOL_INFO });
+        const store = BarStore.from([at(0n, 99, 100)]);
+
+        engine.ingestOhlcvBars!(store, BAR_NS);
+        store.append([at(1n, 99, 103)]);
+        engine.seekTo(T0 + BAR_NS * 2n);
+
+        assert.equal(engine.getPrice(), 103);
+    });
+
+    it('does not replay settled bars after history is paged in at the front', () => {
+        const { state, positions } = stubTradingState();
+        const engine = createL3MatchingEngine(state, { symbolInfo: SYMBOL_INFO });
+        const store = BarStore.from([at(0n, 100, 100), at(1n, 98, 99)]);
+
+        engine.ingestOhlcvBars!(store, BAR_NS);
+        engine.seekTo(T0 + BAR_NS * 2n);
+        // below the market now, but the bar already replayed went through it
+        engine.placeOrder({ side: 'long', type: 'limit', qty: 1, limitPrice: 98.5, symbol: 'TEST' });
+
+        store.prepend([at(-2n, 100, 100), at(-1n, 100, 100)]);
+        engine.seekTo(T0 + BAR_NS * 2n);
+
+        assert.equal(positions.length, 0);
+    });
+
+    it('leaves the store alone on an append it already holds', () => {
+        const { state } = stubTradingState();
+        const engine = createL3MatchingEngine(state, { symbolInfo: SYMBOL_INFO });
+        const store = BarStore.from([at(0n, 99, 100)]);
+
+        engine.ingestOhlcvBars!(store, BAR_NS);
+        store.append([at(1n, 99, 101)]);
+        engine.appendOhlcvBars!([at(1n, 99, 101)], BAR_NS);
+
+        assert.equal(store.length, 2);
+    });
+
+    it('copies before taking an append the store lacks', () => {
+        const { state } = stubTradingState();
+        const engine = createL3MatchingEngine(state, { symbolInfo: SYMBOL_INFO });
+        const store = BarStore.from([at(0n, 99, 100)]);
+
+        engine.ingestOhlcvBars!(store, BAR_NS);
+        engine.appendOhlcvBars!([at(1n, 99, 104)], BAR_NS);
+        engine.seekTo(T0 + BAR_NS * 2n);
+
+        assert.equal(store.length, 1, 'not written to');
+        assert.equal(engine.getPrice(), 104);
     });
 });
 
