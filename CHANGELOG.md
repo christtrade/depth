@@ -57,6 +57,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   to say "Pro timeframe". The `timeframe:add-failed` messages match the tooltips now.
 
 ## Fixed
+- One failed page of history and the chart wouldnt allow that range to get requested again. It got
+  marked as loaded,and the pan stops the view before what's loaded so it never asked again. Now it
+  tries again a couple times, delaying each time (1s -> 2s -> ... -> 30s). Same for forward pages.
 - The timeframes in the full list werent buttons, so you couldn't tab to them or pick one with
   the keyboard.
 - `SimulatedMarketAdapter` didnt declare `supportedResolutions` unless live, so the chart thought

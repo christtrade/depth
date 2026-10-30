@@ -769,6 +769,65 @@ describe('a switch over the budget', () => {
     });
 });
 
+describe('a fetch that fails', () => {
+    const flaky = () => {
+        const source = { down: false };
+        const t = tfEngine({ timeframe: MIN, loadFrom: T2026 - 1000 * 60_000, loadTo: T2026, fail: () => source.down });
+        return { ...t, source };
+    };
+    const after = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    it('tries the page into history again later, instead of skipping it', async () => {
+        const { bus, de, fetches, announce, settle, source } = flaky();
+        await de.load('NQ');
+        announce(0, MIN, T2026 - 100 * 60_000, T2026);
+        await settle();
+        const edge = nsOf(de.getSnapshot().bars.time[0]);
+        const backward = () => fetches.filter((f) => f.direction === 'backward');
+
+        source.down = true;
+        bus.emit('data:request-backward', { viewMin: nsOf(T2026 - 2000 * 60_000), symbol: 'NQ' });
+        await settle();
+        bus.emit('data:request-backward', { viewMin: nsOf(T2026 - 2000 * 60_000), symbol: 'NQ' });
+        await settle();
+        assert.equal(backward().length, 1, 'waits before asking again');
+
+        source.down = false;
+        await after(1100);
+        await settle();
+        assert.equal(backward().length, 2, 'asked again once the wait was over');
+        assert.equal(backward()[1].toNs, edge, 'for the same range');
+        assert.ok(de.getSnapshot().bars.time[0] < T2026 - 1000 * 60_000, 'and got it');
+    });
+
+    it('holds a playback prefetch until the retry, rather than letting it spin', async () => {
+        const { bus, de, fetches, announce, settle, source } = flaky();
+        await de.load('NQ');
+        announce(0, MIN, T2026 - 100 * 60_000, T2026);
+        await settle();
+        let done = 0;
+        bus.on('data:prefetch-done', () => done++);
+        const forward = () => fetches.filter((f) => f.direction === 'forward');
+
+        source.down = true;
+        bus.emit('data:prefetch', { symbol: 'NQ' });
+        await settle();
+        assert.equal(forward().length, 1);
+        assert.equal(done, 1);
+
+        bus.emit('data:prefetch', { symbol: 'NQ' });
+        await settle();
+        assert.equal(forward().length, 1, 'no fetch while waiting');
+        assert.equal(done, 1, 'and no done either, so playback holds');
+
+        source.down = false;
+        await after(1100);
+        await settle();
+        assert.equal(forward().length, 2);
+        assert.equal(done, 2);
+    });
+});
+
 describe('onEvict', () => {
     const pageBackFar = async (t: ReturnType<typeof tfEngine>) => {
         await t.de.load('NQ');

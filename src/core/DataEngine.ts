@@ -255,7 +255,31 @@ interface SymbolState {
     /** False while a hole separates the data from the live edge, so the feed waits until pans page across it. */
     reachesLive: boolean;
     pendingForwardViewMax: bigint | null;
+    retry: { backward: Retry; forward: Retry };
 }
+
+// a direction whose last fetch failed: no new one b4 `at` and one `timer` to try again
+interface Retry {
+    at: number;
+    ms: number;
+    timer: ReturnType<typeof setTimeout> | null;
+}
+
+const RETRY_MIN_MS = 1000;
+const RETRY_MAX_MS = 30_000;
+
+// twice as long after each failure in a row, so a source thats down isnt hammered
+function backOff(r: Retry): void {
+    r.ms = r.ms ? Math.min(RETRY_MAX_MS, r.ms * 2) : RETRY_MIN_MS;
+    r.at = Date.now() + r.ms;
+}
+
+function recovered(r: Retry): void {
+    r.ms = 0;
+    r.at = 0;
+}
+
+const noRetry = (): Retry => ({ at: 0, ms: 0, timer: null });
 
 export class DataEngine {
     private adapter: IDataAdapter | null = null;
@@ -384,6 +408,7 @@ export class DataEngine {
                 supplementalResolution: null,
                 reachesLive: true,
                 pendingForwardViewMax: null,
+                retry: { backward: noRetry(), forward: noRetry() },
             };
             this._states.set(symbol, st);
         }
@@ -591,6 +616,8 @@ export class DataEngine {
         st.hasMoreForward = true;
         st.reachesLive = true;
         st.pendingForwardViewMax = null;
+        recovered(st.retry.backward);
+        recovered(st.retry.forward);
         this._dropMaster(st);
         st.fetchBarNs = 0n;
         st.stageToken++;
@@ -919,6 +946,17 @@ export class DataEngine {
 
     // Scroll pagination
 
+    // true while that direction waits out a failed fetch, with `again` set to run once the wait is over
+    private _waiting(r: Retry, again: () => void): boolean {
+        const wait = r.at - Date.now();
+        if (wait <= 0) return false;
+        r.timer ??= setTimeout(() => {
+            r.timer = null;
+            if (!this.destroyed) again();
+        }, wait);
+        return true;
+    }
+
     // a pan into the hole a capped switch left. live feeds and playback page forward on their own
     private _requestForward(symbol: string, viewMax: bigint): void {
         const st = this._states.get(symbol);
@@ -945,6 +983,14 @@ export class DataEngine {
             return;
         }
         if (st.loadedTo === null || !st.symbolInfo) return;
+        // no prefetch-done until the retry does fetch, so playback waits for it instead of asking every frame
+        const retry = () => this._fetchForward(symbol, spanNs, st.pendingForwardViewMax ?? viewMax);
+        if (this._waiting(st.retry.forward, retry)) {
+            if (viewMax !== undefined && (st.pendingForwardViewMax ?? 0n) < viewMax) {
+                st.pendingForwardViewMax = viewMax;
+            }
+            return;
+        }
 
         // sized to playback consumption, but never less than the scroll window
         let win = spanNs && spanNs > this.scrollWindowNs ? spanNs : this.scrollWindowNs;
@@ -995,6 +1041,7 @@ export class DataEngine {
             })
             .then((response) => {
                 if (this.destroyed) return;
+                recovered(st.retry.forward);
                 const processed = this._process(response, st);
 
                 // nothing past this window, so stop future forward fetches and let
@@ -1020,6 +1067,7 @@ export class DataEngine {
             })
             .catch((err) => {
                 console.error('[DataEngine] forward fetch failed', err);
+                backOff(st.retry.forward);
                 this._emitAdapterError('prefetch_failed', err, symbol);
             })
             .finally(() => {
@@ -1039,7 +1087,12 @@ export class DataEngine {
         if (!st.hasMoreHistory) return;
         if (st.loadedFrom === null || !st.symbolInfo) return;
 
-        if (st.backwardInFlight) {
+        const retry = () => {
+            const queued = st.pendingBackwardViewMin;
+            st.pendingBackwardViewMin = null;
+            if (queued !== null) this._fetchBackward(symbol, queued);
+        };
+        if (st.backwardInFlight || this._waiting(st.retry.backward, retry)) {
             if (st.pendingBackwardViewMin === null || viewMin < st.pendingBackwardViewMin) {
                 st.pendingBackwardViewMin = viewMin;
             }
@@ -1113,8 +1166,7 @@ export class DataEngine {
             })
             .then((response) => {
                 if (this.destroyed) return;
-
-
+                recovered(st.retry.backward);
                 const processed = this._process(response, st);
 
                 if (!processed || isEmptyChunk(processed)) {
@@ -1139,8 +1191,13 @@ export class DataEngine {
             })
             .catch((err) => {
                 console.error('[DataEngine] backward fetch failed', err);
-                // still advance loadedFrom on error or we hammer the same range
-                st.loadedFrom = from;
+                // loadedFrom stays as is, or the pan clamp will never let the view reach far enough
+                // to ask for this range again.
+                // backOff() to back off first
+                backOff(st.retry.backward);
+                if (st.pendingBackwardViewMin === null || viewMin < st.pendingBackwardViewMin) {
+                    st.pendingBackwardViewMin = viewMin;
+                }
             })
             .finally(() => {
                 st.backwardInFlight = false;
