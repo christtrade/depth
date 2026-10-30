@@ -11,7 +11,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Added
 - The baseline chart type's base line value is now fixed to screen pixels, and is now draggable. Used
   to be fixed to the start of loaded data.
-- `chart.isRealtime()`: whether the adapter's realtime feed is subscribed.
+- `chart.isRealtime()`: whether the chart follows the adapter's realtime feed, also while the feed
+  waits for the data to reach the live edge.
 - `SimulatedMarketAdapter` takes `realtime: true` to run as a live feed: one path from
   `historyBars` back up to now, the forming bar streamed every `realtimeUpdateMs`. A seed gives a
   different series than before since volume is drawn when a bar opens now
@@ -36,6 +37,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   fetch's.
 - **Breaking:** `data:load`'s `resolutionSwap` is `replaced` now, since evicting bars swaps the
   window too. A `BarStore` from `getData()` or `data:load` goes stale on the next `data:load`.
+- A timeframe switch that would go over `dataBudget` loads around the view only, and leaves a hole
+  up to the live edge. Panning right pages across it, and the realtime feed waits until a forward
+  fetch says `hasMore: false`. Same when the budget evicts the live edge. Adapters have to say
+  `hasMore: false` going forward at now, or the feed never picks back up.
+- **Breaking:** `data:request-forward` takes `viewMax`, and pages up to it in one go.
 - **Breaking:** removed `ohlcvBars` from `getData()` and the plugin data snapshot. Use `bars`, or
   `bars.toArray()` for objects
 - A locked timeframe says why. One the adapter can't serve says it isn't supported, and why. One
@@ -50,7 +56,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   switch the chart never paged in more history.
 - Switching to a timeframe fetched at a new resolution while panned back only loaded around the
   view. On a live chart that left a hole up to the live bar since only playback pages forward.
-  The new window runs to where the old data ended.
+  The new window runs to where the old data ended, unless that's over `dataBudget`.
 - A resolution swap put the horizon back where the chart first loaded. On a live chart that's
   behind the data, so it stopped following and updates stopped drawing. A swap keeps the panes
   horizon now and follows the new edge if it was live.

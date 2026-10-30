@@ -217,6 +217,8 @@ const SWITCH_PAD_BARS = 300n;
 /** Window to load when no pane has said where it is looking, in bars either side. */
 const SWITCH_FALLBACK_BARS = 1000n;
 const DEFAULT_MAX_BYTES = 256 * 2 ** 20;
+/** A BarStore row without bid/ask. */
+const BAR_BYTES = 48;
 
 function _gcd(a: bigint, b: bigint): bigint {
     while (b > 0n) [a, b] = [b, a % b];
@@ -250,6 +252,9 @@ interface SymbolState {
      * answer getCapabilities() differently.
      */
     supplementalResolution: bigint | null;
+    /** False while a hole separates the data from the live edge, so the feed waits until pans page across it. */
+    reachesLive: boolean;
+    pendingForwardViewMax: bigint | null;
 }
 
 export class DataEngine {
@@ -377,6 +382,8 @@ export class DataEngine {
                 stageToken: 0,
                 staging: null,
                 supplementalResolution: null,
+                reachesLive: true,
+                pendingForwardViewMax: null,
             };
             this._states.set(symbol, st);
         }
@@ -389,8 +396,9 @@ export class DataEngine {
         return symbol && this._states.has(symbol) ? symbol : this.activeSymbol;
     }
 
+    // live mode, including while the feed waits for the data to reach the live edge
     isRealtime(): boolean {
-        return this.realtimeUnsub !== null;
+        return this.realtimeKey !== '';
     }
 
     setAdapter(adapter: IDataAdapter): void {
@@ -531,17 +539,19 @@ export class DataEngine {
     }
 
     // one feed for the focused symbol at the res its data is held at
-    // every master rebuild and focus change lands here. only a new key resubscribes
+    // every master rebuild and focus change lands here. only a new key resubscribes,
+    // and none opens while a hole would put live bars past it
     private _syncRealtime(): void {
         const st = this._states.get(this.activeSymbol);
         const info = st?.master ? st.symbolInfo : null;
         const adapter = info ? this._adapterFor(info.symbol) : null;
         const key = info && adapter?.subscribeRealtime ? `${info.symbol}|${st!.fetchBarNs}` : '';
-        if (key === this.realtimeKey) return;
+        const open = key !== '' && st!.reachesLive;
+        if (key === this.realtimeKey && open === (this.realtimeUnsub !== null)) return;
         this.realtimeUnsub?.();
         this.realtimeUnsub = null;
         this.realtimeKey = key;
-        if (!key) return;
+        if (!open) return;
 
         const fetchBarNs = st!.fetchBarNs;
         const timeframe = this._fetchTimeframe(st!, fetchBarNs);
@@ -579,6 +589,8 @@ export class DataEngine {
         st.loadedTo = null;
         st.hasMoreHistory = true;
         st.hasMoreForward = true;
+        st.reachesLive = true;
+        st.pendingForwardViewMax = null;
         this._dropMaster(st);
         st.fetchBarNs = 0n;
         st.stageToken++;
@@ -907,12 +919,24 @@ export class DataEngine {
 
     // Scroll pagination
 
-    private _fetchForward(symbol: string, spanNs?: bigint): void {
+    // a pan into the hole a capped switch left. live feeds and playback page forward on their own
+    private _requestForward(symbol: string, viewMax: bigint): void {
+        const st = this._states.get(symbol);
+        if (!st || st.reachesLive || st.loadedTo === null || viewMax <= st.loadedTo) return;
+        this._fetchForward(symbol, undefined, viewMax);
+    }
+
+    private _fetchForward(symbol: string, spanNs?: bigint, viewMax?: bigint): void {
         if (this.destroyed) return;
         const adapter = this._adapterFor(symbol);
         if (!adapter) return;
         const st = this._st(symbol);
-        if (st.forwardInFlight) return;
+        if (st.forwardInFlight) {
+            if (viewMax !== undefined && (st.pendingForwardViewMax ?? 0n) < viewMax) {
+                st.pendingForwardViewMax = viewMax;
+            }
+            return;
+        }
         if (!st.hasMoreForward) {
             // asked for more but the stream is exhausted, so re-assert it and
             // playback pauses at the end instead of holding forever. the final
@@ -923,7 +947,15 @@ export class DataEngine {
         if (st.loadedTo === null || !st.symbolInfo) return;
 
         // sized to playback consumption, but never less than the scroll window
-        const win = spanNs && spanNs > this.scrollWindowNs ? spanNs : this.scrollWindowNs;
+        let win = spanNs && spanNs > this.scrollWindowNs ? spanNs : this.scrollWindowNs;
+        if (viewMax !== undefined) {
+            // past the view in one go, but a zoomed-out pan can't fetch more than the budget holds
+            const reach = viewMax - st.loadedTo + SWITCH_PAD_BARS * st.fetchBarNs;
+            if (reach > win) win = reach;
+            if (Number.isFinite(this.maxBytes)) {
+                win = bigMin(win, BigInt(Math.floor(this.maxBytes / 2 / BAR_BYTES)) * st.fetchBarNs);
+            }
+        }
 
         st.forwardInFlight = true;
         const rawFrom = st.loadedTo;
@@ -971,15 +1003,19 @@ export class DataEngine {
                     this.eventBus.emit('data:no-more-forward', { symbol });
                 }
 
-                if (!processed || isEmptyChunk(processed)) {
-                    return;
+                if (processed && !isEmptyChunk(processed)) {
+                    st.loadedTo = BigInt(processed.dataEnd) * 1_000_000n;
+                    this._growMaster(st, processed);
+                    this._emitAppend(st, processed).catch((err) =>
+                        console.error('[DataEngine] forward _emitAppend failed', err),
+                    );
                 }
 
-                st.loadedTo = BigInt(processed.dataEnd) * 1_000_000n;
-                this._growMaster(st, processed);
-                this._emitAppend(st, processed).catch((err) =>
-                    console.error('[DataEngine] forward _emitAppend failed', err),
-                );
+                // across the hole, so the feed picks up from here
+                if (response.hasMore === false && !st.reachesLive) {
+                    st.reachesLive = true;
+                    this._syncRealtime();
+                }
             })
             .catch((err) => {
                 console.error('[DataEngine] forward fetch failed', err);
@@ -988,6 +1024,9 @@ export class DataEngine {
             .finally(() => {
                 st.forwardInFlight = false;
                 this.eventBus.emit('data:prefetch-done', undefined);
+                const queued = st.pendingForwardViewMax;
+                st.pendingForwardViewMax = null;
+                if (queued !== null && !this.destroyed) this._requestForward(symbol, queued);
             });
     }
 
@@ -1599,10 +1638,8 @@ export class DataEngine {
 
     private _subscribeToEventBus(): void {
         this.unsubs.push(
-            this.eventBus.on('data:request-forward', (p) => {
-                // route to the requesting pane's symbol so each paginates its own
-                // stream, falling back to the focused one when unspecified
-                this._fetchForward(this._targetSymbol(p?.symbol));
+            this.eventBus.on('data:request-forward', ({ viewMax, symbol }) => {
+                this._requestForward(this._targetSymbol(symbol), viewMax);
             }),
             this.eventBus.on('data:request-backward', ({ viewMin, symbol }) => {
                 this._fetchBackward(this._targetSymbol(symbol), viewMin);
@@ -1897,18 +1934,14 @@ export class DataEngine {
         }
         if (from === null || to === null) return null;
 
-        // and playhead
-        if (this.playheadNs !== null) {
+        // and playhead. not while live tho, thats the live edge, and a view a year back
+        // would pin everything in between. cutting it pauses the feed instead
+        if (this.playheadNs !== null && !this._streaming(symbol)) {
             const p = this._lookbackBarNs(symbol);
             if (this.playheadNs - p < from) from = this.playheadNs - p;
             if (this.playheadNs + p > to) to = this.playheadNs + p;
         }
-        // and live edge when streaming
-        const live = this._streaming(symbol);
-        return {
-            fromMs: Number(from / 1_000_000n),
-            toMs: live ? Infinity : Number(to / 1_000_000n),
-        };
+        return { fromMs: Number(from / 1_000_000n), toMs: Number(to / 1_000_000n) };
     }
 
     // keep bars [lo, hi) and hand panes the smaller store
@@ -1930,6 +1963,7 @@ export class DataEngine {
             master.dataEnd = last;
             st.loadedTo = BigInt(Math.round(last)) * 1_000_000n;
             st.hasMoreForward = true;
+            st.reachesLive = false;
         }
         if (master.supplemental) {
             const end = last + Number(st.fetchBarNs / 1_000_000n);
@@ -1938,6 +1972,7 @@ export class DataEngine {
             }
         }
         this._syncShared();
+        this._syncRealtime();
         void this._emitLoad(st, /* rehydrate */ false, /* replaced */ true).catch((err) =>
             console.error('[DataEngine] eviction _emitLoad failed', err),
         );
@@ -2018,14 +2053,14 @@ export class DataEngine {
             return;
         }
 
-        void this._stageLoad(st, need, win.from, win.to);
+        void this._stageLoad(st, need, win.from, win.to, win.capped);
     }
 
     private _switchWindow(
         st: SymbolState,
         symbol: string,
         fetchBarNs: bigint,
-    ): { from: bigint; to: bigint } {
+    ): { from: bigint; to: bigint; capped: boolean } {
         const lookbackNs = BigInt(this.maxLookbackBars) * fetchBarNs;
         const padNs = SWITCH_PAD_BARS * fetchBarNs;
 
@@ -2050,11 +2085,14 @@ export class DataEngine {
             from = anchor - budgetNs - lookbackNs;
             to = anchor + budgetNs;
         }
-        // keep the old right edge (keep this!). stopping at the view leaves a hole up to the live
-        // bar, and only playback pages forward to fill it
+        // keep the old right edge (keep this!), or there's a hole up to the live bar.
+        // unless that's over the budget: then stop at the view, and pans page across
         const edge = st.loadedTo === null ? null : st.loadedTo + st.fetchBarNs;
-        if (edge !== null && edge > to) to = edge;
-        return { from, to };
+        if (edge === null || edge <= to) return { from, to, capped: false };
+        if (Number((edge - from) / fetchBarNs) * BAR_BYTES > this.maxBytes) {
+            return { from, to, capped: true };
+        }
+        return { from, to: edge, capped: false };
     }
 
     // Fetch [from, to] at `fetchBarNs` and swap it in. Built first and swapped on
@@ -2065,6 +2103,7 @@ export class DataEngine {
         fetchBarNs: bigint,
         from: bigint,
         to: bigint,
+        capped: boolean,
     ): Promise<void> {
         if (this.destroyed || !st.symbolInfo) return;
         const adapter = this._adapterFor(st.symbolInfo.symbol);
@@ -2115,6 +2154,8 @@ export class DataEngine {
         st.loadedTo = BigInt(processed.dataEnd) * 1_000_000n;
         st.hasMoreHistory = response.hasMore;
         st.hasMoreForward = true;
+        if (capped) st.reachesLive = false;
+        st.pendingForwardViewMax = null;
         st.fetchBarNs = fetchBarNs;
         st.master = this._buildMaster(st, processed, fetchBarNs);
 

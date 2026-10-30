@@ -79,6 +79,7 @@ import {
     type TimeRangeSync,
 } from './lib/types/layout-sync';
 import { ChartStateShape } from './core/ChartState';
+import { panEnd, requestPastEdges } from './lib/view-edges';
 
 /** How long a staged timeframe switch waits before giving up on the data. */
 const SWITCH_TIMEOUT_MS = 15_000;
@@ -1942,12 +1943,17 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
                 dataLevelRef.current,
             );
         autofitPanesSilent();
-        if (view.tMin < datasetStartRef.current) {
-            eventBus.emit('data:request-backward', {
-                viewMin: view.tMin,
-                symbol: cellSymbolRef.current,
-            });
-        }
+        requestPastEdges(
+            eventBus,
+            view,
+            {
+                start: datasetStartRef.current,
+                end: datasetEndRef.current,
+                horizon: horizonRef.current,
+                barNs: activeTimeframeRef.current.barNs,
+            },
+            cellSymbolRef.current,
+        );
         scheduleResample();
         pushDrawParams();
         onViewSettled();
@@ -1962,11 +1968,8 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         const dataEnd = datasetEndRef.current;
         if (start === 0n || dataEnd === 0n) return;
         const span = view.tMax - view.tMin;
-        const horizon = horizonRef.current;
-        const end =
-            horizon > 0n && horizon < dataEnd
-                ? horizon - (activeTimeframeRef.current.barNs * 3n) / 2n
-                : dataEnd - (activeTimeframeRef.current.barNs * 3n) / 2n;
+        const barNs = activeTimeframeRef.current.barNs;
+        const end = panEnd(dataEnd, horizonRef.current, barNs) - (barNs * 3n) / 2n;
         if (view.tMin + span < start) {
             view.tMin = start - span;
             view.tMax = start;

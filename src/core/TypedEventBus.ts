@@ -242,7 +242,7 @@ export interface ChartEvents {
     };
     // symbol scopes these to the requesting pane. the DataEngine only serves its
     // active symbol, so a synced-horizon pan doesnt make every pane reload
-    'data:request-forward': { symbol?: string };
+    'data:request-forward': { viewMax: bigint; symbol?: string };
     'data:request-backward': { viewMin: bigint; symbol?: string };
     /**
      * Jump-load: re-fetch a fresh window centered on `tNs` and reinitialize

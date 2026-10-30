@@ -138,10 +138,14 @@ function tfEngine(opts: {
             const fromMs = Math.ceil(Number(req.range.fromNs / 1_000_000n) / stepMs) * stepMs;
             const toMs = Number(req.range.toNs / 1_000_000n);
             const bars = [];
-            for (let t = fromMs; t < toMs && bars.length < 5000; t += stepMs) {
+            // nothing past the live edge yet
+            const endMs = Math.min(toMs, opts.loadTo);
+            for (let t = fromMs; t < endMs && bars.length < 5000; t += stepMs) {
                 bars.push({ time: t, open: 1, high: 2, low: 0.5, close: 1.5, volume: 1 });
             }
-            return { events: [], ohlcvBars: bars, hasMore: true };
+            // loadTo is the live edge
+            const hasMore = req.direction === 'forward' ? toMs < opts.loadTo : true;
+            return { events: [], ohlcvBars: bars, hasMore };
         },
         subscribeRealtime: (req: any, onBar: any) => {
             const sub = { req, onBar, open: true };
@@ -666,6 +670,82 @@ describe('data budget', () => {
         await settle();
         assert.equal(replaced.n, 1);
         assert.equal(de.getSnapshot().bars.time.at(-1), T2026 + 19 * 60_000);
+    });
+});
+
+describe('a switch over the budget', () => {
+    const DAY_MS = 86_400_000;
+    const viewFrom = T2026 - 20 * DAY_MS;
+    const capped = async () => {
+        const t = tfEngine({ timeframe: HOUR, loadFrom: T2026 - 30 * DAY_MS, loadTo: T2026, maxBytes: 200_000 });
+        await t.de.load('NQ');
+        t.announce(0, HOUR, T2026 - 100 * 3_600_000, T2026);
+        await t.settle();
+        // 20 days of minutes back to the live edge is ~1.4 MB
+        t.switchTo(MIN, viewFrom, viewFrom + 100 * 60_000);
+        await t.settle();
+        return t;
+    };
+
+    it('loads around the view and holds the feed, still live', async () => {
+        const { de, fetches, subs } = await capped();
+
+        const staged = at(fetches, MIN).all.at(-1)!;
+        assert.ok(staged.toNs < nsOf(viewFrom + DAY_MS), 'stops near the view');
+        assert.ok(subs.every((s) => !s.open), 'no feed while live bars would land past a hole');
+        assert.equal(de.isRealtime(), true);
+    });
+
+    it('pages forward on pan and picks the feed up at the live edge', async () => {
+        const t = await capped();
+        const opened = t.subs.length;
+
+        let viewTo = viewFrom + 100 * 60_000;
+        for (let i = 0; i < 40 && t.subs.length === opened; i++) {
+            viewTo = Math.min(T2026, viewTo + DAY_MS);
+            t.announce(0, MIN, viewTo - 100 * 60_000, viewTo);
+            t.bus.emit('data:request-forward', { viewMax: nsOf(viewTo), symbol: 'NQ' });
+            await t.settle();
+        }
+
+        assert.ok(at(t.fetches, MIN).all.some((f) => f.direction === 'forward'));
+        const feed = t.subs.at(-1)!;
+        assert.equal(t.subs.length, opened + 1, 'subscribed again');
+        assert.equal(feed.req.timeframe.barNs, MIN);
+        assert.equal(feed.req.since, nsOf(t.de.getSnapshot().bars.time.at(-1)!), 'from where the data ends');
+    });
+
+    it('ignores pans forward while the data reaches the live edge', async () => {
+        const { bus, de, fetches, announce, settle } = tfEngine({
+            timeframe: MIN,
+            loadFrom: T2026 - 1000 * 60_000,
+            loadTo: T2026,
+        });
+        await de.load('NQ');
+        announce(0, MIN, T2026 - 100 * 60_000, T2026);
+        await settle();
+        const before = fetches.length;
+
+        bus.emit('data:request-forward', { viewMax: nsOf(T2026 + 60 * 60_000), symbol: 'NQ' });
+        await settle();
+        assert.equal(fetches.length, before);
+    });
+
+    it('evicting the live edge holds the feed too', async () => {
+        const { bus, de, subs, announce, settle } = tfEngine({
+            timeframe: MIN,
+            loadFrom: T2026 - 1000 * 60_000,
+            loadTo: T2026,
+            maxBytes: 200_000,
+        });
+        await de.load('NQ');
+        announce(0, MIN, T2026 - 2900 * 60_000, T2026 - 2800 * 60_000);
+        bus.emit('data:request-backward', { viewMin: nsOf(T2026 - 3000 * 60_000), symbol: 'NQ' });
+        await settle();
+
+        assert.ok(de.getSnapshot().bars.time.at(-1)! < T2026 - 60_000, 'live edge dropped');
+        assert.equal(subs.at(-1)!.open, false);
+        assert.equal(de.isRealtime(), true);
     });
 });
 

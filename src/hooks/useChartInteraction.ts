@@ -44,6 +44,7 @@ import type {
 import { type RenderEngine } from '../core/RenderEngine';
 import { type BarStore } from '../core/BarStore';
 import { type TypedEventBus } from '../core/TypedEventBus';
+import { panEnd, requestPastEdges } from '../lib/view-edges';
 import { type SessionMapper } from '../core/SessionMapper';
 import { snapTsToBarGrid } from '../lib/bar-grid';
 import { type TradingSession, type DataLevel, type SymbolInfo, OhlcvBar } from '../interfaces/IDataAdapter';
@@ -436,8 +437,21 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
     function lastBarTs(): bigint | null {
         const dataEnd = datasetEndRef.current;
         if (dataEnd === 0n) return null;
-        const horizon = horizonRef.current;
-        return horizon > 0n && horizon < dataEnd ? horizon : dataEnd;
+        return panEnd(dataEnd, horizonRef.current, activeTimeframeRef.current.barNs);
+    }
+
+    function requestMore(view: ViewBounds): void {
+        requestPastEdges(
+            eventBus,
+            view,
+            {
+                start: datasetStartRef.current,
+                end: datasetEndRef.current,
+                horizon: horizonRef.current,
+                barNs: activeTimeframeRef.current.barNs,
+            },
+            symbolInfoRef.current?.symbol,
+        );
     }
 
     function clampPan(view: ViewBounds): void {
@@ -884,12 +898,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                 pushDrawParams();
                 onViewSettled();
                 renderEngineRef.current?.markDirty('ui');
-                if (view.tMin < datasetStartRef.current) {
-                    eventBus.emit('data:request-backward', {
-                        viewMin: view.tMin,
-                        symbol: symbolInfoRef.current?.symbol,
-                    });
-                }
+                requestMore(view);
                 glideRaf = requestAnimationFrame(step);
             };
             glideRaf = requestAnimationFrame(step);
@@ -1436,12 +1445,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
 
             // viewRef is null until this pane has data/a view - guard so panning a
             // not-yet-loaded pane doesn't throw.
-            if (viewRef.current && viewRef.current.tMin < datasetStartRef.current) {
-                eventBus.emit('data:request-backward', {
-                    viewMin: viewRef.current.tMin,
-                    symbol: symbolInfoRef.current?.symbol,
-                });
-            }
+            if (viewRef.current) requestMore(viewRef.current);
         };
 
         const handleClick = (e: MouseEvent) => {
@@ -2399,12 +2403,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                 renderEngineRef.current?.markDirty('drawings');
                 updateSettingsBarPos(selectedDrawingIdRef.current);
             }
-            if (viewRef.current.tMin < datasetStartRef.current) {
-                eventBus.emit('data:request-backward', {
-                    viewMin: viewRef.current.tMin,
-                    symbol: symbolInfoRef.current?.symbol,
-                });
-            }
+            requestMore(viewRef.current);
 
             pushDrawParams();
             onViewSettled();
@@ -2827,12 +2826,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             renderEngineRef.current?.markDirty('drawings');
             renderEngineRef.current?.markDirty('ui');
             updateSettingsBarPos(selectedDrawingIdRef.current);
-            if (view.tMin < datasetStartRef.current) {
-                eventBus.emit('data:request-backward', {
-                    viewMin: view.tMin,
-                    symbol: symbolInfoRef.current?.symbol,
-                });
-            }
+            requestMore(view);
         };
 
         const handleTouchStart = (e: TouchEvent) => {

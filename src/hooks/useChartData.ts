@@ -1167,11 +1167,13 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             datasetStartRef.current = ds;
             datasetEndRef.current = de;
             p.onDataBoundsChange?.(ds, de);
-            // a swap keeps the panes horizon, following the edge if it was live
+            // a swap keeps the panes horizon, following the edge if it was live and
+            // the new data still reaches it. one that stops short leaves a hole up
+            // to the live bar, and the horizon stays put on the far side.
             // playFromIso is the engine's load time horizon, long stale on a live chart
             const h = p.horizonRef.current;
             const playFrom = payload.replaced
-                ? !isPlayingRef.current && h >= oldEnd
+                ? !isPlayingRef.current && h >= oldEnd && de >= oldEnd
                     ? de
                     : h
                 : payload.playFromIso

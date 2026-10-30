@@ -714,7 +714,10 @@ export class DepthChart {
         return this.dataEngine.getSnapshot();
     }
 
-    /** True while the adapter's realtime feed is subscribed. */
+    /**
+     * True while the chart follows the adapter's realtime feed, including while
+     * the feed waits for panning to page the data up to the live edge.
+     */
     isRealtime(): boolean {
         return this.dataEngine.isRealtime();
     }
