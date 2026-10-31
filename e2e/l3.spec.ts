@@ -101,6 +101,34 @@ test('l3: a footprint setting rebuilds the closed bars', async ({ page }) => {
     expect(errors).toEqual([]);
 });
 
+test('l3: raising the heatmap contrast hides the thin levels', async ({ page }) => {
+    const errors = watchErrors(page);
+    await page.goto('/?level=l3');
+    await settled(page);
+    await expect.poll(() => heatmaps(page), { timeout: 15_000 }).toBeGreaterThan(0);
+
+    // pixels the heatmap bitmap actually covers
+    const lit = () =>
+        page.evaluate(() => {
+            const bm: ImageBitmap | null = (window as any).__chart.renderEngine.drawParams.heatmapBitmap;
+            if (!bm) return 0;
+            const c = new OffscreenCanvas(bm.width, bm.height);
+            const ctx = c.getContext('2d')!;
+            ctx.drawImage(bm, 0, 0);
+            const d = ctx.getImageData(0, 0, bm.width, bm.height).data;
+            let n = 0;
+            for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++;
+            return n;
+        });
+    const before = await lit();
+    expect(before).toBeGreaterThan(0);
+
+    await page.evaluate(() => (window as any).__chart.setChartSettings({ heatmapContrast: 0.8 }));
+    await expect.poll(lit, { message: 'fewer pixels lit' }).toBeLessThan(before);
+    expect(await lit()).toBeGreaterThan(0);
+    expect(errors).toEqual([]);
+});
+
 test('l3: the heatmap draws, and draws again after a pan', async ({ page }) => {
     const errors = watchErrors(page);
     await page.goto('/?level=l3');

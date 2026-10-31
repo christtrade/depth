@@ -26,6 +26,8 @@ export type HeatmapRequest = {
      *  last column to the right edge of the canvas - showing the last known book
      *  state held flat into the future, matching trades/bid-ask line behaviour. */
     horizonNs?: string;
+    /** 0 shows every level, 1 none. */
+    contrast: number;
 };
 
 export type HeatmapResponse = {

@@ -27,7 +27,6 @@ export interface UseChartSettingsParams {
     selectedDrawingIdRef: MutableRefObject<string | null>;
     renderEngineRef: MutableRefObject<RenderEngine | null>;
     scheduleResample: () => void;
-    rebuildContrastBitmap: (contrast: number) => void;
     rebuildFootprints: () => void;
     pushDrawParams: () => void;
     updateSettingsBarPos: (id: string | null) => void;
@@ -87,7 +86,6 @@ export function useChartSettings(p: UseChartSettingsParams): UseChartSettingsRes
         selectedDrawingIdRef,
         renderEngineRef,
         scheduleResample,
-        rebuildContrastBitmap,
         rebuildFootprints,
         pushDrawParams,
         updateSettingsBarPos,
@@ -145,7 +143,7 @@ export function useChartSettings(p: UseChartSettingsParams): UseChartSettingsRes
         if (chartSettings.showHeatmap !== prev.showHeatmap) scheduleResample();
 
         if (chartSettings.heatmapContrast !== prev.heatmapContrast) {
-            rebuildContrastBitmap(chartSettings.heatmapContrast);
+            scheduleResample();
             pushDrawParams();
             renderEngineRef.current?.markDirty('ui');
             return;

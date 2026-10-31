@@ -69,6 +69,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The l3 heatmap rebuilt from the first event on every live chunk, after a copy of the whole buffer
   on the main thread. It gets just the new events now and carries on from where it was. A page in
   front, or a late event sorted into the forming bar, still rebuilds it whole.
+- The heatmap contrast is applied in the worker as it paints. It was a pass over every pixel on the
+  main thread for every bitmap. Moving the contrast slider asks for a new render now and doesn't
+  reshade the last one
 
 ## Fixed
 - Picking a timeframe on tick/l3 that needed new data never switched. The pane waited for the

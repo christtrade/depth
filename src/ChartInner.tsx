@@ -975,7 +975,6 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         rebuildFootprints,
         syncOhlcvOpenBar,
         rebuildCandleCache,
-        rebuildContrastBitmap,
         updatePriceHistoryToRawIdx,
         findPriceHistoryIdx,
     } = chartData;
@@ -1318,7 +1317,6 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         selectedDrawingIdRef,
         renderEngineRef,
         scheduleResample,
-        rebuildContrastBitmap,
         rebuildFootprints,
         pushDrawParams,
         updateSettingsBarPos,

@@ -880,33 +880,6 @@ const drawShiftInfo = (
     );
 };
 
-export function applyHeatmapContrast(
-    src: ImageBitmap,
-    chartW: number,
-    chartH: number,
-    threshold: number, // 0..1
-): ImageData {
-    const scratch = new OffscreenCanvas(chartW, chartH);
-    const ctx = scratch.getContext('2d') as OffscreenCanvasRenderingContext2D;
-    ctx.drawImage(src, 0, 0);
-    const imageData = ctx.getImageData(0, 0, chartW, chartH);
-    const data = imageData.data;
-
-    const cutoff = (threshold * 210 + 0.5) | 0; // raw alpha below this -> invisible
-    const scale = cutoff >= 210 ? 0 : 210 / (210 - cutoff); // rescale remainder to 0-210
-
-    for (let i = 3; i < data.length; i += 4) {
-        const a = data[i];
-        if (a === 0) continue;
-        if (a <= cutoff) {
-            data[i] = 0;
-        } else {
-            data[i] = Math.min(210, ((a - cutoff) * scale + 0.5) | 0);
-        }
-    }
-    return imageData;
-}
-
 export function drawHeatmap(
     ctx: CanvasRenderingContext2D,
     snapshots: BookSnapshot[],

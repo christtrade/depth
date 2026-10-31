@@ -122,7 +122,7 @@ function handleRender(msg: HeatmapRequest & { type: 'render' }) {
     };
 
     const horizon = horizonNs ? BigInt(horizonNs) : null;
-    const bitmap = renderView(bounds, chartW, chartH, horizon);
+    const bitmap = renderView(bounds, chartW, chartH, horizon, msg.contrast ?? 0);
     if (!bitmap) return;
 
     const response: HeatmapResponse = { requestId, bitmap, bounds: rawBounds };
@@ -155,7 +155,8 @@ function renderView(
     bounds: ViewBounds,
     chartW: number,
     chartH: number,
-    horizon: bigint | null = null,
+    horizon: bigint | null,
+    contrast: number,
 ): ImageBitmap | null {
     if (lodSnapshots.length === 0 && masterSnapshots.length === 0) return null;
 
@@ -190,7 +191,7 @@ function renderView(
     const ctx = offscreen.getContext('2d') as OffscreenCanvasRenderingContext2D;
     if (!ctx) return null;
 
-    paintSnapshots(ctx, snapshots, first, last, bounds, chartW, chartH);
+    paintSnapshots(ctx, snapshots, first, last, bounds, chartW, chartH, contrast);
 
     return offscreen.transferToImageBitmap();
 }
@@ -204,6 +205,7 @@ function paintSnapshots(
     bounds: ViewBounds,
     chartW: number,
     chartH: number,
+    contrast: number,
 ): void {
     const tRange = Number(bounds.tMax - bounds.tMin);
     const pRange = bounds.pMax - bounds.pMin;
@@ -291,21 +293,22 @@ function paintSnapshots(
     const imageData = ctx.createImageData(chartW, chartH);
     const data = imageData.data;
 
+    // cut off the levels under the cutoff here instead of on the main thread
+    const cutoff = (contrast * 210 + 0.5) | 0;
+    const scale = cutoff >= 210 ? 0 : 210 / (210 - cutoff);
+
     const paintSide = (arr: Float64Array, isBid: boolean, x0: number, x1: number) => {
         const len = arr.length;
         for (let i = 0; i < len; i += 2) {
             const price = arr[i];
             const size = arr[i + 1];
 
-            // Encode raw log-intensity (0-1) into alpha channel at full range.
-            // Contrast remapping happens on the main thread as a fast pixel pass -
-            // no re-render needed when the user drags the contrast slider.
             const intensity = Math.log1p(size) / logMax; // 0..1
-            const alpha = (intensity * 210 + 0.5) | 0; // 0..210
+            const raw = (intensity * 210 + 0.5) | 0; // 0..210
+            if (raw <= cutoff) continue;
+            const alpha = Math.min(210, ((raw - cutoff) * scale + 0.5) | 0);
             if (alpha === 0) continue;
 
-            // Colours at full saturation (intensity=1).
-            // The main thread contrast pass only touches alpha, not RGB.
             let r: number, g: number, b: number;
             if (isBid) {
                 r = 20;

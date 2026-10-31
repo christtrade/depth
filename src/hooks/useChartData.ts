@@ -39,7 +39,6 @@ import {
 import { getSessionStatus, type SessionStatus } from '../core/SessionUtils';
 import { type HeatmapRequest, type WorkerInitMessage } from '../lib/types/heatmap-types';
 import { serializeBounds } from '../lib/types/heatmap-types';
-import { applyHeatmapContrast } from '../lib/renderers/renderer';
 import { X_AXIS_HEIGHT } from '../lib/renderers/renderer';
 import { followsEdge as followsDataEdge, loadedHorizon } from '../lib/view-edges';
 
@@ -258,7 +257,6 @@ export interface ChartDataResult {
         { open: number; high: number; low: number; close: number; volume: number; delta: number }
     > | null>;
     supplementalBarsRef: MutableRefObject<any>;
-    rawBitmapRef: MutableRefObject<ImageBitmap | null>;
     heatmapBitmapRef: MutableRefObject<ImageBitmap | null>;
     heatmapBitmapOffsetsRef: MutableRefObject<{
         x: number;
@@ -295,7 +293,6 @@ export interface ChartDataResult {
     rebuildFootprints: () => void;
     syncOhlcvOpenBar: (horizon: bigint) => void;
     rebuildCandleCache: (trades: TradePoint[], barNs: bigint) => void;
-    rebuildContrastBitmap: (contrast: number) => void;
     foldEventsIntoOpenBar: (
         prevIdx: number,
         newIdx: number,
@@ -361,7 +358,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         { open: number; high: number; low: number; close: number; volume: number; delta: number }
     > | null>(null);
     const supplementalBarsRef = useRef<any>(null);
-    const rawBitmapRef = useRef<ImageBitmap | null>(null);
     const heatmapBitmapRef = useRef<ImageBitmap | null>(null);
     const heatmapBitmapOffsetsRef = useRef<{ x: number; y: number; w: number; h: number } | null>(
         null,
@@ -461,21 +457,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             }
         }
         candleCacheRef.current = map;
-    }, []);
-
-    const rebuildContrastBitmap = useCallback((contrast: number) => {
-        const raw = rawBitmapRef.current;
-        if (!raw) return;
-        const imageData = applyHeatmapContrast(raw, raw.width, raw.height, contrast);
-        const scratch = new OffscreenCanvas(raw.width, raw.height);
-        const ctx = scratch.getContext('2d') as OffscreenCanvasRenderingContext2D;
-        ctx.putImageData(imageData, 0, 0);
-        heatmapBitmapRef.current?.close();
-        heatmapBitmapRef.current = scratch.transferToImageBitmap();
-        p.pushDrawParamsRef.current();
-        p.renderEngineRef.current?.markDirty('base');
-        p.renderEngineRef.current?.markDirty('drawings');
-        p.updateSettingsBarPosRef.current(p.selectedDrawingIdRef.current);
     }, []);
 
     const updatePriceHistoryToRawIdx = useCallback((rawIdx: number) => {
@@ -766,15 +747,18 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             bitmap.close();
             return;
         }
-        rawBitmapRef.current?.close();
-        rawBitmapRef.current = bitmap;
+        heatmapBitmapRef.current?.close();
+        heatmapBitmapRef.current = bitmap;
         cacheBoundsRef.current = {
             tMin: BigInt(bounds.tMin),
             tMax: BigInt(bounds.tMax),
             pMin: bounds.pMin,
             pMax: bounds.pMax,
         };
-        rebuildContrastBitmap(p.chartSettingsRef.current.heatmapContrast);
+        p.pushDrawParamsRef.current();
+        p.renderEngineRef.current?.markDirty('base');
+        p.renderEngineRef.current?.markDirty('drawings');
+        p.updateSettingsBarPosRef.current(p.selectedDrawingIdRef.current);
         p.eventBus.emit('heatmap:status', { recalculating: false, cellId: p.cellId });
     };
 
@@ -1048,6 +1032,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 chartW: bitmapW,
                 chartH: bitmapH,
                 horizonNs: horizon > 0n ? horizon.toString() : undefined,
+                contrast: p.chartSettingsRef.current.heatmapContrast,
             };
             p.eventBus.emit('heatmap:status', { recalculating: true, cellId: p.cellId });
             workerRef.current!.postMessage(msg);
@@ -2292,7 +2277,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         prevSessionStatusRef,
         candleCacheRef,
         supplementalBarsRef,
-        rawBitmapRef,
         heatmapBitmapRef,
         heatmapBitmapOffsetsRef,
         cacheBoundsRef,
@@ -2314,7 +2298,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         rebuildFootprints,
         syncOhlcvOpenBar,
         rebuildCandleCache,
-        rebuildContrastBitmap,
         foldEventsIntoOpenBar,
         mergeOpenBar,
         resetPlayhead,
