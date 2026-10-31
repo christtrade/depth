@@ -8,7 +8,7 @@ import {
     type RealtimeRequest,
     type SymbolInfo,
 } from '@christtrade/depth';
-import { simMboEvents } from '../../src/lib/sim-levels';
+import { simMboEvents, simTicks } from '../../src/lib/sim-levels';
 
 // what the adapter does wrong, changeable whlile the page runs
 export interface Faults {
@@ -67,9 +67,15 @@ export class HarnessAdapter implements IDataAdapter {
         private readonly endMs: () => number,
         live: boolean,
         readonly faults: Faults = { down: false, failRate: 0, slowMs: 0, code: 'network_error' },
-        private readonly level: 'ohlcv' | 'l3' = 'ohlcv',
+        private readonly level: 'ohlcv' | 'tick' | 'l3' = 'ohlcv',
     ) {
-        if (live && level === 'ohlcv') this.subscribeRealtime = (req, onBar) => this.stream(req, onBar);
+        if (live) this.subscribeRealtime = (req, onBar) => this.stream(req, onBar);
+    }
+
+    private events(from: number, to: number): BarResponse {
+        return this.level === 'tick'
+            ? { events: [], ticks: simTicks(price, from, to, { slotMs: 250 }), hasMore: false }
+            : { events: simMboEvents(price, from, to, { slotMs: 250 }), hasMore: false };
     }
 
     resolveSymbol(): SymbolInfo {
@@ -87,12 +93,12 @@ export class HarnessAdapter implements IDataAdapter {
             throw new DataAdapterError(f.code, `harness: ${direction} fetch failed on purpose`);
         }
         const end = this.endMs();
-        if (this.level === 'l3') {
+        if (this.level !== 'ohlcv') {
             // at most half an hour a fetch, a day of l3 is millions of events
             const to = Math.min(range.toMs, end);
             const from = Math.max(this.startMs, range.fromMs, to - L3_PAGE_MS);
             const hasMore = direction === 'forward' ? range.toMs < end : from > this.startMs;
-            return { events: simMboEvents(price, from, to, { slotMs: 250 }), hasMore };
+            return { ...this.events(from, to), hasMore };
         }
         const durMs = Number(timeframe.barNs / 1_000_000n);
         const from = Math.max(this.startMs, Math.ceil(range.fromMs / durMs) * durMs);
@@ -104,8 +110,17 @@ export class HarnessAdapter implements IDataAdapter {
     }
 
     private stream(req: RealtimeRequest, onBar: (bar: BarResponse) => void): () => void {
-        const durMs = Number(req.timeframe.barNs / 1_000_000n);
         let next = Number(req.since / 1_000_000n);
+        if (this.level !== 'ohlcv') {
+            const id = setInterval(() => {
+                const now = Date.now();
+                const chunk = this.events(next, now);
+                next = now;
+                if (chunk.events.length || chunk.ticks?.length) onBar(chunk);
+            }, 250);
+            return () => clearInterval(id);
+        }
+        const durMs = Number(req.timeframe.barNs / 1_000_000n);
         const id = setInterval(() => {
             const now = Date.now();
             const bars: OhlcvBar[] = [];

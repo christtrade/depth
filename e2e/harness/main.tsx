@@ -8,7 +8,7 @@ const DAY_MS = 86_400_000;
 const params = new URLSearchParams(location.search);
 const live = params.get('live') === '1';
 const budget = params.get('budget');
-const level = params.get('level') === 'l3' ? 'l3' : 'ohlcv';
+const level = (['l3', 'tick'] as const).find((l) => l === params.get('level')) ?? 'ohlcv';
 
 const win = window as any;
 win.__status = [];
