@@ -60,6 +60,26 @@ for (const level of ['tick', 'l3'] as const) {
         expect(errors).toEqual([]);
     });
 
+    // a period the old one can't build, like None, never landed
+    test(`${level} live: the timeframe stays put while a switch loads`, async ({ page }) => {
+        const errors = watchErrors(page);
+        await open(page, `/?level=${level}&live=1`);
+        const seen = await page.evaluate(async () => {
+            const c = (window as any).__chart;
+            (window as any).__faults.slowMs = 1500;
+            // more history than is loaded, so the pane waits on the fetch
+            c.setTimeframe('1h');
+            const seen = new Set<string>();
+            for (let i = 0; i < 10; i++) {
+                await new Promise((r) => setTimeout(r, 100));
+                seen.add(c.getTimeframe());
+            }
+            return [...seen];
+        });
+        expect(seen).toEqual(['1h']);
+        expect(errors).toEqual([]);
+    });
+
     test(`${level} live: grows at the edge with one bar per minute`, async ({ page }) => {
         const errors = watchErrors(page);
         await open(page, `/?level=${level}&live=1`);

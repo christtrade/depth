@@ -1841,7 +1841,8 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         if (nextPlugin?.onActivate) nextPlugin.onActivate(activeCtxRef.current);
     };
     _getIndicatorsRef.current = () => indicatorsRef.current;
-    _getActiveTimeframeRef.current = () => activeTimeframeRef.current;
+    // the one being switched to, or the toolbar sync puts the old one back mid-switch
+    _getActiveTimeframeRef.current = () => pendingSwitchRef.current?.tf ?? activeTimeframeRef.current;
     _getHorizonRef.current = () => horizonRef.current;
     // A plugin chart type computes from whatever level it declared. Point it at a
     // symbol that serves less and it draws nothing at all - so refuse the switch

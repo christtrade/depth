@@ -88,6 +88,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   A coarser one still fetches, since its forming bar reaches back past what's held raw.
 
 ## Fixed
+- While playing or live, a timeframe switch that took more than 200 ms flipped the toolbar back to
+  the old one until it landed, and new chunks got bucketed at the old period. A switch to one the
+  old period can't build, like None, never landed.
 - A tick/l3 page back in a replay drew the bid/ask lines past the playhead, and the next step forward
   put points out of order. They stop at the playhead now.
 - Picking a timeframe on tick/l3 that needed new data never switched. The pane waited for the
