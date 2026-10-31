@@ -57,6 +57,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A locked timeframe says why. One the adapter can't serve says it isn't supported, and why. One
   `features` leaves out says it's unavailable, or whatever `lockedReason` returns. Every lock used
   to say "Pro timeframe". The `timeframe:add-failed` messages match the tooltips now.
+- Tick/l3 live chunks dont re-bucket everything loaded anymore. Every chunk serialized the whole
+  history and bucketed it again. 42 ms a chunk with 8h of l3 held -> 14ms. Tick 28ms -> 2 ms.
+  **Breaking:** `data:append` doesn't carry the `ingest*` buffers.
 
 ## Fixed
 - Picking a timeframe on tick/l3 that needed new data never switched. The pane waited for the

@@ -5,6 +5,7 @@ import { type BookState } from '../lib/types';
 import { type PriceHistory, type TradePoint, type ViewBounds, type OhlcvBarMs } from '../lib/types';
 import { footprintFromTrades, type FootprintBar } from '../lib/types/footprint';
 import { openBarFrom } from '../lib/open-bar';
+import { extendBucketedPh, extendCandles } from '../lib/bucket-tail';
 import {
     type CompactBuffer,
     createCompactBuffer,
@@ -256,9 +257,6 @@ export interface ChartDataResult {
         { open: number; high: number; low: number; close: number; volume: number; delta: number }
     > | null>;
     supplementalBarsRef: MutableRefObject<any>;
-    serialisedTradesBufRef: MutableRefObject<ArrayBuffer | null>;
-    serialisedPhBufRef: MutableRefObject<ArrayBuffer | null>;
-    serialisedOhlcvBufRef: MutableRefObject<ArrayBuffer | null>;
     rawBitmapRef: MutableRefObject<ImageBitmap | null>;
     heatmapBitmapRef: MutableRefObject<ImageBitmap | null>;
     heatmapBitmapOffsetsRef: MutableRefObject<{
@@ -362,9 +360,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         { open: number; high: number; low: number; close: number; volume: number; delta: number }
     > | null>(null);
     const supplementalBarsRef = useRef<any>(null);
-    const serialisedTradesBufRef = useRef<ArrayBuffer | null>(null);
-    const serialisedPhBufRef = useRef<ArrayBuffer | null>(null);
-    const serialisedOhlcvBufRef = useRef<ArrayBuffer | null>(null);
     const rawBitmapRef = useRef<ImageBitmap | null>(null);
     const heatmapBitmapRef = useRef<ImageBitmap | null>(null);
     const heatmapBitmapOffsetsRef = useRef<{ x: number; y: number; w: number; h: number } | null>(
@@ -1267,10 +1262,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 : p.indicatorsRef.current.filter((i) => i.workerInit === _SCRIPTED);
             p.indicatorsRef.current = _keptIndsL3;
             p.setIndicators(_keptIndsL3);
-            const { ingestOhlcvBuf, ingestBucketedPhBuf, ingestTradesBuf, ingestPhBuf } = payload;
-            serialisedTradesBufRef.current = ingestTradesBuf ?? null;
-            serialisedPhBufRef.current = ingestPhBuf ?? null;
-            serialisedOhlcvBufRef.current = ingestOhlcvBuf ?? null;
+            const { ingestOhlcvBuf, ingestBucketedPhBuf } = payload;
             candleCacheRef.current = null;
             priceHistoryRef.current = [];
             const PAD = 14n * 24n * 60n * 60n * 1_000_000_000n;
@@ -1470,22 +1462,17 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             replayedUpToRef.current = newPlayFromIdx;
             p.horizonRef.current = effHorizon;
             takeFootprints(newFpBars, workerBarNs);
-            const {
-                ingestOhlcvBuf: appendOhlcvBuf,
-                ingestBucketedPhBuf: appendBucketedPhBuf,
-                ingestTradesBuf: appendTradesBuf,
-                ingestPhBuf: appendPhBuf,
-            } = payload;
-            serialisedTradesBufRef.current = appendTradesBuf ?? null;
-            serialisedPhBufRef.current = appendPhBuf ?? null;
-            serialisedOhlcvBufRef.current = appendOhlcvBuf ?? null;
-            if (appendBucketedPhBuf)
-                priceHistoryRef.current = deserializePriceHistoryFromBuf(appendBucketedPhBuf);
-            if (appendOhlcvBuf)
-                candleCacheRef.current = deserializeOhlcvCacheFromBuf(
-                    appendOhlcvBuf,
-                    p.horizonRef.current,
+            if (activeTfBarNs > 0n) {
+                phCursorRef.current = extendBucketedPh(
+                    priceHistoryRef.current,
+                    newHistory,
+                    activeTfBarNs,
+                    effHorizon,
                 );
+                if (candleCacheRef.current)
+                    extendCandles(candleCacheRef.current, newTrades, activeTfBarNs, effHorizon);
+                else rebuildCandleCache(newTrades, activeTfBarNs);
+            }
             if (p.isYAxisAutoRef.current)
                 autoFitPriceAxis(
                     p.viewRef.current!,
@@ -1615,15 +1602,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 symbol: cellSymbolRef.current,
             });
             p.onDataBoundsChange?.(ds, datasetEndRef.current);
-            const {
-                ingestOhlcvBuf: prependOhlcvBuf,
-                ingestBucketedPhBuf: prependBucketedPhBuf,
-                ingestTradesBuf: prependTradesBuf,
-                ingestPhBuf: prependPhBuf,
-            } = payload;
-            serialisedTradesBufRef.current = prependTradesBuf ?? null;
-            serialisedPhBufRef.current = prependPhBuf ?? null;
-            serialisedOhlcvBufRef.current = prependOhlcvBuf ?? null;
+            const { ingestOhlcvBuf: prependOhlcvBuf, ingestBucketedPhBuf: prependBucketedPhBuf } = payload;
             if (prependBucketedPhBuf)
                 priceHistoryRef.current = deserializePriceHistoryFromBuf(prependBucketedPhBuf);
             if (prependOhlcvBuf)
@@ -2296,9 +2275,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         prevSessionStatusRef,
         candleCacheRef,
         supplementalBarsRef,
-        serialisedTradesBufRef,
-        serialisedPhBufRef,
-        serialisedOhlcvBufRef,
         rawBitmapRef,
         heatmapBitmapRef,
         heatmapBitmapOffsetsRef,

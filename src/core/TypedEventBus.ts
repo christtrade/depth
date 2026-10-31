@@ -237,10 +237,6 @@ export interface ChartEvents {
                 volume: number;
             }>;
         }> | null;
-        ingestOhlcvBuf?: ArrayBuffer;
-        ingestBucketedPhBuf?: ArrayBuffer;
-        ingestTradesBuf?: ArrayBuffer;
-        ingestPhBuf?: ArrayBuffer;
     };
     // symbol scopes these to the requesting pane. the DataEngine only serves its
     // active symbol, so a synced-horizon pan doesnt make every pane reload

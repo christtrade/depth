@@ -39,6 +39,7 @@ import { type Forming, formingOf, joinForming } from './processing/forming';
 import { applyEvent, cloneBook } from '../lib/book';
 import type { BookState, MboEvent } from '../lib/types';
 import { isoToNs } from '../lib/sampler';
+import { firstTsAtOrAfter } from '../lib/bucket-tail';
 import type { DataSourceRegistry } from './DataSourceRegistry';
 import {
     loadIngestAsync,
@@ -134,17 +135,6 @@ function _nsToIso(ns: bigint): string {
 }
 
 const BYTES_PER_EVENT = 20;
-
-function firstTsAtOrAfter(arr: { ts: bigint }[], ns: bigint): number {
-    let lo = 0;
-    let hi = arr.length;
-    while (lo < hi) {
-        const mid = (lo + hi) >>> 1;
-        if (arr[mid].ts < ns) lo = mid + 1;
-        else hi = mid;
-    }
-    return lo;
-}
 
 // compactbuf event ts is in first 8 bytes
 function firstEventAtOrAfter(buf: ArrayBuffer, ns: bigint): number {
@@ -1612,9 +1602,11 @@ export class DataEngine {
         this._growMaster(st, processed, joined.trimFromNs);
         st.forming = next;
         st.formingBook = (processed as L3DataChunk).bookAt ?? null;
-        this._emitAppend(st, processed).catch((err) =>
-            console.error(`[DataEngine] ${from} _emitAppend failed`, err),
-        );
+        try {
+            this._emitAppend(st, processed);
+        } catch (err) {
+            console.error(`[DataEngine] ${from} _emitAppend failed`, err);
+        }
         return true;
     }
 
@@ -1910,10 +1902,10 @@ export class DataEngine {
         });
     }
 
-    private async _emitAppend(st: SymbolState, chunk: DataChunk): Promise<void> {
+    // the pane extends its own buckets, re-bucketing the whole master here was O(n) a chunk
+    private _emitAppend(st: SymbolState, chunk: DataChunk): void {
         const master = st.master;
         if (!master) return;
-        const ingestBufs = await this._runLoadIngest(master);
         // ohlcvBars is only the chunk's new bars, so the consumer extends its own
         // incrementally. `bars` is the whole master.
         this.eventBus.emit('data:append', {
@@ -1921,7 +1913,6 @@ export class DataEngine {
             ...this._buildPayload(master),
             ohlcvBars: 'ohlcvBars' in chunk ? chunk.ohlcvBars : [],
             session: st.session,
-            ...ingestBufs,
         });
     }
 
