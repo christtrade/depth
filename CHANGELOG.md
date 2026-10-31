@@ -73,6 +73,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A replay's footprints showed the future. A load or page back took every bar up to the data end, so
   the bar at the playhead had trades from after it and the forming bar never drew. They stop at the
   playhead now.
+- At tick, a timeframe switch, or the first live chunk after a page back, replayed every trade since
+  the window start through the matching engine, so a resting limit could fill on a price from before
+  it was placed. The replay continues from the playhead now.
 - l3 started every page and live chunk from an empty order book, so bid/ask were wrong at the start
   of each and the forming minutes were blank on every update. Chunks picks up the book where the last
   one left it at.

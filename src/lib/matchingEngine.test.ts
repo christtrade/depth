@@ -233,6 +233,38 @@ describe('swapping the bar period under the replay', () => {
     });
 });
 
+describe('tick trades handed over again', () => {
+    const SEC = 1_000_000_000n;
+    const tr = (k: bigint, price: number) => ({ ts: T0 + k * SEC, price, size: 1, side: 'A' as const });
+    const held = [tr(0n, 100), tr(1n, 99), tr(2n, 100)];
+    const limit: PlaceOrderRequest = { side: 'long', type: 'limit', qty: 1, limitPrice: 99, symbol: 'TEST' };
+
+    function placedAfterReplay() {
+        const s = stubTradingState();
+        const engine = createL3MatchingEngine(s.state, { symbolInfo: SYMBOL_INFO });
+        engine.ingestTicks!(held);
+        engine.seekTo(T0 + 3n * SEC);
+
+        // 99 already traded, before the order existed
+        engine.placeOrder(limit);
+        return { engine, ...s };
+    }
+
+    it('does not settle the history again after a page back', () => {
+        const { engine, positions } = placedAfterReplay();
+        engine.appendTicks!([tr(-2n, 98), tr(-1n, 100), ...held]);
+        engine.seekTo(T0 + 3n * SEC);
+        assert.equal(positions.length, 0);
+    });
+
+    it('still fills on what comes after', () => {
+        const { engine, positions } = placedAfterReplay();
+        engine.appendTicks!([tr(-1n, 100), ...held, tr(4n, 99)]);
+        engine.seekTo(T0 + 5n * SEC);
+        assert.equal(positions.length > 0, true);
+    });
+});
+
 /**
  * Brackets can be set on an order while it is still resting - dragging a TP or
  * SL off its line does exactly that. They reach the engine through syncOrder,

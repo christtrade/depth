@@ -595,7 +595,7 @@ export default function Depth({
      */
     const ingestForExecution = useCallback(
         (
-            payload: ChartEvents['data:load'] | ChartEvents['data:append'],
+            payload: ChartEvents['data:load'] | ChartEvents['data:append'] | ChartEvents['data:prepend'],
             mode: 'load' | 'append' | 'swap',
         ) => {
             const eng = execEngineRef.current;
@@ -651,8 +651,8 @@ export default function Depth({
                     break;
                 }
                 case 'tick':
-                    if (mode === 'append') eng.appendTicks(payload.trades ?? [], sym);
-                    else eng.ingestTicks(payload.trades ?? [], sym);
+                    if (mode === 'load') eng.ingestTicks(payload.trades ?? [], sym);
+                    else eng.appendTicks(payload.trades ?? [], sym);
                     break;
                 case 'l2':
                     if (mode === 'append') eng.appendPriceHistory(payload.priceHistory ?? [], sym);
@@ -941,6 +941,10 @@ export default function Depth({
             // price sticks at the old edge. Which branch a goto happens to take
             // (jump-load vs stream-append) is what decided whether fills worked.
             eventBus.on('data:append', (payload) => ingestForExecution(payload, 'append')),
+            // ohlcv reads the chart's store in place, so it already has the page
+            eventBus.on('data:prepend', (payload) => {
+                if (payload.dataLevel === 'tick') ingestForExecution(payload, 'append');
+            }),
             eventBus.on('playback:play', () => pb.play()),
             eventBus.on('playback:pause', () => pb.pause()),
             eventBus.on('playback:set-speed', (payload) => pb.setSpeed(payload.speed)),

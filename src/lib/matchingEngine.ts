@@ -2282,6 +2282,7 @@ export function createL3MatchingEngine(
         };
         _nonL3Cursor = 0;
         _nonL3LastTs = 0n;
+        _nonL3LastSeekTs = 0n;
         _cb = createCompactBuffer(0);
         _processedUpToIdx = 0;
     }
@@ -2297,31 +2298,25 @@ export function createL3MatchingEngine(
         _processedUpToIdx = 0;
     }
 
-    // Streaming counterparts.
-    //
-    // the tick and l2 streams re-send the whole series, just longer at the end.
-    // the prefix already replayed is unchanged so the cursor still points at the
-    // same event and the swap is safe. the ingest* forms above rewind to zero,
-    // which re-settles the entire history on the next seek - and that can fill a
-    // live working order back in the past, since the watermark only guards state
-    // that was handed over, not orders this engine placed itself.
-    //
-    // a series starting earlier than what we hold is a different window rather
-    // than an extension, so those fall back to the reset.
+    // ingest* rewinds to zero, which re-settles the whole history on the next seek and can fill a
+    // live order back in the past. these keep the replay where it was
 
+    // the whole series again - longer, paged back or another window. found by time like ohlcv
     function appendTicks(trades: SerialTrade[]): void {
         if (_nonL3?.kind !== 'tick' || trades.length === 0) {
             if (trades.length) ingestTicks(trades);
             return;
         }
         const sorted = [...trades].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
-        if (_nonL3.trades.length > 0 && sorted[0].ts < _nonL3.trades[0].ts) {
-            ingestTicks(trades);
-            return;
+        let lo = 0,
+            hi = sorted.length;
+        while (lo < hi) {
+            const mid = (lo + hi) >>> 1;
+            if (sorted[mid].ts <= _nonL3LastSeekTs) lo = mid + 1;
+            else hi = mid;
         }
-        const cursor = Math.min(_nonL3Cursor, sorted.length);
         _nonL3.trades = sorted;
-        _nonL3Cursor = cursor;
+        _nonL3Cursor = lo;
     }
 
     function appendPriceHistory(history: PriceHistory[]): void {
@@ -2480,6 +2475,7 @@ export function createL3MatchingEngine(
             checkLimitFillsFromRange(trade.price, trade.price, trade.ts);
             checkBracketTriggersFromRange(trade.price, trade.price, trade.ts);
         }
+        _nonL3LastSeekTs = tNs;
     }
 
     function seekToL2(tNs: bigint): void {
