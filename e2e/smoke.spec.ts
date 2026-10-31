@@ -110,6 +110,28 @@ test('picks a timeframe from the full list with the keyboard', async ({ page }) 
     await expect.poll(() => page.evaluate(() => (window as any).__chart.getTimeframe())).toBe('30s');
 });
 
+test('the status bar follows a wheel zoom without a mouse move', async ({ page }) => {
+    await page.goto('/');
+    await settled(page);
+    await page.evaluate(() => {
+        const w = window as any;
+        w.__chart.on('status:compute', (d: any) => (w.__statusTMin = String(d.bounds.tMin)));
+    });
+    // the bar under the cursor changes as the left edge moves in
+    const box = await chartBox(page);
+    await page.mouse.move(box.x + box.width / 3, box.y + box.height / 2);
+    for (let i = 0; i < 5; i++) {
+        await page.mouse.wheel(0, -200);
+        await page.waitForTimeout(5);
+    }
+    await page.waitForTimeout(300);
+    const [seen, now] = await page.evaluate(() => {
+        const w = window as any;
+        return [w.__statusTMin, String(w.__chart.renderEngine.view.tMin)];
+    });
+    expect(seen).toBe(now);
+});
+
 test('a visitor on historical data', async ({ page }) => {
     await visit(page, '/');
 });

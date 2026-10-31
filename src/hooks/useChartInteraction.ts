@@ -1633,14 +1633,21 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             }
         };
 
-        // Re-emit the status-bar OHLCV computation for a given crosshair x.
-        // Throttled to ~30fps and shared by the mouse-move and playback-tick
-        // paths so both refresh at the same rate.
+        // ~30fps, with a trailing call so the last move of a burst isn't dropped
+        let statusTrail: ReturnType<typeof setTimeout> | null = null;
         const emitStatusCompute = (x: number) => {
             const view = viewRef.current;
             if (!view) return;
             const now = performance.now();
-            if (now - lastStatusLineUpdateRef.current <= 33) return;
+            const wait = 33 - (now - lastStatusLineUpdateRef.current);
+            if (wait > 0) {
+                if (statusTrail !== null) clearTimeout(statusTrail);
+                statusTrail = setTimeout(() => {
+                    statusTrail = null;
+                    emitStatusCompute(x);
+                }, wait + 1);
+                return;
+            }
             lastStatusLineUpdateRef.current = now;
             const dpr = getEffectiveDpr();
             const chartW = canvas.width / dpr - priceScaleWidthRef.current;
@@ -2406,6 +2413,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             pushDrawParams();
             onViewSettled();
             renderEngineRef.current?.markDirty('ui');
+            if (crosshairRef.current) emitStatusCompute(crosshairRef.current.x);
         };
 
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -3042,6 +3050,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
 
         return () => {
             clearPressTimer();
+            if (statusTrail !== null) clearTimeout(statusTrail);
             canvas.removeEventListener('touchstart', handleTouchStart);
             canvas.removeEventListener('touchmove', handleTouchMove);
             canvas.removeEventListener('touchend', handleTouchEnd);

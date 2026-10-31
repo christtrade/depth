@@ -107,6 +107,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Live tick/l3 froze about half the time on load. A live chunk landing before the second load put the
   playhead behind the edge, and it never followed again.
 - Live tick/l3 never scrolled with new bars, the playhead ran off the right of a still view.
+- The status bar kept the old bar after a wheel zoom until the mouse moved. The last move of a fast
+  swipe got dropped the same way, it waited on a throttle with no trailing call.
 - While playing or live, a timeframe switch that took more than 200 ms flipped the toolbar back to
   the old one until it landed, and new chunks got bucketed at the old period. A switch to one the
   old period can't build, like None, never landed.
