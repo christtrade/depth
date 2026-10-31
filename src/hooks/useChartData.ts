@@ -4,6 +4,7 @@ import { applyEvent, createBook } from '../lib/book';
 import { type BookState } from '../lib/types';
 import { type PriceHistory, type TradePoint, type ViewBounds, type OhlcvBarMs } from '../lib/types';
 import { type FootprintBar } from '../lib/types/footprint';
+import { openBarFrom } from '../lib/open-bar';
 import {
     type CompactBuffer,
     createCompactBuffer,
@@ -576,49 +577,8 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 break;
             }
         }
-        bar.totalVol = 0;
-        bar.totalDelta = 0;
-        const levelMap = new Map<number, { bidVol: number; askVol: number }>();
-        for (let i = startIdx; i <= toEvIdx; i++) {
-            const ev = getEvent(cb, i);
-            if (ev.action !== 'T' || ev.price === null || ev.side === 'N') continue;
-            bar.totalVol += ev.size;
-            if (ev.side === 'B') bar.totalDelta += ev.size;
-            else bar.totalDelta -= ev.size;
-            const entry = levelMap.get(ev.price) ?? { bidVol: 0, askVol: 0 };
-            if (ev.side === 'B') entry.bidVol += ev.size;
-            else entry.askVol += ev.size;
-            levelMap.set(ev.price, entry);
-        }
-        let maxVol = 0,
-            maxAbsDelta = 0;
-        bar.levels = Array.from(levelMap.entries()).map(([price, { bidVol, askVol }]) => {
-            const vol = bidVol + askVol;
-            const delta = bidVol - askVol;
-            if (vol > maxVol) maxVol = vol;
-            if (Math.abs(delta) > maxAbsDelta) maxAbsDelta = Math.abs(delta);
-            return {
-                price,
-                bidVol,
-                askVol,
-                delta,
-                totalVol: vol,
-                bidImbalance: false,
-                askImbalance: false,
-                diagAskImbalance: false,
-                diagBidImbalance: false,
-                absorption: false,
-            };
-        });
-        bar.maxLevelVol = maxVol;
-        bar.maxAbsDelta = maxAbsDelta;
-        if (bar.levels.length > 0) {
-            const pocLevel = bar.levels.reduce(
-                (best, l) => (l.bidVol + l.askVol > best.bidVol + best.askVol ? l : best),
-                bar.levels[0],
-            );
-            bar.poc = pocLevel.price;
-        }
+        const built = openBarFrom(cb, startIdx, toEvIdx, barNs, fpSettingsFromRef());
+        if (built) Object.assign(bar, built);
     }, []);
 
     const foldEventsIntoOpenBar = useCallback(

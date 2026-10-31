@@ -65,6 +65,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reset the view and price zoom and removed every indicator. Keeps all now like ohlcv
 - Tick footprints weren't footprints. levels came as a price map and not the sorted array the type
   says, no poc, imbalances, max vol and buys landed in the bid col. Builds like l3 now, from the trades.
+- The forming l3 footprint bar had buys and sells in swapped columns from the closed bars next to it,
+  had unrounded prices & no imbalances. Built the same way as the closed ones now.
 - l3 started every page and live chunk from an empty order book, so bid/ask were wrong at the start
   of each and the forming minutes were blank on every update. Chunks picks up the book where the last
   one left it at.
