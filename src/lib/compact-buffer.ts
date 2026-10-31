@@ -135,8 +135,12 @@ export function appendEvents(
 // Random-access decode
 // A pre-allocated scratch object so callers that just need a quick read
 // don't trigger GC. NOT safe to keep references across calls.
+let scratchNs = 0n;
 const SCRATCH: MboEvent = {
-    ts_event: '',
+    // lazy, the iso string was 80% of a book replay and the book never reads it
+    get ts_event() {
+        return nsToIso(scratchNs);
+    },
     action: 'A',
     side: 'N',
     price: null,
@@ -170,7 +174,7 @@ export function getEvent(cb: CompactBuffer, idx: number): Readonly<MboEvent> {
         oidHi < 2 ** 21
             ? String(oidHi * TWO_32 + oidLo)
             : String((BigInt(oidHi) << 32n) | BigInt(oidLo));
-    SCRATCH.ts_event = nsToIso(tsNs);
+    scratchNs = tsNs;
     SCRATCH.sequence = idx;
     SCRATCH.flags = 0;
 

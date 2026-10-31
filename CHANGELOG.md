@@ -89,6 +89,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A tick/l3 switch to a finer timeframe re-buckets what's loaded and fetches nothing. It fetched
   the whole window again, sized in the new bars, so going to None at l3 kept 5 min of the 30.
   A coarser one still fetches, since its forming bar reaches back past what's held raw.
+- Decoding an l3 event from `compactBuf` built its timestamp string every time, and nothing that
+  replays the book reads it. Built when read now. 140 -> 30 ms to decode 250k events
 - None opens on 30s and not 100ms which was just an empty screen. sub second tfs zoom out as far
   as 1s does (~57 min). None stopped at 3.4s so the first scroll snapped it in from those 30s
 - None is in the timeframe list under Ticks at l3, and refused at every other level, where a 1 ms
