@@ -332,6 +332,62 @@ describe('l3 events handed over again', () => {
         assert.equal(positions.length > 0, true);
     });
 
+    it('a page back builds the same book as replaying everything', () => {
+        let seed = 7;
+        const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+        for (let run = 0; run < 40; run++) {
+            const events: MboEvent[] = [];
+            const live = new Map<number, { side: string; price: number }>();
+            let nextId = 1;
+            for (let k = 0; k < 600; k++) {
+                const r = rnd();
+                const ids = [...live.keys()];
+                const pick = ids[Math.floor(rnd() * ids.length)];
+                const at = (k: number, a: string, s: string, p: number, id: number) =>
+                    events.push({ ...ev(BigInt(k), a, s, p, id), size: 1 + Math.floor(rnd() * 5) });
+                if (r < 0.005) {
+                    at(k, 'R', 'N', 0, 0);
+                    live.clear();
+                } else if (r < 0.45 || pick === undefined) {
+                    const side = rnd() < 0.5 ? 'B' : 'A';
+                    const price = side === 'B' ? 95 + Math.floor(rnd() * 5) : 101 + Math.floor(rnd() * 5);
+                    live.set(nextId, { side, price });
+                    at(k, 'A', side, price, nextId++);
+                } else if (r < 0.7) {
+                    at(k, 'C', live.get(pick)!.side, 0, pick);
+                    live.delete(pick);
+                } else if (r < 0.85) {
+                    const o = live.get(pick)!;
+                    o.price = o.side === 'B' ? 95 + Math.floor(rnd() * 5) : 101 + Math.floor(rnd() * 5);
+                    at(k, 'M', o.side, rnd() < 0.2 ? 0 : o.price, pick);
+                } else {
+                    at(k, 'T', live.get(pick)!.side === 'B' ? 'A' : 'B', live.get(pick)!.price, pick);
+                    live.delete(pick);
+                }
+            }
+            const cut1 = 50 + Math.floor(rnd() * 250);
+            const cut2 = cut1 + 1 + Math.floor(rnd() * 250);
+            const seek = T0 + BigInt(cut2 + Math.floor(rnd() * (600 - cut2))) * SEC;
+            const later = T0 + 600n * SEC;
+            const book = (e: ReturnType<typeof createL3MatchingEngine>) => JSON.stringify(e.getDepth!(50));
+
+            const whole = createL3MatchingEngine(stubTradingState().state, { symbolInfo: SYMBOL_INFO });
+            whole.ingestCompactBuf!(bufOf(events));
+            whole.seekTo(seek);
+
+            const paged = createL3MatchingEngine(stubTradingState().state, { symbolInfo: SYMBOL_INFO });
+            paged.ingestCompactBuf!(bufOf(events.slice(cut2)));
+            paged.seekTo(seek);
+            paged.appendCompactBuf!(bufOf(events.slice(cut1)));
+            paged.appendCompactBuf!(bufOf(events));
+            assert.equal(book(paged), book(whole), `run ${run}`);
+
+            whole.seekTo(later);
+            paged.seekTo(later);
+            assert.equal(book(paged), book(whole), `run ${run}, played on`);
+        }
+    });
+
     it('starts a new window on an empty book', () => {
         const { state } = stubTradingState();
         const engine = createL3MatchingEngine(state, { symbolInfo: SYMBOL_INFO });

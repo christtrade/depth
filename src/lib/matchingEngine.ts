@@ -660,12 +660,15 @@ export function createL3MatchingEngine(
     const resolvedTickValue = symbolInfo?.contract?.multiplier ?? getTickValue(symbol);
 
     // L3 book shadow
-    const bidBook = new SortedBook();
-    const askBook = new SortedBook();
-    const bidOrderIndex = new Map<string, number>();
-    const askOrderIndex = new Map<string, number>();
+    let bidBook = new SortedBook();
+    let askBook = new SortedBook();
+    let bidOrderIndex = new Map<string, number>();
+    let askOrderIndex = new Map<string, number>();
     let bestBid: number | null = null;
     let bestAsk: number | null = null;
+    // the last touch on each other that the book didnt know
+    let missed = new Map<string, { action: string; price: number | null; size: number }>();
+    let sawReset = false;
 
     const workingOrders = new Map<string, QueuedOrder>();
     const openPositions = new Map<string, Position>();
@@ -1066,6 +1069,8 @@ export function createL3MatchingEngine(
         askOrderIndex.clear();
         bestBid = null;
         bestAsk = null;
+        missed.clear();
+        sawReset = false;
     }
 
     function onMboEvent(event: MboEvent, tsNs: bigint, settle = true): void {
@@ -1075,6 +1080,7 @@ export function createL3MatchingEngine(
 
         if (action === 'R') {
             clearBook();
+            sawReset = true;
             return;
         }
 
@@ -1101,7 +1107,10 @@ export function createL3MatchingEngine(
             }
         } else if (action === 'C') {
             const actualPrice = isBid ? bidOrderIndex.get(order_id) : askOrderIndex.get(order_id);
-            if (actualPrice === undefined) return;
+            if (actualPrice === undefined) {
+                missed.set(order_id, { action, price, size });
+                return;
+            }
             const removed = removeFromLevel(book, actualPrice, order_id);
             if (removed > 0) {
                 isBid ? bidOrderIndex.delete(order_id) : askOrderIndex.delete(order_id);
@@ -1112,7 +1121,10 @@ export function createL3MatchingEngine(
             const oldBidPrice = bidOrderIndex.get(order_id);
             const oldAskPrice = askOrderIndex.get(order_id);
             const oldPrice = oldBidPrice ?? oldAskPrice;
-            if (oldPrice === undefined) return;
+            if (oldPrice === undefined) {
+                missed.set(order_id, { action, price, size });
+                return;
+            }
 
             const isOrderBid = oldBidPrice !== undefined;
             const orderBook = isOrderBid ? bidBook : askBook;
@@ -1130,6 +1142,7 @@ export function createL3MatchingEngine(
         } else if (action === 'T' || action === 'F') {
             const bidPrice = bidOrderIndex.get(order_id);
             const askPrice = askOrderIndex.get(order_id);
+            if (bidPrice === undefined && askPrice === undefined) missed.set(order_id, { action, price, size });
 
             if (bidPrice !== undefined) {
                 removeFromLevel(bidBook, bidPrice, order_id);
@@ -2340,18 +2353,31 @@ export function createL3MatchingEngine(
     }
 
     // this is the l3 counterpart
-    // a buffer that only grew at the end keeps the book, anything else rebuilds it up
-    // to the last seek without settling
+    // a buffer that only grew at the end keeps the book, one that only grew at the front
+    // merges that page in, anything else rebuilds it up to the last seek without settling
     function appendCompactBuf(buf: ArrayBuffer): void {
         if (_nonL3 || _cb.length === 0 || buf.byteLength === 0) {
             ingestCompactBuf(buf);
             return;
         }
+        const held = _cb._buf;
+        const heldLen = _cb.length;
         const firstTs = getTsNs(_cb, 0);
         const processed = _processedUpToIdx;
         setCompactBuf(buf);
         if (getTsNs(_cb, 0) === firstTs && _cb.length >= processed) {
             _processedUpToIdx = processed;
+            return;
+        }
+        const add = _cb.length - heldLen;
+        if (
+            add > 0 &&
+            _cbSeekTs >= firstTs &&
+            sameBytes(held, 0, buf, add) &&
+            sameBytes(held, heldLen - 1, buf, add + heldLen - 1)
+        ) {
+            mergePage(add);
+            _processedUpToIdx = processed + add;
             return;
         }
         clearBook();
@@ -2362,6 +2388,53 @@ export function createL3MatchingEngine(
             onMboEvent(getEvent(_cb, i), ts, false);
         }
         _processedUpToIdx = i;
+    }
+
+    // same book as replaying page plus held, in O(page): a page order still rests
+    // unless the held part touched it while it was unknown, and its last touch says how
+    function mergePage(add: number): void {
+        const held = { bidBook, askBook, bidOrderIndex, askOrderIndex, missed, sawReset };
+        bidBook = new SortedBook();
+        askBook = new SortedBook();
+        bidOrderIndex = new Map();
+        askOrderIndex = new Map();
+        missed = new Map();
+        sawReset = false;
+        for (let i = 0; i < add; i++) onMboEvent(getEvent(_cb, i), getTsNs(_cb, i), false);
+        const page = { bidBook, askBook, bidOrderIndex, askOrderIndex, missed, sawReset };
+        ({ bidBook, askBook, bidOrderIndex, askOrderIndex, missed, sawReset } = held);
+        if (held.sawReset) return;
+
+        const sides = [
+            [page.bidOrderIndex, page.bidBook, bidOrderIndex, bidBook],
+            [page.askOrderIndex, page.askBook, askOrderIndex, askBook],
+        ] as const;
+        for (const [pageIndex, pageBook, index, book] of sides) {
+            for (const [id, price] of pageIndex) {
+                const touch = missed.get(id);
+                missed.delete(id);
+                // the held part reused the id
+                if (index.has(id)) continue;
+                if (touch && touch.action !== 'M') continue;
+                const at = touch?.price ? touch.price : price;
+                const size = touch ? touch.size : pageBook.getLevel(price)!.orders.get(id)!;
+                const level = book.getOrCreate(at);
+                level.orders.set(id, size);
+                level.totalSize += size;
+                index.set(id, at);
+            }
+        }
+        for (const [id, touch] of page.missed) if (!missed.has(id)) missed.set(id, touch);
+        sawReset = page.sawReset;
+        bestBid = bidBook.getBest('bid');
+        bestAsk = askBook.getBest('ask');
+    }
+
+    function sameBytes(a: ArrayBuffer, ai: number, b: ArrayBuffer, bi: number): boolean {
+        const x = new Uint8Array(a, ai * CBUF_BYTES, CBUF_BYTES);
+        const y = new Uint8Array(b, bi * CBUF_BYTES, CBUF_BYTES);
+        for (let i = 0; i < CBUF_BYTES; i++) if (x[i] !== y[i]) return false;
+        return true;
     }
     //  Non-L3 seekTo paths
     function seekToOhlcv(tNs: bigint): void {

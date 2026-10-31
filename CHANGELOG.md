@@ -76,6 +76,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The heatmap contrast is applied in the worker as it paints. It was a pass over every pixel on the
   main thread for every bitmap. Moving the contrast slider asks for a new render now and doesn't
   reshade the last one
+- An l3 page back rebuilt the matching engine's book from the first event loaded. It replays just
+  the page now and merges what still rests. 56 -> 26 ms a page at 66k events held, 263 -> 32 ms at
+  265k. It was 1.7 s at 1.7M.
 
 ## Fixed
 - Picking a timeframe on tick/l3 that needed new data never switched. The pane waited for the
