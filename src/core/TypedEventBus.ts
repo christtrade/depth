@@ -264,10 +264,6 @@ export interface ChartEvents {
         dataStart: number;
         viewMin: bigint;
         session: TradingSession | null;
-        ingestOhlcvBuf?: ArrayBuffer;
-        ingestBucketedPhBuf?: ArrayBuffer;
-        ingestTradesBuf?: ArrayBuffer;
-        ingestPhBuf?: ArrayBuffer;
     };
     /** Backward pagination is exhausted for this symbol. */
     'data:no-more-history': { symbol?: string };

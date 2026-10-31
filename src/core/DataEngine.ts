@@ -1208,9 +1208,12 @@ export class DataEngine {
                 st.loadedFrom = BigInt(processed.dataStart) * 1_000_000n;
                 st.hasMoreHistory = response.hasMore;
                 this._prependMaster(st, processed);
-                this._emitPrepend(st, processed, viewMin).catch((err) =>
-                    console.error('[DataEngine] backward _emitPrepend failed', err),
-                );
+                // a throwing listener isn't a failed fetch
+                try {
+                    this._emitPrepend(st, processed, viewMin);
+                } catch (err) {
+                    console.error('[DataEngine] backward _emitPrepend failed', err);
+                }
 
                 if (!response.hasMore) {
                     this.eventBus.emit('data:no-more-history', { symbol });
@@ -1911,16 +1914,10 @@ export class DataEngine {
         });
     }
 
-    private async _emitPrepend(
-        st: SymbolState,
-        chunk: DataChunk,
-        viewMin: bigint,
-    ): Promise<void> {
+    // ohlcvBars is just the page, every other field the full master
+    private _emitPrepend(st: SymbolState, chunk: DataChunk, viewMin: bigint): void {
         const master = st.master;
         if (!master) return;
-        const ingestBufs = await this._runLoadIngest(master);
-        // the ohlcv prepend consumer wants only the newly fetched bars, since it
-        // prepends them to its display. every other field is the full master.
         this.eventBus.emit('data:prepend', {
             symbol: master.symbolInfo.symbol,
             dataLevel: master.dataLevel,
@@ -1934,7 +1931,6 @@ export class DataEngine {
             dataStart: master.dataStart,
             viewMin,
             session: st.session,
-            ...ingestBufs,
         });
     }
 
