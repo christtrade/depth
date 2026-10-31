@@ -1,4 +1,4 @@
-import { handleSliceRequest, type SliceWorkerRequest } from './slice-handlers';
+import { handleLoadIngest, type LoadIngestRequest } from './slice-handlers';
 
 // engine tests run the slice worker on the main thread (node had no worker)
 export function installInlineSliceWorker(): void {
@@ -6,9 +6,9 @@ export function installInlineSliceWorker(): void {
     (globalThis as any).Worker = class {
         onmessage: ((e: { data: unknown }) => void) | null = null;
         onerror: ((e: unknown) => void) | null = null;
-        postMessage(req: SliceWorkerRequest) {
+        postMessage(req: LoadIngestRequest) {
             setTimeout(() => {
-                const [resp] = handleSliceRequest(req);
+                const [resp] = handleLoadIngest(req);
                 this.onmessage?.({ data: resp });
             });
         }

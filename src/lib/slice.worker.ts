@@ -1,6 +1,6 @@
-import { handleSliceRequest, type SliceWorkerRequest } from './slice-handlers';
+import { handleLoadIngest, type LoadIngestRequest } from './slice-handlers';
 
-self.onmessage = (e: MessageEvent<SliceWorkerRequest>) => {
-    const [resp, transfers] = handleSliceRequest(e.data);
+self.onmessage = (e: MessageEvent<LoadIngestRequest>) => {
+    const [resp, transfers] = handleLoadIngest(e.data);
     (self as any).postMessage(resp, transfers);
 };

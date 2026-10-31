@@ -1,11 +1,5 @@
-import type { CompactBuffer } from '../lib/compact-buffer';
-import type { MboEvent, PriceHistory } from '../lib/types';
-import type {
-    SliceWorkerRequest,
-    SliceResponse,
-    LoadIngestRequest,
-    LoadIngestResponse,
-} from './slice-handlers';
+import type { PriceHistory } from '../lib/types';
+import type { LoadIngestRequest, LoadIngestResponse } from './slice-handlers';
 
 // Types
 type TradePoint = { ts: bigint; price: number; size: number; side: string };
@@ -119,25 +113,12 @@ export function deserializeOhlcvCacheFromBuf(
 let _worker: Worker | null = null;
 let _reqCounter = 0;
 
-type PendingSlice = {
-    kind: 'slice';
-    resolve: (r: {
-        events: MboEvent[];
-        cb: CompactBuffer;
-        messageType: 'init' | 'append' | 'prepend';
-    }) => void;
-    reject: (e: Error) => void;
-    originalCb: CompactBuffer;
-    messageType: 'init' | 'append' | 'prepend';
-};
 type PendingLoadIngest = {
-    kind: 'load-ingest';
     resolve: (r: LoadIngestRawResult) => void;
     reject: (e: Error) => void;
 };
-type PendingEntry = PendingSlice | PendingLoadIngest;
 
-const _pending = new Map<string, PendingEntry>();
+const _pending = new Map<string, PendingLoadIngest>();
 
 function getWorker(): Worker {
     if (_worker) return _worker;
@@ -150,76 +131,28 @@ function getWorker(): Worker {
         // All deserialisation (TradePoint[], PriceHistory[], Map) happens
         // lazily in a scheduler tick AFTER this handler returns, so the
         // browser can paint between the postMessage response and the JS work.
-        const msg = e.data as SliceResponse | LoadIngestResponse;
+        const m = e.data as LoadIngestResponse;
 
-        const entry = _pending.get(msg.id);
+        const entry = _pending.get(m.id);
         if (!entry) return;
-        _pending.delete(msg.id);
-
-        if (msg.kind === 'slice') {
-            const se = entry as PendingSlice;
-            se.originalCb._buf = (msg as SliceResponse).buf;
-            se.originalCb._view = new DataView((msg as SliceResponse).buf);
-            se.resolve({
-                events: (msg as SliceResponse).events,
-                cb: se.originalCb,
-                messageType: (msg as SliceResponse).messageType,
-            });
-        } else if (msg.kind === 'load-ingest') {
-            const le = entry as PendingLoadIngest;
-            const m = msg as LoadIngestResponse;
-            // RAW: no deserialize calls here
-            le.resolve({
-                ohlcvBuf: m.ohlcvBuf,
-                bucketedPhBuf: m.bucketedPhBuf,
-                tradesBuf: m.tradesBuf,
-                phBuf: m.phBuf,
-            });
-        }
+        _pending.delete(m.id);
+        // RAW: no deserialize calls here
+        entry.resolve({
+            ohlcvBuf: m.ohlcvBuf,
+            bucketedPhBuf: m.bucketedPhBuf,
+            tradesBuf: m.tradesBuf,
+            phBuf: m.phBuf,
+        });
     };
 
     _worker.onerror = (err) => {
         console.error('[SliceWorker] crashed', err);
-        for (const [, e] of _pending) {
-            (e as any).reject(new Error(`SliceWorker crashed: ${err.message}`));
-        }
+        for (const [, e] of _pending) e.reject(new Error(`SliceWorker crashed: ${err.message}`));
         _pending.clear();
         _worker = null;
     };
 
     return _worker;
-}
-
-// Public API
-export function sliceToMboEventsAsync(
-    cb: CompactBuffer,
-    start: number,
-    end: number,
-    messageType: 'init' | 'append' | 'prepend',
-): Promise<{ events: MboEvent[]; cb: CompactBuffer; messageType: typeof messageType }> {
-    return new Promise((resolve, reject) => {
-        const id = `slice-${++_reqCounter}`;
-        _pending.set(id, {
-            kind: 'slice',
-            resolve: resolve as any,
-            reject,
-            originalCb: cb,
-            messageType,
-        });
-        getWorker().postMessage(
-            {
-                kind: 'slice',
-                id,
-                buf: cb._buf,
-                length: cb.length,
-                capacity: cb.capacity,
-                start,
-                end,
-                messageType,
-            } satisfies SliceWorkerRequest,
-            [cb._buf],
-        );
-    });
 }
 
 /**
@@ -229,7 +162,7 @@ export function sliceToMboEventsAsync(
 export function loadIngestAsync(opts: LoadIngestOptions): Promise<LoadIngestRawResult> {
     return new Promise((resolve, reject) => {
         const id = `load-ingest-${++_reqCounter}`;
-        _pending.set(id, { kind: 'load-ingest', resolve, reject });
+        _pending.set(id, { resolve, reject });
 
         const req: LoadIngestRequest = {
             kind: 'load-ingest',
@@ -246,6 +179,6 @@ export function loadIngestAsync(opts: LoadIngestOptions): Promise<LoadIngestRawR
 export function destroySliceWorker(): void {
     _worker?.terminate();
     _worker = null;
-    for (const [, e] of _pending) (e as any).reject(new Error('SliceWorker destroyed'));
+    for (const [, e] of _pending) e.reject(new Error('SliceWorker destroyed'));
     _pending.clear();
 }

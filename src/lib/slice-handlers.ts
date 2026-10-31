@@ -1,22 +1,9 @@
 // split from slice.worker.ts so tests can run it without a Worker
-import { sliceToMboEvents, type CompactBuffer } from '../lib/compact-buffer';
 
 // Serialization strides
 const TRADE_STRIDE = 6; // [ts_hi, ts_lo, price, size, side(0=B/1=A), _pad]
 const PH_STRIDE = 4; // [ts_hi, ts_lo, bestBid, bestAsk]
 const OHLCV_STRIDE = 8; // [key_hi, key_lo, open, high, low, close, volume, delta]
-
-// Message type declarations
-export interface SliceRequest {
-    kind: 'slice';
-    id: string;
-    buf: ArrayBuffer;
-    length: number;
-    capacity: number;
-    start: number;
-    end: number;
-    messageType: 'init' | 'append' | 'prepend';
-}
 
 /**
  * 'load-ingest' - off-thread heavy work from ingestLoadedData.
@@ -44,15 +31,6 @@ export interface LoadIngestResponse {
     phBuf: ArrayBuffer;
 }
 
-export type SliceWorkerRequest = SliceRequest | LoadIngestRequest;
-
-export interface SliceResponse {
-    kind: 'slice';
-    id: string;
-    messageType: 'init' | 'append' | 'prepend';
-    events: ReturnType<typeof sliceToMboEvents>;
-    buf: ArrayBuffer;
-}
 
 // Bigint helpers
 function toBigInt(hi: number, lo: number): bigint {
@@ -65,25 +43,8 @@ function bigintLo(n: bigint): number {
     return Number(n & 0xffffffffn);
 }
 
-// Slice handler
-function handleSlice(req: SliceRequest): [SliceResponse, Transferable[]] {
-    const cb: CompactBuffer = {
-        _buf: req.buf,
-        _view: new DataView(req.buf),
-        length: req.length,
-        capacity: req.capacity,
-        firstTs: 0n,
-        lastTs: 0n,
-    };
-    const events = sliceToMboEvents(cb, req.start, req.end);
-    return [
-        { kind: 'slice', id: req.id, messageType: req.messageType, events, buf: cb._buf },
-        [cb._buf],
-    ];
-}
-
 // LoadIngest handler
-function handleLoadIngest(req: LoadIngestRequest): [LoadIngestResponse, Transferable[]] {
+export function handleLoadIngest(req: LoadIngestRequest): [LoadIngestResponse, Transferable[]] {
     const barNs = toBigInt(req.barNsHi, req.barNsLo);
     const trades = new Float64Array(req.tradesBuf);
     const ph = new Float64Array(req.phBuf);
@@ -183,13 +144,4 @@ function bucketPhBuf(ph: Float64Array, barNs: bigint): ArrayBuffer {
         out[i * PH_STRIDE + 3] = sorted[i].bestAsk;
     }
     return out.buffer;
-}
-
-export function handleSliceRequest(req: SliceWorkerRequest): [unknown, Transferable[]] {
-    switch (req.kind) {
-        case 'slice':
-            return handleSlice(req);
-        case 'load-ingest':
-            return handleLoadIngest(req);
-    }
 }
