@@ -2597,11 +2597,29 @@ export function createL3MatchingEngine(
                     _processedUpToIdx = 0;
                 }
 
+                // stops see every bbo on the way, or one crossed and back within a seek is missed
+                let stops = false;
+                for (const { order } of workingOrders.values()) {
+                    if (order.type === 'stop' || (order.type === 'stop_limit' && !order.triggered)) {
+                        stops = true;
+                        break;
+                    }
+                }
                 while (_processedUpToIdx < _cb.length) {
                     const ts = getTsNs(_cb, _processedUpToIdx);
                     if (ts > tNs) break;
+                    const bid = bestBid;
+                    const ask = bestAsk;
                     onMboEvent(getEvent(_cb, _processedUpToIdx), ts);
                     _processedUpToIdx++;
+                    if (
+                        stops &&
+                        bestBid !== null &&
+                        bestAsk !== null &&
+                        (bestBid !== bid || bestAsk !== ask)
+                    ) {
+                        checkStopTriggers({ symbol, bid: bestBid, ask: bestAsk, ts: Number(ts) });
+                    }
                 }
                 _cbSeekTs = tNs;
 

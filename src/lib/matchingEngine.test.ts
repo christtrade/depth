@@ -317,6 +317,21 @@ describe('l3 events handed over again', () => {
         assert.equal(positions.length > 0, true);
     });
 
+    it('triggers a stop the ask crosses and comes back from within one seek', () => {
+        const { engine, positions } = placedAfterReplay();
+        engine.placeOrder({ side: 'long', type: 'stop', qty: 1, stopPrice: 102, symbol: 'TEST' });
+        engine.appendCompactBuf!(
+            bufOf([
+                ...held,
+                ev(3n, 'A', 'A', 102.5, 3),
+                ev(3n, 'C', 'A', 101, 2),
+                ev(4n, 'A', 'A', 101, 4),
+            ]),
+        );
+        engine.seekTo(T0 + 5n * SEC);
+        assert.equal(positions.length > 0, true);
+    });
+
     it('starts a new window on an empty book', () => {
         const { state } = stubTradingState();
         const engine = createL3MatchingEngine(state, { symbolInfo: SYMBOL_INFO });
