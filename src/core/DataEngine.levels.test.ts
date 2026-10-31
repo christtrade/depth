@@ -9,6 +9,7 @@ import { installInlineSliceWorker } from '../lib/inline-slice-worker';
 import { simMboEvents, simTicks } from '../lib/sim-levels';
 import { processL3Chunk } from './processing/l3-processor';
 import { footprintFromTrades } from '../lib/types/footprint';
+import { BYTES_PER_EVENT, createCompactBuffer, getEvent, getTsNs } from '../lib/compact-buffer';
 
 installInlineSliceWorker();
 
@@ -131,13 +132,16 @@ function assertTradesAre(p: any, symbol: string, fromMs: number, toMs: number) {
 function assertEventsAre(p: any, symbol: string, fromMs: number, toMs: number) {
     if (p.dataLevel !== 'l3') return;
     const want = simMboEvents(priceOf(symbol), fromMs, toMs);
-    const view = new DataView(p.compactBuf);
-    const held = p.compactBuf.byteLength / 20;
+    const cb = createCompactBuffer(0);
+    cb._buf = p.compactBuf;
+    cb._view = new DataView(p.compactBuf);
+    cb.length = cb.capacity = p.compactBuf.byteLength / BYTES_PER_EVENT;
+    const held = cb.length;
     assert.equal(held, want.length, `${held} events held, ${want.length} in the span`);
     for (let i = 0; i < want.length; i++) {
-        const ts = view.getBigInt64(i * 20, true);
-        const oid = view.getUint8(i * 20 + 16) | (view.getUint8(i * 20 + 17) << 8) | (view.getUint8(i * 20 + 18) << 16);
-        const wantOid = parseInt(want[i].order_id, 10) & 0xffffff;
+        const ts = getTsNs(cb, i);
+        const oid = getEvent(cb, i).order_id;
+        const wantOid = want[i].order_id;
         assert.ok(
             ts === nsOf(Date.parse(want[i].ts_event)) && oid === wantOid,
             `event ${i}: ${ts}/${oid}, expected ${want[i].ts_event}/${wantOid}`,

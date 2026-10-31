@@ -1,22 +1,23 @@
 /**
  * A flat typed-array store for MBO events, in place of an MboEvent[]. Rather
- * than a heap object per event at 150-200 bytes each, every event packs into 20
+ * than a heap object per event at 150-200 bytes each, every event packs into 24
  * bytes:
  *
  *   [0..7]   ts_ns        BigInt64, absolute nanoseconds
  *   [8..11]  pricex100    Int32, null becomes the INT32_MIN sentinel
  *   [12..15] size         Uint32
- *   [16..18] order_id     Uint24, little-endian
- *   [19]     packed       bits 7-4 action, bits 3-2 side, bits 1-0 spare
+ *   [16..22] order_id     low 56 bits, little-endian. 24 bits had live orders sharing an id
+ *   [23]     packed       bits 7-4 action, bits 3-2 side, bits 1-0 spare
  *
- * At 30M events that's about 600MB instead of ~5GB.
+ * At 30M events that's about 720MB instead of ~5GB.
  *   findFloorIndex()       - binary search by nanosecond timestamp
  */
 
 import type { MboEvent } from './types';
 
 // Constants
-const BYTES_PER_EVENT = 20;
+export const BYTES_PER_EVENT = 24;
+const TWO_32 = 2 ** 32;
 const INT32_MIN = -2_147_483_648; // sentinel for null price
 const PRICE_SCALE = 100; // store price x 100 as int32
 
@@ -67,30 +68,32 @@ function grow(cb: CompactBuffer, needed: number): void {
     cb.capacity = newCap;
 }
 
-// Encode one event into the buffer at position `idx`
-function encodeAt(view: DataView, idx: number, tsNs: bigint, event: MboEvent): void {
+export function encodeAt(view: DataView, idx: number, tsNs: bigint, event: MboEvent): void {
     const base = idx * BYTES_PER_EVENT;
-
-    // [0..7] timestamp (BigInt64, little-endian)
     view.setBigInt64(base, tsNs, true);
-
-    // [8..11] price x 100 as Int32 (INT32_MIN = null)
     const priceInt = event.price === null ? INT32_MIN : Math.round(event.price * PRICE_SCALE);
     view.setInt32(base + 8, priceInt, true);
-
-    // [12..15] size as Uint32
     view.setUint32(base + 12, event.size >>> 0, true);
 
-    // [16..18] order_id lower 24 bits (most IDs in your data fit in 3 bytes)
-    const oid = parseInt(event.order_id, 10) & 0xff_ffff;
-    view.setUint8(base + 16, oid & 0xff);
-    view.setUint8(base + 17, (oid >> 8) & 0xff);
-    view.setUint8(base + 18, (oid >> 16) & 0xff);
+    let lo: number;
+    let hi: number;
+    // past 15 digits a Number drops the low bits
+    if (event.order_id.length <= 15) {
+        const n = Number(event.order_id);
+        lo = n >>> 0;
+        hi = Math.floor(n / TWO_32);
+    } else {
+        const n = BigInt(event.order_id);
+        lo = Number(n & 0xffff_ffffn);
+        hi = Number((n >> 32n) & 0xff_ffffn);
+    }
+    view.setUint32(base + 16, lo, true);
+    view.setUint16(base + 20, hi & 0xffff, true);
+    view.setUint8(base + 22, (hi >>> 16) & 0xff);
 
-    // [19] packed: high nibble = action, next 2 bits = side
     const actionIdx = ACTION_ENCODE[event.action] ?? 0;
     const sideIdx = SIDE_ENCODE[event.side] ?? 2;
-    view.setUint8(base + 19, ((actionIdx & 0xf) << 4) | ((sideIdx & 0x3) << 2));
+    view.setUint8(base + 23, ((actionIdx & 0xf) << 4) | ((sideIdx & 0x3) << 2));
 }
 
 // Append a batch of MboEvents
@@ -155,16 +158,18 @@ export function getEvent(cb: CompactBuffer, idx: number): Readonly<MboEvent> {
     const tsNs = view.getBigInt64(base, true);
     const priceI = view.getInt32(base + 8, true);
     const size = view.getUint32(base + 12, true);
-    const oidB0 = view.getUint8(base + 16);
-    const oidB1 = view.getUint8(base + 17);
-    const oidB2 = view.getUint8(base + 18);
-    const packed = view.getUint8(base + 19);
+    const oidLo = view.getUint32(base + 16, true);
+    const oidHi = view.getUint16(base + 20, true) | (view.getUint8(base + 22) << 16);
+    const packed = view.getUint8(base + 23);
 
     SCRATCH.action = ACTION_DECODE[(packed >> 4) & 0xf] ?? 'A';
     SCRATCH.side = SIDE_DECODE[(packed >> 2) & 0x3] ?? 'N';
     SCRATCH.price = priceI === INT32_MIN ? null : priceI / PRICE_SCALE;
     SCRATCH.size = size;
-    SCRATCH.order_id = String(oidB0 | (oidB1 << 8) | (oidB2 << 16));
+    SCRATCH.order_id =
+        oidHi < 2 ** 21
+            ? String(oidHi * TWO_32 + oidLo)
+            : String((BigInt(oidHi) << 32n) | BigInt(oidLo));
     SCRATCH.ts_event = nsToIso(tsNs);
     SCRATCH.sequence = idx;
     SCRATCH.flags = 0;

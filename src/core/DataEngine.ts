@@ -52,6 +52,7 @@ import { Timeframe, servableBarNs, timeframeFromBarNs } from '../lib/timeframes'
 import { clipToSession, isMarketOpen, walkBackMarketNs } from './SessionUtils';
 import type { SessionWindow } from './SessionUtils';
 import { nextOpenNs } from './SessionUtils';
+import { BYTES_PER_EVENT } from '../lib/compact-buffer';
 
 // pages of server-side search results kept around for backspacing
 const SYMBOL_SEARCH_CACHE_MAX = 32;
@@ -138,8 +139,6 @@ function _nsToIso(ns: bigint): string {
     const subMs = Number(ns % 1_000_000n);
     return new Date(ms).toISOString().slice(0, -1) + String(subMs).padStart(6, '0') + 'Z';
 }
-
-const BYTES_PER_EVENT = 20;
 
 function _joined<T>(held: readonly T[], keep: number, add: readonly T[]): T[] {
     if (keep === held.length) return held.concat(add);

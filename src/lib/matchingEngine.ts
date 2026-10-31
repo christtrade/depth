@@ -16,7 +16,7 @@ import { getTickValue, calcUnrealizedPnl, calcUnrealizedPnlPct } from './types/t
 import type { MboEvent, PriceHistory } from './types';
 import type { OhlcvBar, SymbolInfo } from '../interfaces/IDataAdapter';
 import type { SerialTrade } from './types';
-import { CompactBuffer, createCompactBuffer, getEvent, getTsNs } from './compact-buffer';
+import { BYTES_PER_EVENT as CBUF_BYTES, CompactBuffer, createCompactBuffer, getEvent, getTsNs } from './compact-buffer';
 import { BarStore } from '../core/BarStore';
 import { TypedEventBus } from '../core';
 import { notifyPositionClosed } from './notifications/tradeToast';
@@ -2608,7 +2608,6 @@ export function createL3MatchingEngine(
         }
     }
     //  Compact buffer ingestion + horizon-driven seek
-    const CBUF_BYTES = 20;
 
     let _cb: CompactBuffer = createCompactBuffer(0);
     let _processedUpToIdx = 0;

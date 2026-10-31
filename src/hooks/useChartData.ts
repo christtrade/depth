@@ -5,6 +5,7 @@ import { footprintFromTrades, type FootprintBar } from '../lib/types/footprint';
 import { openBarFrom } from '../lib/open-bar';
 import { extendBucketedPh, extendCandles, extendFootprints } from '../lib/bucket-tail';
 import {
+    BYTES_PER_EVENT,
     type CompactBuffer,
     createCompactBuffer,
     findFloorIndex,
@@ -760,7 +761,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         const cb = compactBufRef.current;
         const worker = workerRef.current;
         if (!worker || !cb.length) return;
-        const buf = cb._buf.slice(0, cb.length * 20);
+        const buf = cb._buf.slice(0, cb.length * BYTES_PER_EVENT);
         const msg: WorkerInitMessage = { type: 'init', buf, length: cb.length };
         worker.postMessage(msg, [buf]);
         heatmapSentRef.current = { buf: cb._buf, length: cb.length };
@@ -776,7 +777,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             return sendHeatmapInit();
         }
         if (cb.length > sent.length) {
-            const buf = cb._buf.slice(sent.length * 20, cb.length * 20);
+            const buf = cb._buf.slice(sent.length * BYTES_PER_EVENT, cb.length * BYTES_PER_EVENT);
             const msg: WorkerInitMessage = { type: 'append', buf, length: cb.length - sent.length };
             worker.postMessage(msg, [buf]);
         }
@@ -1210,7 +1211,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             compactBufRef.current = createCompactBuffer(0);
             compactBufRef.current._buf = inBuf as ArrayBuffer;
             compactBufRef.current._view = new DataView(inBuf as ArrayBuffer);
-            compactBufRef.current.length = (inBuf as ArrayBuffer).byteLength / 20;
+            compactBufRef.current.length = (inBuf as ArrayBuffer).byteLength / BYTES_PER_EVENT;
             compactBufRef.current.capacity = compactBufRef.current.length;
             compactBufRef.current.firstTs = BigInt(dataStart) * 1_000_000n;
             compactBufRef.current.lastTs = BigInt(dataEnd) * 1_000_000n;
@@ -1433,7 +1434,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             const cb = createCompactBuffer(0);
             cb._buf = ownBuf;
             cb._view = new DataView(ownBuf);
-            cb.length = ownBuf.byteLength / 20;
+            cb.length = ownBuf.byteLength / BYTES_PER_EVENT;
             cb.capacity = cb.length;
             cb.firstTs = datasetStartRef.current;
             cb.lastTs = BigInt(dataEnd) * 1_000_000n;
@@ -1564,7 +1565,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             const cb = createCompactBuffer(0);
             cb._buf = ownBuf;
             cb._view = new DataView(ownBuf);
-            cb.length = ownBuf.byteLength / 20;
+            cb.length = ownBuf.byteLength / BYTES_PER_EVENT;
             cb.capacity = cb.length;
             cb.firstTs = ds;
             cb.lastTs = datasetEndRef.current;

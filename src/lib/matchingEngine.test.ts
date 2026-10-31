@@ -11,7 +11,7 @@ import {
 } from './matchingEngine';
 import { getTickValue } from './types/trading-types';
 import { BarStore } from '../core/BarStore';
-import { appendEvents, createCompactBuffer } from './compact-buffer';
+import { appendEvents, BYTES_PER_EVENT, createCompactBuffer } from './compact-buffer';
 import { isoToNs } from './sampler';
 import type { MboEvent } from './types';
 
@@ -283,7 +283,7 @@ describe('l3 events handed over again', () => {
     const bufOf = (events: MboEvent[]) => {
         const cb = createCompactBuffer();
         appendEvents(cb, events, isoToNs);
-        return cb._buf.slice(0, cb.length * 20);
+        return cb._buf.slice(0, cb.length * BYTES_PER_EVENT);
     };
     // a sell sweeps through 98 before the order exists
     const held = [ev(0n, 'A', 'B', 100, 1), ev(0n, 'A', 'A', 101, 2), ev(1n, 'T', 'A', 98, 9)];

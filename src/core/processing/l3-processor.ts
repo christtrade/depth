@@ -11,13 +11,7 @@ import { buildFootprint, type FootprintBar, type FootprintOptions } from '../../
 import { isoToNs } from '../../lib/sampler';
 import type { BookState, MboEvent, PriceHistory } from '../../lib/types';
 import type { SerialTrade } from '../../lib/types';
-
-// these have to stay in sync with compact-buffer.ts
-const BYTES_PER_EVENT = 20;
-const INT32_MIN = -2_147_483_648;
-const PRICE_SCALE = 100;
-const ACTION_ENCODE: Record<string, number> = { A: 0, C: 1, M: 2, T: 3, F: 4, R: 5 };
-const SIDE_ENCODE: Record<string, number> = { B: 0, A: 1, N: 2 };
+import { BYTES_PER_EVENT, encodeAt } from '../../lib/compact-buffer';
 
 // 50ms, the price history downsample interval
 const PRICE_HISTORY_INTERVAL_NS = 50_000_000n;
@@ -25,7 +19,6 @@ const PRICE_HISTORY_INTERVAL_NS = 50_000_000n;
 // Output shape
 export interface ProcessedL3Chunk {
     kind: 'l3';
-    /** 20-byte compact encoding of all MBO events. L3-only. */
     compactBuf: ArrayBuffer;
     trades: SerialTrade[];
     priceHistory: PriceHistory[];
@@ -41,32 +34,10 @@ export interface ProcessedL3Chunk {
 // ProcessedL3Chunk is the old name, kept around for compat
 export type L3DataChunk = ProcessedL3Chunk;
 
-// Encoder
 function encodeEvents(events: MboEvent[], tsCache: BigInt64Array): ArrayBuffer {
     const buf = new ArrayBuffer(events.length * BYTES_PER_EVENT);
     const view = new DataView(buf);
-
-    for (let i = 0; i < events.length; i++) {
-        const ev = events[i];
-        const base = i * BYTES_PER_EVENT;
-
-        view.setBigInt64(base, tsCache[i], true);
-
-        const priceInt =
-            ev.price === null ? INT32_MIN : Math.round(ev.price * PRICE_SCALE);
-        view.setInt32(base + 8, priceInt, true);
-        view.setUint32(base + 12, ev.size >>> 0, true);
-
-        const oid = parseInt(ev.order_id, 10) & 0xff_ffff;
-        view.setUint8(base + 16, oid & 0xff);
-        view.setUint8(base + 17, (oid >> 8) & 0xff);
-        view.setUint8(base + 18, (oid >> 16) & 0xff);
-
-        const actionIdx = ACTION_ENCODE[ev.action] ?? 0;
-        const sideIdx = SIDE_ENCODE[ev.side] ?? 2;
-        view.setUint8(base + 19, ((actionIdx & 0xf) << 4) | ((sideIdx & 0x3) << 2));
-    }
-
+    for (let i = 0; i < events.length; i++) encodeAt(view, i, tsCache[i], events[i]);
     return buf;
 }
 

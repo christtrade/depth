@@ -9,7 +9,6 @@ import type { FootprintBar } from '../../lib/types/footprint';
 // Per-level chunk types
 export interface L3DataChunk {
     kind: 'l3';
-    /** 20-byte compact encoding of all MBO events. L3-only. */
     compactBuf: ArrayBuffer;
     trades: SerialTrade[];
     priceHistory: PriceHistory[];
