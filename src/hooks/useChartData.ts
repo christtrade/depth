@@ -1604,14 +1604,10 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 symbol: cellSymbolRef.current,
             });
             p.onDataBoundsChange?.(ds, datasetEndRef.current);
-            const { ingestOhlcvBuf: prependOhlcvBuf, ingestBucketedPhBuf: prependBucketedPhBuf } = payload;
-            if (prependBucketedPhBuf)
-                priceHistoryRef.current = deserializePriceHistoryFromBuf(prependBucketedPhBuf);
-            if (prependOhlcvBuf)
-                candleCacheRef.current = deserializeOhlcvCacheFromBuf(
-                    prependOhlcvBuf,
-                    p.horizonRef.current,
-                );
+            priceHistoryRef.current = [];
+            phCursorRef.current = -1;
+            updatePriceHistoryToRawIdx(findPriceHistoryIdx(p.horizonRef.current));
+            rebuildCandleCache(newTrades, p.activeTimeframeRef.current.barNs);
             if (p.isYAxisAutoRef.current)
                 autoFitPriceAxis(
                     p.viewRef.current!,

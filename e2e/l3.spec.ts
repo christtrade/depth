@@ -90,6 +90,40 @@ test('l3: a page back in a replay keeps the footprints at the playhead', async (
     expect(errors).toEqual([]);
 });
 
+test('l3: stepping on after a page back keeps the bid/ask history in order', async ({ page }) => {
+    const errors = watchErrors(page);
+    await page.goto('/?level=l3');
+    await settled(page);
+    await page.evaluate(() => {
+        const w = window as any;
+        w.__prepends = 0;
+        w.__chart.on('data:prepend', () => w.__prepends++);
+        for (let i = 0; i < 20; i++) w.__chart.playback.stepBack();
+    });
+    await settled(page);
+
+    const prepends = () => page.evaluate(() => (window as any).__prepends as number);
+    for (let i = 0; i < 15 && (await prepends()) === 0; i++) await drag(page, 600);
+    await expect.poll(prepends, { message: 'a page back landed' }).toBeGreaterThan(0);
+    await settled(page);
+    await page.evaluate(() => {
+        for (let i = 0; i < 5; i++) (window as any).__chart.playback.stepForward();
+    });
+    await settled(page);
+
+    const ph = await page.evaluate(() => {
+        const w = window as any;
+        const h: { ts: bigint }[] = w.__chart.renderEngine.drawParams.priceHistory;
+        const horizonNs = BigInt(w.__chart.horizon()) * 1_000_000n;
+        let backwards = 0;
+        for (let i = 1; i < h.length; i++) if (h[i].ts <= h[i - 1].ts) backwards++;
+        return { n: h.length, backwards, pastHorizon: h.filter((p) => p.ts > horizonNs).length };
+    });
+    expect(ph.n).toBeGreaterThan(0);
+    expect(ph).toEqual({ n: ph.n, backwards: 0, pastHorizon: 0 });
+    expect(errors).toEqual([]);
+});
+
 test('l3: a footprint setting rebuilds the closed bars', async ({ page }) => {
     const errors = watchErrors(page);
     await page.goto('/?level=l3');

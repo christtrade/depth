@@ -81,6 +81,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   265k. It was 1.7 s at 1.7M.
 
 ## Fixed
+- A tick/l3 page back in a replay drew the bid/ask lines past the playhead, and the next step forward
+  put points out of order. They stop at the playhead now.
 - Picking a timeframe on tick/l3 that needed new data never switched. The pane waited for the
   load to land and only ohlcv loads told it, so the toolbar snapped back to the old one.
 - A tick/l3 timeframe switch or eviction threw the playhead back to where the chart first loaded,
