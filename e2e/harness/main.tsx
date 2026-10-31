@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
-import { createSimulatedAdapter, useDepthChart } from '@christtrade/depth';
+import { createScriptedPlugin, createSimulatedAdapter, useDepthChart } from '@christtrade/depth';
 import { Toaster } from 'sonner';
 import { HarnessAdapter } from './adapter';
 
@@ -14,6 +14,7 @@ const level = (['l3', 'tick'] as const).find((l) => l === params.get('level')) ?
 
 const win = window as any;
 win.__status = [];
+win.__createScriptedPlugin = createScriptedPlugin;
 win.__heatmaps = 0;
 
 function App() {

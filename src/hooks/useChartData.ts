@@ -827,7 +827,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         }
 
         const ohlcv: any[] = [];
-        if (dataLevelRef.current === 'l3') {
+        if (dataLevelRef.current === 'l3' || dataLevelRef.current === 'tick') {
             for (const [ts, bar] of candleCacheRef.current ?? new Map()) {
                 ohlcv.push({
                     ts: toNs(ts),
@@ -929,7 +929,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         }
 
         const ohlcv: any[] = [];
-        if (dataLevelRef.current === 'l3') {
+        if (dataLevelRef.current === 'l3' || dataLevelRef.current === 'tick') {
             for (const [ts, bar] of candleCacheRef.current ?? new Map()) {
                 ohlcv.push({
                     ts: toNs(ts),

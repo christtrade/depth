@@ -368,7 +368,7 @@ export function useChartSubscriptions(p: UseChartSubscriptionsParams): void {
                     else if (t < 1_000_000_000_000_000_000n) return t * 1_000n;
                     else return t;
                 }
-                if (dataLevelRef.current === 'l3') {
+                if (dataLevelRef.current === 'l3' || dataLevelRef.current === 'tick') {
                     for (const bar of previewBarsRef.current) {
                         ohlcv.push({
                             ts: toNs(bar.time),

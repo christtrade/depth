@@ -130,6 +130,29 @@ test('tick: candles follow the playhead both ways', async ({ page }) => {
     expect(errors).toEqual([]);
 });
 
+test('tick: a scripted indicator gets the bars', async ({ page }) => {
+    const errors = watchErrors(page);
+    await open(page, '/?level=tick');
+    await page.evaluate(() => {
+        const w = window as any;
+        w.__fed = [];
+        w.__chart.eventBus.tap((ev: string, p: any) => {
+            if (ev === 'plugin:scripted-compute') w.__fed.push(p.ohlcv.length);
+        });
+        const plugin = w.__createScriptedPlugin(
+            `const p = plugin({ name: "Count", type: PluginType.indicator })
+            p.init = ({ data }) => ({ n: data.ohlcv.length })`,
+            'count',
+        );
+        w.__chart.use(plugin);
+        w.__chart.add('count');
+    });
+    await expect
+        .poll(() => page.evaluate(() => Math.max(0, ...((window as any).__fed as number[]))), { timeout: 10_000 })
+        .toBeGreaterThan(20);
+    expect(errors).toEqual([]);
+});
+
 test('tick: the last price has its pill', async ({ page }) => {
     const errors = watchErrors(page);
     await open(page, '/?level=tick');
