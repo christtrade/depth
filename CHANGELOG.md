@@ -81,6 +81,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - An l3 page back rebuilt the matching engine's book from the first event loaded. It replays just
   the page now and merges what still rests. 56 -> 26 ms a page at 66k events held, 263 -> 32 ms at
   265k. It was 1.7 s at 1.7M.
+- Every l3 load replayed the whole order book on the main thread for a DOM panel that never got
+  mounted. Gone, with the panel plumbing. 18 ms at 33k events, 150 ms at 265k (in node).
 - A tick/l3 page back doesn't serialize and re-bucket everything held in the slice worker anymore,
   the pane rebuilds from the page. Tick at 220k trades 39ms -> 13ms until the page is drawn, l3 sheds
   5-40 ms. **Breaking:** `data:prepend` doesn't carry the `ingest*` buffers.

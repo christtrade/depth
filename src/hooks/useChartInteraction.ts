@@ -55,10 +55,8 @@ import { MIN_TIME_SPAN, MAX_TIME_SPAN } from '../lib/constants';
 import { type FootprintBar } from '../lib/types/footprint';
 import { type ChartSettings } from '../lib/types/chart-settings';
 import { type Timeframe, zoomSpanLimits } from '../lib/timeframes';
-import { type BookState } from '../lib/types';
 import { type SerialTrade } from '../lib/types';
 import { type FeaturesOptions } from '../core/DepthChart';
-import { type DomPanelHandle } from '../lib/types';
 
 type ShiftAnchor = { ts: bigint; price: number; x: number; y: number };
 
@@ -241,7 +239,6 @@ export interface UseChartInteractionParams {
     datasetStartRef: MutableRefObject<bigint>;
     datasetEndRef: MutableRefObject<bigint>;
     horizonScrollAnimRef: MutableRefObject<any>;
-    liveBookRef: MutableRefObject<BookState>;
     tradeLineInteractionRef: MutableRefObject<any>;
     selectedTradeRef: MutableRefObject<TradePoint | null>;
 
@@ -280,7 +277,6 @@ export interface UseChartInteractionParams {
     autofitPanesSilent: () => void;
     autofitIndicatorPanes: () => void;
     resetXAxis: () => void;
-    getPanel: () => DomPanelHandle | null;
     getLayouts: () => Record<string, Rect>;
     recomputeLayouts: () => void;
     syncPixelLayouts: (panes?: ChartPane[]) => void;
@@ -357,7 +353,6 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
         datasetStartRef,
         datasetEndRef,
         horizonScrollAnimRef,
-        liveBookRef,
         tradeLineInteractionRef,
         selectedTradeRef,
         transformer,
@@ -386,7 +381,6 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
         autofitPanesSilent,
         autofitIndicatorPanes,
         resetXAxis,
-        getPanel,
         getLayouts,
         recomputeLayouts,
         applyLayoutsToDom,
@@ -2188,7 +2182,6 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                 }
             }
 
-            getPanel()?.update(liveBookRef.current);
             pushDrawParams();
             onViewSettled();
             renderEngineRef.current?.markDirty('ui');

@@ -209,7 +209,3 @@ export type OhlcvBarMs = {
     close: number;
     volume: number;
 };
-
-export interface DomPanelHandle {
-    update(state: BookState): void;
-}

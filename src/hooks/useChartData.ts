@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useRef, type MutableRefObject, type RefObject } from 'react';
 import { isoToNs } from '../lib/sampler';
-import { applyEvent, createBook } from '../lib/book';
-import { type BookState } from '../lib/types';
 import { type PriceHistory, type TradePoint, type ViewBounds, type OhlcvBarMs } from '../lib/types';
 import { footprintFromTrades, type FootprintBar } from '../lib/types/footprint';
 import { openBarFrom } from '../lib/open-bar';
@@ -22,7 +20,6 @@ import { type SerialTrade } from '../lib/types';
 import { SymbolInfo, type TickEvent } from '../interfaces/IDataAdapter';
 import { type DataLevel, type TradingSession } from '../interfaces/IDataAdapter';
 import { type LiveTransformer } from '../interfaces/ICoordinateTransformer';
-import { type DomPanelHandle } from '../lib/types';
 import { type Indicator, type ChartPane, type Rect } from '../lib/types/indicator-types';
 import { type Timeframe } from '../lib/timeframes';
 import { type ChartSettings } from '../lib/types/chart-settings';
@@ -214,14 +211,12 @@ export interface UseChartDataParams {
     // Direct callbacks
     setIndicators: (inds: Indicator[]) => void;
     setPanes: (updater: ((prev: ChartPane[]) => ChartPane[]) | ChartPane[]) => void;
-    getPanel: () => DomPanelHandle | null;
     onDataBoundsChange?: (start: bigint, end: bigint) => void;
     onHorizonUpdate: (h: bigint) => void;
     cellSymbol: string;
     /** Which cell this is, for events that are this pane's own business. */
     cellId: number;
     managed?: boolean;
-    externalDomPanelRef?: MutableRefObject<DomPanelHandle | null>;
     hidePriceScale: boolean;
     hideTimeScale: boolean;
     /** The loaded symbol serves a different data level than the last one did. */
@@ -250,7 +245,6 @@ export interface ChartDataResult {
     openBarTradeCountRef: MutableRefObject<number>;
     phCursorRef: MutableRefObject<number>;
     playheadIdxRef: MutableRefObject<number>;
-    replayedUpToRef: MutableRefObject<number>;
     isPlayingRef: MutableRefObject<boolean>;
     dataLevelRef: MutableRefObject<DataLevel | null>;
     datasetStartRef: MutableRefObject<bigint>;
@@ -269,7 +263,6 @@ export interface ChartDataResult {
         h: number;
     } | null>;
     cacheBoundsRef: MutableRefObject<ViewBounds | null>;
-    liveBookRef: MutableRefObject<BookState>;
     prevHorizonBarRef: MutableRefObject<bigint>;
     lastBarAdvanceTimeRef: MutableRefObject<number>;
     horizonScrollAnimRef: MutableRefObject<any>;
@@ -278,8 +271,6 @@ export interface ChartDataResult {
     indicatorWorkerRef: MutableRefObject<Worker | null>;
     workerReadyRef: MutableRefObject<boolean>;
     workerRequestIdRef: MutableRefObject<number>;
-    // Internal panel ref
-    _internalDomPanelRef: MutableRefObject<DomPanelHandle | null>;
     // Key functions needed by ChartInner
     seekHorizon: (
         horizon: bigint,
@@ -353,7 +344,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
     const phCursorRef = useRef<number>(-1);
     const playheadIdxRef = useRef<number>(-1);
     const tickHorizonRef = useRef<bigint>(0n);
-    const replayedUpToRef = useRef<number>(-1);
     const dataLevelRef = useRef<DataLevel | null>(null);
     const datasetStartRef = useRef<bigint>(0n);
     const datasetEndRef = useRef<bigint>(0n);
@@ -368,14 +358,12 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         null,
     );
     const cacheBoundsRef = useRef<ViewBounds | null>(null);
-    const liveBookRef = useRef<BookState>(createBook());
     const prevHorizonBarRef = useRef(0n);
     const lastBarAdvanceTimeRef = useRef<number>(0);
     const horizonScrollAnimRef = useRef<any>(null);
     const horizonScrollRafRef = useRef<number | null>(null);
     const lastHorizonForIndicatorsRef = useRef<bigint>(0n);
     const resampleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const _internalDomPanelRef = useRef<DomPanelHandle | null>(null);
 
     // Worker refs
     const workerRef = useRef<Worker | null>(null);
@@ -391,9 +379,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
     const isPlayingRef = useRef(false);
 
     // Stable accessors
-    const getPanel = useCallback(() => {
-        return p.externalDomPanelRef?.current ?? _internalDomPanelRef.current;
-    }, []);
 
     const getTradesUpToHorizon = useCallback((horizon: bigint): TradePoint[] => {
         const all = allTradesRef.current;
@@ -619,7 +604,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
 
     const resetPlayhead = useCallback((idx: number) => {
         playheadIdxRef.current = idx;
-        replayedUpToRef.current = idx;
         openBarRef.current = null;
         openBarTsRef.current = 0n;
         openBarTradeCountRef.current = 0;
@@ -1138,7 +1122,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             });
             p.horizonRef.current = playFrom;
             playheadIdxRef.current = 0;
-            replayedUpToRef.current = 0;
             openBarRef.current = null;
             openBarTsRef.current = 0n;
             const PAD = 14n * 24n * 60n * 60n * 1_000_000_000n;
@@ -1253,17 +1236,11 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             });
             const playFromIdx = findFloorIndex(compactBufRef.current, playFrom);
             playheadIdxRef.current = playFromIdx;
-            replayedUpToRef.current = playFromIdx;
             openBarRef.current = null;
             openBarTsRef.current = 0n;
             openBarTradeCountRef.current = 0;
             p.horizonRef.current = playFrom;
             takeFootprints(newFpBars, workerBarNs);
-            const liveBook = createBook();
-            const cb = compactBufRef.current;
-            for (let i = 0; i <= playFromIdx; i++) applyEvent(liveBook, getEvent(cb, i));
-            liveBookRef.current = liveBook;
-            getPanel()?.update(liveBook);
             const _SCRIPTED = '__scripted__';
             const _keptIndsL3 = payload.replaced
                 ? p.indicatorsRef.current
@@ -1472,7 +1449,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             const effHorizon = followLive ? de : p.horizonRef.current;
             const newPlayFromIdx = findFloorIndex(compactBufRef.current, effHorizon);
             playheadIdxRef.current = newPlayFromIdx;
-            replayedUpToRef.current = newPlayFromIdx;
             p.horizonRef.current = effHorizon;
             followHorizonBar(effHorizon);
             takeFootprints(newFpBars, workerBarNs);
@@ -1599,7 +1575,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             tradesRef.current = newTrades;
             if (newFpBars.length > 0) takeFootprints(newFpBars, payload.barNs);
             playheadIdxRef.current = findFloorIndex(compactBufRef.current, p.horizonRef.current);
-            replayedUpToRef.current = playheadIdxRef.current;
             datasetStartRef.current = ds;
             {
                 const PAD = 14n * 24n * 60n * 60n * 1_000_000_000n;
@@ -1875,24 +1850,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             syncOhlcvOpenBar(horizon);
             rebuildFootprints(horizon);
             updatePriceHistoryToRawIdx(findPriceHistoryIdx(horizon));
-            const targetIdx = newIdx;
-            if (getPanel()) {
-                const CHUNK = 50_000;
-                let i = 0;
-                const book = createBook();
-                const applyChunk = () => {
-                    if (playheadIdxRef.current !== targetIdx) return;
-                    const end = Math.min(i + CHUNK, targetIdx + 1);
-                    for (; i < end; i++) applyEvent(book, getEvent(cb, i));
-                    if (i <= targetIdx) setTimeout(applyChunk, 0);
-                    else {
-                        liveBookRef.current = book;
-                        replayedUpToRef.current = targetIdx;
-                        getPanel()?.update(book);
-                    }
-                };
-                applyChunk();
-            }
             const slicedTradesBack = getTradesUpToHorizon(horizon);
             rebuildCandleCache(slicedTradesBack, barNs);
             lastHorizonForIndicatorsRef.current = horizon;
@@ -1929,13 +1886,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             mergeOpenBar();
         }
         updatePriceHistoryToRawIdx(findPriceHistoryIdx(horizon));
-        if (getPanel() && newIdx > replayedUpToRef.current) {
-            const book = liveBookRef.current;
-            for (let i = replayedUpToRef.current + 1; i <= newIdx; i++)
-                applyEvent(book, getEvent(cb, i));
-            replayedUpToRef.current = newIdx;
-            getPanel()?.update(book);
-        }
         if (p.viewRef.current && p.isYAxisAutoRef.current)
             autoFitPriceAxis(
                 p.viewRef.current,
@@ -2285,7 +2235,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         openBarTradeCountRef,
         phCursorRef,
         playheadIdxRef,
-        replayedUpToRef,
         isPlayingRef,
         dataLevelRef,
         datasetStartRef,
@@ -2296,7 +2245,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         heatmapBitmapRef,
         heatmapBitmapOffsetsRef,
         cacheBoundsRef,
-        liveBookRef,
         prevHorizonBarRef,
         lastBarAdvanceTimeRef,
         horizonScrollAnimRef,
@@ -2304,7 +2252,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         indicatorWorkerRef,
         workerReadyRef,
         workerRequestIdRef,
-        _internalDomPanelRef,
         seekHorizon,
         gotoRange,
         applyHorizon,

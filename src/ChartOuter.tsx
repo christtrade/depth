@@ -1494,7 +1494,6 @@ export default function Depth({
                                                     sharedHorizonRef.current = h;
                                                 }}
                                                 onHorizonTick={isFocused ? () => {} : undefined}
-                                                domPanelRef={undefined}
                                                 onRequestMore={handleRequestMore}
                                                 tradeLines={cellBridges[i].trading.tradeLines}
                                                 onCreateOrder={(req) =>

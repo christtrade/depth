@@ -160,8 +160,6 @@ export type ChartProps = {
     onHorizonUpdate: (h: bigint) => void;
     /** Called every rAF tick with the current horizon (for cross-chart sync) */
     onHorizonTick?: (horizon: bigint) => void;
-    /** External DomPanel ref - if provided, chart uses this instead of its own */
-    domPanelRef?: React.MutableRefObject<import('./lib/types').DomPanelHandle | null>;
     /**
      * Managed mode - MultiChartLayout owns the data.worker and will call
      * ingestLoad() / ingestAppend() on the handle after mount.
@@ -211,7 +209,6 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         onOpenSettings,
         onHorizonUpdate,
         onHorizonTick,
-        domPanelRef: externalDomPanelRef,
         managed = false,
         onRequestMore,
         onDataBoundsChange,
@@ -931,13 +928,11 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         syncPixelLayoutsRef,
         setIndicators,
         setPanes,
-        getPanel: () => null,
         onDataBoundsChange,
         onHorizonUpdate,
         cellSymbol,
         cellId: _id,
         managed,
-        externalDomPanelRef,
         hidePriceScale,
         hideTimeScale,
         onDataLevelChangeRef: _enforceDataLevelRef,
@@ -965,9 +960,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         candleCacheRef,
         heatmapBitmapRef,
         heatmapBitmapOffsetsRef,
-        liveBookRef,
         horizonScrollAnimRef,
-        _internalDomPanelRef,
         seekHorizon,
         gotoRange,
         scheduleResample,
@@ -992,8 +985,6 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
             eventBus.emit('data:open-bar-provider', { cellId: _id, get: null });
         };
     }, [eventBus, _id]);
-
-    const getPanel = () => externalDomPanelRef?.current ?? _internalDomPanelRef.current;
 
     // pushDrawParams is a hoisted function declaration - safe to bind immediately
     pushDrawParamsRef.current = pushDrawParams;
@@ -1648,7 +1639,6 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         datasetStartRef,
         datasetEndRef,
         horizonScrollAnimRef,
-        liveBookRef,
         tradeLineInteractionRef,
         selectedTradeRef,
         transformer,
@@ -1677,7 +1667,6 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         autofitPanesSilent,
         autofitIndicatorPanes,
         resetXAxis,
-        getPanel,
         getLayouts,
         recomputeLayouts,
         syncPixelLayouts,
