@@ -1435,7 +1435,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 barNs: workerBarNs,
                 dataEnd,
             } = payload;
-            const ownBuf = (inBuf as ArrayBuffer).slice(0);
+            const ownBuf = inBuf as ArrayBuffer;
             const cb = createCompactBuffer(0);
             cb._buf = ownBuf;
             cb._view = new DataView(ownBuf);
@@ -1566,7 +1566,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 dataStart,
             } = payload;
             const ds = BigInt(dataStart) * 1_000_000n;
-            const ownBuf = (inBuf as ArrayBuffer).slice(0);
+            const ownBuf = inBuf as ArrayBuffer;
             const cb = createCompactBuffer(0);
             cb._buf = ownBuf;
             cb._view = new DataView(ownBuf);
@@ -2190,8 +2190,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 ohlcvBarsRef.current.bars = new BarStore();
                 ohlcvBarsRef.current.display = new BarStore();
                 p.pushDrawParamsRef.current();
-                const safeBuf = (payload.compactBuf as ArrayBuffer).slice(0);
-                ingestLoadedData({ ...(payload as any), compactBuf: safeBuf });
+                ingestLoadedData(payload as any);
             }),
             p.eventBus.on('data:append', (payload) => {
                 if (payload.symbol !== cellSymbol) return;

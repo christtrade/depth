@@ -604,8 +604,7 @@ export default function Depth({
 
             switch (payload.dataLevel) {
                 case 'l3': {
-                    // a swap is a new window of the same events
-                    const buf = (payload.compactBuf as ArrayBuffer).slice(0);
+                    const buf = payload.compactBuf as ArrayBuffer;
                     if (mode === 'load') eng.ingestCompactBuf(buf, sym);
                     else eng.appendCompactBuf(buf, sym);
                     break;

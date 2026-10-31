@@ -62,6 +62,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   **Breaking:** `data:append` doesn't carry the `ingest*` buffers.
 - Every tick/l3 live chunk copied every trade loaded for the indicator worker, even with no worker
   indicator on the chart. Only done when one is.
+- The l3 pane and the matching engine each copied the whole event buffer on every load, page and live
+  chunk. Both read the engine's in place now. a new one is created on every change.
 
 ## Fixed
 - Picking a timeframe on tick/l3 that needed new data never switched. The pane waited for the
