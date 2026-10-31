@@ -31,6 +31,18 @@ const footprints = (page: Page, from: 'pane' | 'engine' = 'pane') =>
         return { count: bars.length, unordered, off, lastMs: bars.length ? Number(bars.at(-1).ts / 1_000_000n) : 0 };
     }, [String(MIN_NS), from] as const);
 
+test('the public simulated adapter at l3: live, heatmap and all', async ({ page }) => {
+    const errors = watchErrors(page);
+    await open(page, '/?sim=1&level=l3');
+    const before = await appends(page);
+    await expect.poll(() => appends(page), { message: 'live chunks land', timeout: 10_000 }).toBeGreaterThan(before + 4);
+    await expect.poll(() => page.evaluate(() => (window as any).__heatmaps as number)).toBeGreaterThan(0);
+    expect(await drawsSomething(page)).toBe(true);
+    for (const from of ['pane', 'engine'] as const) expect((await footprints(page, from)).unordered).toBe(0);
+    await page.screenshot({ path: 'test-results/sim-l3.png' });
+    expect(errors).toEqual([]);
+});
+
 for (const level of ['tick', 'l3'] as const) {
     test(`${level}: loads, draws, pans back and switches timeframe`, async ({ page }) => {
         const errors = watchErrors(page);

@@ -20,6 +20,7 @@ import type {
     OhlcvBar,
     RealtimeRequest,
 } from '../interfaces/IDataAdapter';
+import { simMboEvents } from './sim-levels';
 
 // -
 // Config
@@ -48,6 +49,12 @@ export interface SimulatedAdapterConfig {
     realtimeUpdateMs?: number;
     /** Realtime only: bars of history before the first fetch's now. Default 10_000. */
     historyBars?: number;
+    /**
+     * l3 serves mbo events along the same price path, at `tickSize`. The path runs up to now,
+     * same as `realtime`, and `realtime` decides whether it keeps streaming. A fetch is at
+     * most 30 minutes of events. Default `'ohlcv'`
+     */
+    dataLevel?: 'ohlcv' | 'l3';
 }
 
 // -
@@ -255,7 +262,13 @@ function openBar(
 }
 
 // steps of at most 1/intrabarticks of a bar
-function advanceBar(b: FormingBar, toFrac: number, intrabarTicks: number, rand: () => number) {
+function advanceBar(
+    b: FormingBar,
+    toFrac: number,
+    intrabarTicks: number,
+    rand: () => number,
+    onStep?: (frac: number, price: number) => void,
+) {
     if (toFrac <= b.frac) return;
     const steps = Math.max(1, Math.ceil((toFrac - b.frac) * intrabarTicks - 1e-9));
     const f = (toFrac - b.frac) / steps;
@@ -264,8 +277,41 @@ function advanceBar(b: FormingBar, toFrac: number, intrabarTicks: number, rand: 
         b.price *= Math.exp(b.drift * f + studentT(rand, b.params.tDof) * sd);
         if (b.price > b.high) b.high = b.price;
         if (b.price < b.low) b.low = b.price;
+        onStep?.(t === steps - 1 ? toFrac : b.frac + f * (t + 1), b.price);
     }
     b.frac = toFrac;
+}
+
+const L3_PAGE_MS = 30 * 60_000;
+
+class RecordedPath {
+    private readonly t: number[] = [];
+    private readonly p: number[] = [];
+
+    add(ms: number, price: number) {
+        if (this.t.length && ms <= this.t[this.t.length - 1]) return;
+        this.t.push(ms);
+        this.p.push(price);
+    }
+
+    get start(): number {
+        return this.t[0] ?? 0;
+    }
+
+    at = (ms: number): number => {
+        const { t, p } = this;
+        if (!t.length) return 0;
+        if (ms <= t[0]) return p[0];
+        if (ms >= t[t.length - 1]) return p[p.length - 1];
+        let lo = 0,
+            hi = t.length - 1;
+        while (hi - lo > 1) {
+            const mid = (lo + hi) >>> 1;
+            if (t[mid] <= ms) lo = mid;
+            else hi = mid;
+        }
+        return p[lo] + ((p[hi] - p[lo]) * (ms - t[lo])) / (t[hi] - t[lo]);
+    };
 }
 
 function closeBar(state: SimState, b: FormingBar) {
@@ -323,6 +369,7 @@ export class SimulatedMarketAdapter implements IDataAdapter {
             realtime: cfg.realtime ?? false,
             realtimeUpdateMs: cfg.realtimeUpdateMs ?? 250,
             historyBars: cfg.historyBars ?? 10_000,
+            dataLevel: cfg.dataLevel ?? 'ohlcv',
         };
         // only subscribe when live
         if (this.cfg.realtime) this.subscribeRealtime = (req, onBar) => this._subscribe(req, onBar);
@@ -335,7 +382,9 @@ export class SimulatedMarketAdapter implements IDataAdapter {
         state: SimState;
         closed: OhlcvBar[];
         forming: FormingBar;
+        path: RecordedPath | null;
     } | null = null;
+    private frozenNow: number | null = null;
 
     private get barsPerYear(): number {
         return (252 * 390 * 60_000_000_000) / Number(this.cfg.barDurationNs);
@@ -349,11 +398,14 @@ export class SimulatedMarketAdapter implements IDataAdapter {
             const state = initState(regimes.MEAN_REVERTING, startPrice, rand);
             const origin = Math.floor(nowMs / durMs) * durMs - historyBars * durMs;
             const forming = openBar(state, regimes, this.barsPerYear, rand, origin);
-            this.live = { rand, state, closed: [], forming };
+            const path = this.cfg.dataLevel === 'l3' ? new RecordedPath() : null;
+            path?.add(origin, startPrice);
+            this.live = { rand, state, closed: [], forming, path };
         }
         const live = this.live;
+        const rec = live.path && ((frac: number, price: number) => live.path!.add(live.forming.time + frac * durMs, price));
         while (live.forming.time + durMs <= nowMs) {
-            advanceBar(live.forming, 1, intrabbarTicks, live.rand);
+            advanceBar(live.forming, 1, intrabbarTicks, live.rand, rec ?? undefined);
             closeBar(live.state, live.forming);
             live.closed.push(toOhlcv(live.forming, this.cfg.tickSize));
             live.forming = openBar(
@@ -364,11 +416,35 @@ export class SimulatedMarketAdapter implements IDataAdapter {
                 live.forming.time + durMs,
             );
         }
-        advanceBar(live.forming, (nowMs - live.forming.time) / durMs, intrabbarTicks, live.rand);
+        advanceBar(live.forming, (nowMs - live.forming.time) / durMs, intrabbarTicks, live.rand, rec ?? undefined);
         return live;
     }
 
+    private _events(path: RecordedPath, fromMs: number, toMs: number) {
+        return simMboEvents(path.at, fromMs, toMs, { tickSize: this.cfg.tickSize, seed: this.cfg.seed });
+    }
+
+    private _fetchL3(request: FetchRequest): BarResponse {
+        const now = this.cfg.realtime ? Date.now() : (this.frozenNow ??= Date.now());
+        const path = this._liveTo(now).path!;
+        const to = Math.min(request.range.toMs, now);
+        const from = Math.max(path.start, request.range.fromMs, to - L3_PAGE_MS);
+        const hasMore = request.direction === 'forward' ? request.range.toMs < now : from > path.start;
+        return { events: from < to ? this._events(path, from, to) : [], hasMore };
+    }
+
     private _subscribe(request: RealtimeRequest, onBar: (bar: BarResponse) => void): () => void {
+        if (this.cfg.dataLevel === 'l3') {
+            let next = Number(request.since / 1_000_000n);
+            const id = setInterval(() => {
+                const now = Date.now();
+                const path = this._liveTo(now).path!;
+                const events = next < now ? this._events(path, next, now) : [];
+                next = now;
+                if (events.length) onBar({ events, hasMore: false });
+            }, this.cfg.realtimeUpdateMs);
+            return () => clearInterval(id);
+        }
         let sent = -1;
         const id = setInterval(() => {
             const live = this._liveTo(Date.now());
@@ -404,7 +480,7 @@ export class SimulatedMarketAdapter implements IDataAdapter {
             type: 'index',
             description: 'Simulated market - regime-switching GBM + GARCH(1,1)',
             exchange: 'SIM',
-            dataLevel: 'ohlcv',
+            dataLevel: this.cfg.dataLevel,
             priceFormat: {
                 minTick: 0.25,
                 precision: 2,
@@ -416,6 +492,7 @@ export class SimulatedMarketAdapter implements IDataAdapter {
     }
 
     async fetchBars(request: FetchRequest): Promise<BarResponse> {
+        if (this.cfg.dataLevel === 'l3') return this._fetchL3(request);
         if (this.cfg.realtime) return this._fetchLive(request);
         const { barDurationNs, intrabbarTicks, tickSize, startPrice, seed, regimes } = this.cfg;
         const barsPerYear = this.barsPerYear;

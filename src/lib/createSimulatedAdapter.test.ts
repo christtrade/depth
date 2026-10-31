@@ -113,6 +113,55 @@ describe('SimulatedMarketAdapter realtime', () => {
         for (let i = 1; i < h.length; i++) assert.equal(h[i].open, h[i - 1].close);
     });
 
+    it('l3: pages, live chunks and refetches all read the same events', async () => {
+        const t0 = Date.UTC(2026, 9, 29, 12, 0, 30);
+        mock.timers.enable({ apis: ['setInterval', 'Date'], now: t0 });
+        try {
+            const sim = new SimulatedMarketAdapter({ seed: 7, realtime: true, historyBars: 200, dataLevel: 'l3' });
+            assert.equal(sim.resolveSymbol().dataLevel, 'l3');
+            const events = async (fromMs: number, toMs: number) =>
+                (await sim.fetchBars({ ...range(fromMs, toMs), direction: 'initial' })).events;
+            // thousands of events, a deepEqual diff of them runs out of memory
+            const same = (a: unknown[], b: unknown[], msg: string) =>
+                assert.ok(JSON.stringify(a) === JSON.stringify(b), msg);
+
+            const whole = await events(t0 - 20 * MIN, t0);
+            assert.ok(whole.length > 1000);
+            assert.ok(whole.some((e) => e.action === 'T'));
+            same(
+                [...(await events(t0 - 20 * MIN, t0 - 7 * MIN)), ...(await events(t0 - 7 * MIN, t0))],
+                whole,
+                'two pages join into the one',
+            );
+
+            const live: any[] = [];
+            const unsub = sim.subscribeRealtime!(since(t0), (r) => live.push(...r.events));
+            mock.timers.tick(3000);
+            unsub();
+            assert.ok(live.length > 0);
+            same(live, await events(t0, t0 + 3000), 'live chunks are what a fetch reads');
+
+            same(await events(t0 - 20 * MIN, t0), whole, 'the path moved on and nothing before it changed');
+        } finally {
+            mock.timers.reset();
+        }
+    });
+
+    it('l3: half an hour a fetch, back to where the path starts', async () => {
+        const t0 = Date.UTC(2026, 9, 29, 12, 0, 30);
+        mock.timers.enable({ apis: ['Date'], now: t0 });
+        try {
+            const sim = new SimulatedMarketAdapter({ seed: 7, realtime: true, historyBars: 60, dataLevel: 'l3' });
+            const r = await sim.fetchBars({ ...range(t0 - 3 * 60 * MIN, t0), direction: 'initial' });
+            assert.ok(Date.parse(r.events[0].ts_event) >= t0 - 30 * MIN);
+            assert.equal(r.hasMore, true);
+            const back = await sim.fetchBars({ ...range(t0 - 3 * 60 * MIN, t0 - 50 * MIN), direction: 'backward' });
+            assert.equal(back.hasMore, false, 'the path starts 60 bars back');
+        } finally {
+            mock.timers.reset();
+        }
+    });
+
     // the chart assumed it served any period, asked for 1s and got minutes back
     it('declares the one resolution it makes bars at, live or not', () => {
         const SEC_NS = 1_000_000_000n;

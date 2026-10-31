@@ -16,6 +16,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `SimulatedMarketAdapter` takes `realtime: true` to run as a live feed: one path from
   `historyBars` back up to now, the forming bar streamed every `realtimeUpdateMs`. A seed gives a
   different series than before since volume is drawn when a bar opens now
+- `SimulatedMarketAdapter` takes `dataLevel: 'l3'` and serves mbo events along the same price
+  path. Every page, live chunk and refetch agrees, since the path is kept as its simulated.
+  Every fetch returns up to 30 min of events
 - `features.timeframe.lockedReason`: the message for a timeframe `features.timeframe.timeframes`
   leaves out, for when your plan isn't called Pro.
 - `dataBudget: { maxBytes }`, a cap on the ohlcv bars the chart holds across every symbol. Uses 256 MB
