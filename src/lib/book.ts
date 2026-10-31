@@ -136,3 +136,9 @@ export function getBestBid(book: BookState): number | null {
 export function getBestAsk(book: BookState): number | null {
     return book.bestAsk;
 }
+
+export function cloneBook(book: BookState): BookState {
+    const copy = (m: Map<string, { price: number; size: number }>) =>
+        new Map(Array.from(m, ([id, o]) => [id, { price: o.price, size: o.size }]));
+    return { bids: copy(book.bids), asks: copy(book.asks), bestBid: book.bestBid, bestAsk: book.bestAsk };
+}

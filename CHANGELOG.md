@@ -31,6 +31,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and answers `fetchBars` from it when it covers the whole range, so panning back over dropped
   history skips the network. 1 GB by default, oldest chunks go first. `clearCache()` empties it.
   Without opfs available the adapter stays unchanged.
+- `processL3Chunk(events, barNs, fpOptions, carry)`: `carry.book` starts the chunk from an existing
+  book instead of an empty one, `carry.snapAt` gives back a copy of the book at that ns as `bookAt`
 
 ## Changed
 - The matching engine reads the chart's bar store instead of keeping its own copy. A `BarStore`
@@ -57,6 +59,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   to say "Pro timeframe". The `timeframe:add-failed` messages match the tooltips now.
 
 ## Fixed
+- l3 started every page and live chunk from an empty order book, so bid/ask were wrong at the start
+  of each and the forming minutes were blank on every update. Chunks picks up the book where the last
+  one left it at.
 - The l3 heatmap never drew. Its worker waited for the order events but nothing ever sent them. It
   gets them on every load, page and live chunk now, and keeps drawing the old ones while it rebuilds.
 - Tick and l3 update. every live chunk added a 2nd footprint bar for the forming minute instead of

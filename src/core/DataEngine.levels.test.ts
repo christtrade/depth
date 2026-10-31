@@ -7,6 +7,7 @@ import { TypedEventBus } from './TypedEventBus';
 import type { BarResponse, IDataAdapter } from '../interfaces/IDataAdapter';
 import { installInlineSliceWorker } from '../lib/inline-slice-worker';
 import { simMboEvents, simTicks } from '../lib/sim-levels';
+import { processL3Chunk } from './processing/l3-processor';
 
 installInlineSliceWorker();
 
@@ -198,6 +199,47 @@ for (const level of ['tick', 'l3'] as const) {
             assertEventsAre(p, 'NQ', T0 - 30 * MIN_MS, T0 + 10 * MIN_MS);
             assertFootprintsClean(p, MIN);
         });
+
+        if (level === 'l3') {
+            // bid/ask after chunks were joined on, against one pass over the whole span
+            const assertBboIsOnePass = (p: any, fromMs: number, toMs: number) => {
+                const want = processL3Chunk(simMboEvents(priceOf('NQ'), fromMs, toMs), 0n).priceHistory;
+                const got = p.priceHistory;
+                for (let i = 0; i < Math.max(got.length, want.length); i++) {
+                    const g = got[i] && `${got[i].ts} ${got[i].bestBid}/${got[i].bestAsk}`;
+                    const w = want[i] && `${want[i].ts} ${want[i].bestBid}/${want[i].bestAsk}`;
+                    assert.ok(g === w, `bbo ${i} of ${want.length}: got ${g}, expected ${w}`);
+                }
+            };
+
+            it('live chunks carry the book on, so bid/ask match one pass', async () => {
+                const { de, next, announce, push, settle } = levelEngine(level);
+                const loaded = next('data:load');
+                await de.load('NQ');
+                await loaded;
+                announce(MIN, T0 - 20 * MIN_MS, T0);
+                await settle();
+                let appended = next('data:append');
+                push(T0, T0 + 15_000);
+                await appended;
+                appended = next('data:append');
+                // into the next minute too
+                // so both rebuilt and fresh bucket get a carried book
+                push(T0 + 15_000, T0 + 75_000);
+                assertBboIsOnePass(await appended, T0 - 30 * MIN_MS, T0 + 75_000);
+            });
+
+            it('a forward page carries the book on too', async () => {
+                const { bus, de, next, moveEdge } = levelEngine(level);
+                const loaded = next('data:load');
+                await de.load('NQ');
+                await loaded;
+                moveEdge(T0 + 10 * MIN_MS);
+                const appended = next('data:append');
+                bus.emit('data:prefetch', { symbol: 'NQ' });
+                assertBboIsOnePass(await appended, T0 - 30 * MIN_MS, T0 + 10 * MIN_MS);
+            });
+        }
 
         it('live chunks inside one minute leave one bar for it', async () => {
             const { de, next, announce, push, settle } = levelEngine(level);

@@ -36,6 +36,8 @@ import { processTickChunk, type TickDataChunk } from './processing/tick-processo
 import { processL2Chunk, type L2DataChunk } from './processing/l2-processor';
 import { type DataChunk, isEmptyChunk } from './processing/data-chunk';
 import { type Forming, formingOf, joinForming } from './processing/forming';
+import { applyEvent, cloneBook } from '../lib/book';
+import type { BookState, MboEvent } from '../lib/types';
 import { isoToNs } from '../lib/sampler';
 import type { DataSourceRegistry } from './DataSourceRegistry';
 import {
@@ -284,6 +286,8 @@ interface SymbolState {
     pendingForwardViewMax: bigint | null;
     retry: { backward: Retry; forward: Retry };
     forming: Forming | null;
+    /** The book just before `forming`s first event so the next chunk doesnt start empty (l3)*/
+    formingBook: BookState | null;
 }
 
 // a direction whose last fetch failed: no new one b4 `at` and one `timer` to try again
@@ -438,6 +442,7 @@ export class DataEngine {
                 pendingForwardViewMax: null,
                 retry: { backward: noRetry(), forward: noRetry() },
                 forming: null,
+                formingBook: null,
             };
             this._states.set(symbol, st);
         }
@@ -701,7 +706,7 @@ export class DataEngine {
             return;
         }
 
-        const processed = this._process(response, st);
+        const { processed, forming, book } = this._processWindow(response, st);
         if (!processed) {
             this.eventBus.emit('data:status', {
                 status: 'ready',
@@ -715,7 +720,8 @@ export class DataEngine {
         st.hasMoreHistory = response.hasMore;
         st.fetchBarNs = fetchBarNs;
         st.master = this._buildMaster(st, processed, fetchBarNs);
-        st.forming = formingOf(st.master.dataLevel, response, this._chunkBarNs());
+        st.forming = forming;
+        st.formingBook = book;
 
         this._syncShared();
         this._syncRealtime();
@@ -1520,7 +1526,11 @@ export class DataEngine {
 
     // Response processing
 
-    private _process(response: BarResponse, st: SymbolState): DataChunk | null {
+    private _process(
+        response: BarResponse,
+        st: SymbolState,
+        carry: { book?: BookState; snapAt?: bigint } = {},
+    ): DataChunk | null {
         if (response._preProcessed) {
             const pre = response._preProcessed as any;
             // older pre-processed payloads dont carry a kind
@@ -1546,9 +1556,28 @@ export class DataEngine {
                 return processL2Chunk(response.l2Snapshots ?? [], barNs);
             default: {
                 if (!response.events?.length) return null;
-                return processL3Chunk(response.events, barNs, this.fpOptions);
+                return processL3Chunk(response.events, barNs, this.fpOptions, carry);
             }
         }
+    }
+
+    // process a whole new window with its forming buckete and the book where that starts
+    private _processWindow(response: BarResponse, st: SymbolState) {
+        const forming = formingOf(st.symbolInfo?.dataLevel ?? 'l3', response, this._chunkBarNs());
+        const processed = this._process(response, st, { snapAt: forming?.bucket });
+        const book = (processed as L3DataChunk | null)?.bookAt ?? null;
+        return { processed, forming, book };
+    }
+
+    // the book just before the chunk joined the forming bucket
+    private _bookBefore(st: SymbolState, trimFromNs: bigint | null): BookState | undefined {
+        if (!st.formingBook) return undefined;
+        const book = cloneBook(st.formingBook);
+        // start the chunk after the forming bucket
+        if (trimFromNs === null) {
+            for (const e of st.forming?.items ?? []) applyEvent(book, e as MboEvent);
+        }
+        return book;
     }
 
     // Realtime
@@ -1572,12 +1601,17 @@ export class DataEngine {
         // the seam comes back on every page and chunk, and the forming bucket gets rebuilt whole
         const joined = joinForming(level, st.forming, response, barNs);
         if (!joined) return false;
-        const processed = this._process(joined.response, st);
+        const next = formingOf(level, joined.response, barNs);
+        const processed = this._process(joined.response, st, {
+            book: level === 'l3' ? this._bookBefore(st, joined.trimFromNs) : undefined,
+            snapAt: next?.bucket,
+        });
         if (!processed || isEmptyChunk(processed)) return false;
 
         st.loadedTo = BigInt(processed.dataEnd) * 1_000_000n;
         this._growMaster(st, processed, joined.trimFromNs);
-        st.forming = formingOf(level, joined.response, barNs);
+        st.forming = next;
+        st.formingBook = (processed as L3DataChunk).bookAt ?? null;
         this._emitAppend(st, processed).catch((err) =>
             console.error(`[DataEngine] ${from} _emitAppend failed`, err),
         );
@@ -2102,6 +2136,7 @@ export class DataEngine {
         if (st.master) this._evict(st, st.master.ohlcvBars);
         st.master = null;
         st.forming = null;
+        st.formingBook = null;
     }
 
     // hands bars lo, hi of a store about to be dropped to the adapters onevict
@@ -2251,7 +2286,7 @@ export class DataEngine {
         if (this.destroyed || token !== st.stageToken) return;
         st.staging = null;
 
-        const processed = this._process(response, st);
+        const { processed, forming, book } = this._processWindow(response, st);
         if (!processed || isEmptyChunk(processed)) {
             // keep what we have rather than swapping in an empty window, and say
             // so - a pane waiting on this resolution is dimmed until it hears
@@ -2275,7 +2310,8 @@ export class DataEngine {
         st.pendingForwardViewMax = null;
         st.fetchBarNs = fetchBarNs;
         st.master = this._buildMaster(st, processed, fetchBarNs);
-        st.forming = formingOf(st.master.dataLevel, response, this._chunkBarNs());
+        st.forming = forming;
+        st.formingBook = book;
 
         this._syncShared();
         this._syncRealtime();

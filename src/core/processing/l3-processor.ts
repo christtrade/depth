@@ -6,10 +6,10 @@
 // runs on the main thread, which is fine for streaming realtime or small
 // historical chunks. anything over ~200k events wants a worker.
 
-import { applyEvent, createBook, getBestAsk, getBestBid } from '../../lib/book';
+import { applyEvent, cloneBook, createBook, getBestAsk, getBestBid } from '../../lib/book';
 import { buildFootprint, type FootprintBar, type FootprintOptions } from '../../lib/types/footprint';
 import { isoToNs } from '../../lib/sampler';
-import type { MboEvent, PriceHistory } from '../../lib/types';
+import type { BookState, MboEvent, PriceHistory } from '../../lib/types';
 import type { SerialTrade } from '../../lib/types';
 
 // these have to stay in sync with compact-buffer.ts
@@ -34,6 +34,8 @@ export interface ProcessedL3Chunk {
     dataStart: number;
     /** ISO timestamp of the last event. */
     dataEnd: number;
+    /** The book at `carry.snapAt`, when asked for it */
+    bookAt?: BookState;
 }
 
 // ProcessedL3Chunk is the old name, kept around for compat
@@ -70,16 +72,20 @@ function encodeEvents(events: MboEvent[], tsCache: BigInt64Array): ArrayBuffer {
 
 // Public API
 /**
- * Process a batch of L3 MboEvents into the internal representation.
+ * Process a batch of L3 MboEvents into the internal representation
  *
- * @param events    Raw MBO events, sorted ascending by ts_event.
+ * @param events    Raw mbo events, sorted ascending by ts_event.
  * @param barNs     Bar size in ns for the footprint. Pass 0n to skip it.
  * @param fpOptions Forwarded to buildFootprint().
+ * @param carry     `book`: the book before `events`, so a chunk that follows another
+ *                  doesnt start empty but mutates instead. `snapAt`: give back a copy of the book
+ *                  just before the first event at or after this ns, as `bookAt`
  */
 export function processL3Chunk(
     events: MboEvent[],
     barNs: bigint,
     fpOptions: FootprintOptions = {},
+    carry: { book?: BookState; snapAt?: bigint } = {},
 ): ProcessedL3Chunk {
     if (events.length === 0) {
         return {
@@ -95,7 +101,8 @@ export function processL3Chunk(
 
     const trades: SerialTrade[] = [];
     const priceHistory: PriceHistory[] = [];
-    const book = createBook();
+    const book = carry.book ?? createBook();
+    let bookAt: BookState | undefined;
 
     // pre-cache the timestamps, isoToNs in the hot loop is expensive
     const tsCache = new BigInt64Array(events.length);
@@ -103,14 +110,17 @@ export function processL3Chunk(
         tsCache[i] = isoToNs(events[i].ts_event);
     }
 
-    let lastAsk: number | null = null;
-    let lastBid: number | null = null;
+    let lastAsk: number | null = carry.book ? getBestAsk(book) : null;
+    let lastBid: number | null = carry.book ? getBestBid(book) : null;
     let lastPriceHistoryTs = 0n;
 
     for (let i = 0; i < events.length; i++) {
         const event = events[i];
         const ts = tsCache[i];
 
+        if (bookAt === undefined && carry.snapAt !== undefined && ts >= carry.snapAt) {
+            bookAt = cloneBook(book);
+        }
         applyEvent(book, event);
 
         const currentAsk = getBestAsk(book);
@@ -156,6 +166,7 @@ export function processL3Chunk(
         footprintBars,
         dataStart: new Date(events[0].ts_event).getTime(),
         dataEnd: new Date(events[events.length - 1].ts_event).getTime(),
+        ...(carry.snapAt !== undefined && { bookAt: bookAt ?? cloneBook(book) }),
     };
 }
 
