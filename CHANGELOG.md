@@ -95,6 +95,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Fixed
 - The price axis never fit at tick. It looked for bars, which tick doesn't have, so it sat at 0 and the
   candles ran off the top. Fits to the trades on screen now.
+- Line, area and baseline drew nothing at tick. They run through the candle closes now, like ohlcv.
+  The line also threw with no forming bar, at any level.
 - While playing or live, a timeframe switch that took more than 200 ms flipped the toolbar back to
   the old one until it landed, and new chunks got bucketed at the old period. A switch to one the
   old period can't build, like None, never landed.

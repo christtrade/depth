@@ -65,6 +65,34 @@ test('tick: the price axis fits the trades on screen', async ({ page }) => {
     expect(errors).toEqual([]);
 });
 
+// a series is saturated colour, the grid, axes and watermark are grey
+const colouredPixels = (page: Page) =>
+    page.locator('canvas').evaluateAll((els) => {
+        let n = 0;
+        for (const el of els) {
+            const c = el as HTMLCanvasElement;
+            const ctx = c.getContext('2d');
+            if (!ctx || !c.width || !c.height) continue;
+            const { data } = ctx.getImageData(0, 0, c.width, c.height);
+            for (let i = 0; i < data.length; i += 4) {
+                const r = data[i], g = data[i + 1], b = data[i + 2];
+                if (data[i + 3] > 0 && Math.max(r, g, b) - Math.min(r, g, b) > 60) n++;
+            }
+        }
+        return n;
+    });
+
+test('tick: line, area and baseline draw', async ({ page }) => {
+    const errors = watchErrors(page);
+    await open(page, '/?level=tick');
+    for (const chartType of ['line', 'area', 'baseline']) {
+        await page.evaluate((t) => (window as any).__chart.setChartSettings({ chartType: t }), chartType);
+        await page.waitForTimeout(300);
+        expect(await colouredPixels(page), chartType).toBeGreaterThan(500);
+    }
+    expect(errors).toEqual([]);
+});
+
 for (const level of ['tick', 'l3'] as const) {
     test(`${level}: loads, draws, pans back and switches timeframe`, async ({ page }) => {
         const errors = watchErrors(page);

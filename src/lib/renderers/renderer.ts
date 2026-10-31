@@ -11,7 +11,7 @@ import { ActiveDrawingTool, DraftDrawing, Drawing, DrawingAnchorId } from '../ty
 import { AccountSnapshot, DataLevel, LiveTransformer, OhlcvBar, SymbolInfo } from '../../core';
 import { DateTime } from 'luxon';
 import { SessionMapper } from '../../core/SessionMapper';
-import type { BarStore } from '../../core/BarStore';
+import { BarStore } from '../../core/BarStore';
 import { ohlcvBucketRange, snapTsToBarGrid } from '../bar-grid';
 import { getEffectiveDpr, snapToDevicePx } from '../dpr';
 import { formatPrice, resolveTickSize } from '../priceFormat';
@@ -3385,6 +3385,22 @@ function drawPriceChart(
     symbolInfo?: SymbolInfo,
 ) {
     const hasBidAsk = dataLevel === 'ohlcv' && !!ohlcvBars?.bid?.[0];
+    // tick has no bars, and its bid/ask is just the last trade each side, so lines run through its
+    // own candles' closes
+    const priceSeries = (): BarStore => {
+        if (dataLevel !== 'tick') return ohlcvBars;
+        const candles = aggregateCandles(trades, bounds, barNs, horizon, candleCache, openBar, ohlcvBars, transformer);
+        const bars = candles.map((c) => ({
+            time: Number(c.ts / 1_000_000n),
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: 0,
+        }));
+        return BarStore.from(bars);
+    };
+    const priceLevel = dataLevel === 'ohlcv' || dataLevel === 'tick';
     if (chartType === 'footprint') {
         drawFootprintChart(
             ctx,
@@ -3456,25 +3472,21 @@ function drawPriceChart(
                     barNs,
                     transformer,
                 );
-        } else {
-            if (dataLevel === 'ohlcv') {
-                drawAreaChart(
-                    ctx,
-                    priceHistory,
-                    bounds,
-                    w,
-                    h,
-                    'price',
-                    chartSettings,
-                    horizon,
-                    barNs,
-                    transformer,
-                    ohlcvBars,
-                    openBar,
-                );
-            } else {
-                //implement other data levels...
-            }
+        } else if (priceLevel) {
+            drawAreaChart(
+                ctx,
+                priceHistory,
+                bounds,
+                w,
+                h,
+                'price',
+                chartSettings,
+                horizon,
+                barNs,
+                transformer,
+                priceSeries(),
+                openBar,
+            );
         }
         if (showMid)
             drawMidLine(ctx, priceHistory, bounds, w, h, chartSettings, horizon, transformer);
@@ -3512,26 +3524,22 @@ function drawPriceChart(
                     barNs,
                     transformer,
                 );
-        } else {
-            if (dataLevel === 'ohlcv') {
-                drawSmoothLine(
-                    ctx,
-                    priceHistory,
-                    bounds,
-                    w,
-                    h,
-                    '#1190b0',
-                    'price',
-                    chartSettings,
-                    horizon,
-                    barNs,
-                    transformer,
-                    ohlcvBars,
-                    openBar,
-                );
-            } else {
-                //implement rest ...
-            }
+        } else if (priceLevel) {
+            drawSmoothLine(
+                ctx,
+                priceHistory,
+                bounds,
+                w,
+                h,
+                '#1190b0',
+                'price',
+                chartSettings,
+                horizon,
+                barNs,
+                transformer,
+                priceSeries(),
+                openBar,
+            );
         }
         if (showMid)
             drawMidLine(ctx, priceHistory, bounds, w, h, chartSettings, horizon, transformer);
@@ -3620,7 +3628,7 @@ function drawPriceChart(
                 barNs,
                 transformer,
             );
-        } else if (dataLevel === 'ohlcv') {
+        } else if (priceLevel) {
             drawBaselineChart(
                 ctx,
                 priceHistory,
@@ -3632,7 +3640,7 @@ function drawPriceChart(
                 horizon,
                 barNs,
                 transformer,
-                ohlcvBars,
+                priceSeries(),
                 openBar,
             );
         }
@@ -3763,7 +3771,7 @@ function drawSmoothLine(
             } else ctx.lineTo(x, y);
             if (x > w + 100) break;
         }
-        ctx.lineTo(tsToXFn(openBar.ts), priceToYFn(openBar.close));
+        if (openBar) ctx.lineTo(tsToXFn(openBar.ts), priceToYFn(openBar.close));
         ctx.stroke();
     } else {
         if (priceHistory.length === 0) return;
