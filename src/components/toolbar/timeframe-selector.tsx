@@ -19,6 +19,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 
 const PRESET_GROUPS = [
     {
+        label: 'Ticks',
+        tfs: PRESET_TIMEFRAMES.filter((t) => t.barNs < 1_000_000_000n),
+    },
+    {
         label: 'Seconds',
         tfs: PRESET_TIMEFRAMES.filter(
             (t) => t.barNs >= 1_000_000_000n && t.barNs < 60_000_000_000n,
@@ -54,6 +58,7 @@ interface TimeframeSelectorProps {
     customTimeframes: Timeframe[];
     features: FeaturesOptions,
     supportedResolutions?: bigint[];
+    dataLevel?: string;
     onChange: (tf: Timeframe) => void;
     onAddCustom: (tf: Timeframe) => void;
     onRemoveCustom: (label: string) => void;
@@ -66,6 +71,7 @@ export function TimeframeSelector({
     customTimeframes,
     features,
     supportedResolutions,
+    dataLevel,
     onChange,
     onAddCustom,
     onRemoveCustom,
@@ -99,8 +105,8 @@ export function TimeframeSelector({
     const allowCustom = gate?.allowCustom ?? true;
 
     const lockReason = useCallback(
-        (tf: Timeframe) => lockedReason(tf, supportedResolutions, gate),
-        [supportedResolutions, gate],
+        (tf: Timeframe) => lockedReason(tf, supportedResolutions, gate, dataLevel),
+        [supportedResolutions, gate, dataLevel],
     );
 
     // resolve favorites to definitions, drop dangling labels, sort ascending
@@ -139,7 +145,7 @@ export function TimeframeSelector({
                 // never lands on a timeframe it can't get data for
                 eventBus?.emit('timeframe:add-failed', {
                     message: reason,
-                    code: unsupportedReason(tf, supportedResolutions)
+                    code: unsupportedReason(tf, supportedResolutions, dataLevel)
                         ? 'TIMEFRAME_BELOW_RESOLUTION'
                         : 'TIMEFRAME_NOT_ALLOWED',
                     label: tf.label,
@@ -150,7 +156,7 @@ export function TimeframeSelector({
             onChange(tf);
             setOpenWithCallback(false);
         },
-        [onChange, lockReason, supportedResolutions, eventBus],
+        [onChange, lockReason, supportedResolutions, dataLevel, eventBus],
     );
 
     const toggleFavorite = useCallback((label: string) => {
@@ -188,7 +194,7 @@ export function TimeframeSelector({
         if (reason) {
             eventBus?.emit('timeframe:add-failed', {
                 message: reason,
-                code: unsupportedReason(parsed, supportedResolutions)
+                code: unsupportedReason(parsed, supportedResolutions, dataLevel)
                     ? 'TIMEFRAME_BELOW_RESOLUTION'
                     : 'TIMEFRAME_NOT_ALLOWED',
                 label: parsed.label,
@@ -202,7 +208,7 @@ export function TimeframeSelector({
         setInputError('');
         onChange(parsed);
         setOpenWithCallback(false);
-    }, [customInput, allTfs, onAddCustom, onChange, allowCustom, lockReason, supportedResolutions, eventBus]);
+    }, [customInput, allTfs, onAddCustom, onChange, allowCustom, lockReason, supportedResolutions, dataLevel, eventBus]);
 
     const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         setInputError('');
@@ -232,7 +238,9 @@ export function TimeframeSelector({
                     className="z-50 flex flex-col w-[244px] rounded-lg border border-raised bg-background shadow-2xl overflow-hidden"
                 >
                         <div className="p-2.5 space-y-3 flex-1 min-h-0 overflow-y-auto">
-                            {PRESET_GROUPS.filter((g) => g.tfs.length > 0).map((group) => (
+                            {PRESET_GROUPS.filter(
+                                (g) => g.tfs.length > 0 && (g.label !== 'Ticks' || dataLevel === 'l3'),
+                            ).map((group) => (
                                 <div key={group.label}>
                                     <SectionLabel>{group.label}</SectionLabel>
                                     <div className="flex flex-wrap gap-1">

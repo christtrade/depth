@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { servableBarNs } from './timeframes';
+import { PRESET_TIMEFRAMES, servableBarNs, unsupportedReason } from './timeframes';
 
 const SEC = 1_000_000_000n;
 const MIN = 60n * SEC;
@@ -41,5 +41,13 @@ describe('servableBarNs', () => {
         assert.equal(servableBarNs([DAY, SEC, HOUR, MIN], 5n * MIN), MIN);
         assert.equal(servableBarNs([0n, -MIN, MIN], 5n * MIN), MIN);
         assert.equal(servableBarNs(SUPPORTED, 0n), null);
+    });
+});
+
+describe('unsupportedReason', () => {
+    it('None needs the order book', () => {
+        const none = PRESET_TIMEFRAMES.find((t) => t.label === 'None')!;
+        for (const level of [undefined, 'ohlcv', 'tick', 'l2']) assert.notEqual(unsupportedReason(none, undefined, level), null);
+        assert.equal(unsupportedReason(none, undefined, 'l3'), null);
     });
 });

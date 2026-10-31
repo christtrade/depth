@@ -139,6 +139,23 @@ test('l3: None opens on half a minute', async ({ page }) => {
     expect(errors).toEqual([]);
 });
 
+test('None is in the timeframe list at l3 only', async ({ page }) => {
+    const errors = watchErrors(page);
+    await page.goto('/?sim=1&level=l3');
+    await settled(page);
+    await pickTimeframe(page, 'None');
+
+    await page.goto('/');
+    await settled(page);
+    await page.getByRole('button', { name: 'All timeframes' }).click();
+    await expect(page.getByRole('button', { name: '1h', exact: true }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'None', exact: true })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => (window as any).__chart.setTimeframe('None'));
+    expect(await page.evaluate(() => (window as any).__chart.getTimeframe())).toBe('1m');
+    expect(errors).toEqual([]);
+});
+
 test('l3: None zooms out past its own 30 s', async ({ page }) => {
     const errors = watchErrors(page);
     await page.goto('/?sim=1&level=l3');

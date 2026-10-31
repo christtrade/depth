@@ -150,7 +150,10 @@ export function servableBarNs(
 export function unsupportedReason(
     tf: Timeframe,
     supported: readonly bigint[] | undefined,
+    dataLevel?: string,
 ): string | null {
+    // a 1 ms candle off anything but the order book is a dot per trade
+    if (tf.barNs < SEC_NS && dataLevel !== 'l3') return `${tf.label} needs order book (l3) data`;
     if (servableBarNs(supported, tf.barNs) !== null) return null;
     const finest = supported?.length ? supported.reduce((a, b) => (b < a ? b : a)) : null;
     // a 90s chart off 1m data is unbuildable even tho its coarser
@@ -163,8 +166,9 @@ export function lockedReason(
     tf: Timeframe,
     supported: readonly bigint[] | undefined,
     gate: { timeframes?: string[] | 'any'; lockedReason?: (timeframe: string) => string } | undefined,
+    dataLevel?: string,
 ): string | null {
-    const unsupported = unsupportedReason(tf, supported);
+    const unsupported = unsupportedReason(tf, supported, dataLevel);
     if (unsupported) return unsupported;
     const allowed = gate?.timeframes ?? 'any';
     if (allowed === 'any' || allowed.includes(tf.label)) return null;

@@ -11,8 +11,8 @@ import { CURSOR_TOOL, toolFromDrawing } from '../lib/types/drawing-types';
 import {
     parseCustomTimeframe,
     PRESET_TIMEFRAMES,
-    servableBarNs,
     timeframeFromBarNs,
+    unsupportedReason,
     type Timeframe,
 } from '../lib/timeframes';
 import type { ChartSettings } from '../lib/types/chart-settings';
@@ -818,7 +818,7 @@ export class DepthChart {
             parseCustomTimeframe(label);
         if (!tf) return false;
         const info = this.dataEngine.getResolvedSymbolInfo(symbol ?? this.state.get('symbol'));
-        return servableBarNs(info?.supportedResolutions, tf.barNs) !== null;
+        return unsupportedReason(tf, info?.supportedResolutions, info?.dataLevel) === null;
     }
 
     /**

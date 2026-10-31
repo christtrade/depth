@@ -89,6 +89,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   A coarser one still fetches, since its forming bar reaches back past what's held raw.
 - None opens on 30s and not 100ms which was just an empty screen. sub second tfs zoom out as far
   as 1s does (~57 min). None stopped at 3.4s so the first scroll snapped it in from those 30s
+- None is in the timeframe list under Ticks at l3, and refused at every other level, where a 1 ms
+  bar is a dot per trade. It wasn't in the list at all.
 
 ## Fixed
 - While playing or live, a timeframe switch that took more than 200 ms flipped the toolbar back to

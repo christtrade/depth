@@ -1767,11 +1767,12 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         // Nothing the adapter serves can be aggregated into this timeframe
         // Drawing it would look bad as there would be one candle per source bar with holes between
         const supported = resolvedSymbolInfoRef.current?.supportedResolutions;
-        const reason = lockedReason(tf, supported, features?.timeframe);
+        const level = resolvedSymbolInfoRef.current?.dataLevel;
+        const reason = lockedReason(tf, supported, features?.timeframe, level);
         if (reason) {
             eventBus?.emit('timeframe:add-failed', {
                 message: reason,
-                code: unsupportedReason(tf, supported) ? 'TIMEFRAME_BELOW_RESOLUTION' : 'TIMEFRAME_NOT_ALLOWED',
+                code: unsupportedReason(tf, supported, level) ? 'TIMEFRAME_BELOW_RESOLUTION' : 'TIMEFRAME_NOT_ALLOWED',
                 label: tf.label,
             });
             return;

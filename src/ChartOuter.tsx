@@ -1321,6 +1321,7 @@ export default function Depth({
                                 customTimeframes={customTimeframes}
                                 features={features}
                                 supportedResolutions={supportedResolutions}
+                                dataLevel={dataLevel}
                                 onChange={(tf) => {
                                     setActiveTimeframe(tf);
                                     _state.set('timeframe', tf, eventBus);
