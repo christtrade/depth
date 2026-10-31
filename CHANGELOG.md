@@ -60,6 +60,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Tick/l3 live chunks dont re-bucket everything loaded anymore. Every chunk serialized the whole
   history and bucketed it again. 42 ms a chunk with 8h of l3 held -> 14ms. Tick 28ms -> 2 ms.
   **Breaking:** `data:append` doesn't carry the `ingest*` buffers.
+- Every tick/l3 live chunk copied every trade loaded for the indicator worker, even with no worker
+  indicator on the chart. Only done when one is.
 
 ## Fixed
 - Picking a timeframe on tick/l3 that needed new data never switched. The pane waited for the

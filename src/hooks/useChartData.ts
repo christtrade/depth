@@ -798,6 +798,16 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             (ind) => ind.workerInit && ind.workerInit !== SCRIPTED_SENTINEL && ind.hydrate,
         );
 
+        // Indicators dont run in the shared indicator worker but in their own
+        // script.worker and recomputes via this event
+        for (const ind of p.indicatorsRef.current) {
+            if (ind.workerInit === SCRIPTED_SENTINEL) {
+                p.eventBus.emit('plugin:scripted-recompute' as any, { id: ind.id });
+            }
+        }
+        // building these walks every trade, on every live chunk
+        if (computable.length === 0) return;
+
         function toNs(ts: number | bigint): bigint {
             const t = typeof ts === 'bigint' ? ts : BigInt(ts);
             if (t < 1_000_000_000_000n) return t * 1_000_000_000n;
@@ -839,44 +849,30 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             side: t.side,
         }));
 
-        // Scripted (plugin) indicators don't run in the shared indicator worker -
-        // each owns its own script.worker and recomputes via this event, which
-        // rebuilds its data from the current bars/horizon. (The old
-        // `compute-scripted` postMessage was a no-op: the shared worker never
-        // handled that type, so scripted indicators only ever computed once at
-        // worker init - before data was loaded - and never drew.)
-        for (const ind of p.indicatorsRef.current) {
-            if (ind.workerInit === SCRIPTED_SENTINEL) {
-                p.eventBus.emit('plugin:scripted-recompute' as any, { id: ind.id });
-            }
-        }
-
-        if (computable.length > 0) {
-            const requestId = String(++indicatorRequestIdRef.current);
-            worker.postMessage({
-                type: 'compute',
-                requestId,
-                trades,
-                ohlcv,
-                ticks,
-                snapshots: [],
-                barNs,
-                horizon: p.horizonRef.current,
-                indicators: computable.map((ind) => ({
-                    id: ind.id,
-                    workerInit: ind.workerInit,
-                    params: (ind as any).workerParams,
-                })),
-            });
-            worker.postMessage({
-                type: 'register-update-fns',
-                horizon: p.horizonRef.current,
-                indicators: computable.map((ind) => ({
-                    id: ind.id,
-                    workerUpdate: ind.workerUpdate,
-                })),
-            });
-        }
+        const requestId = String(++indicatorRequestIdRef.current);
+        worker.postMessage({
+            type: 'compute',
+            requestId,
+            trades,
+            ohlcv,
+            ticks,
+            snapshots: [],
+            barNs,
+            horizon: p.horizonRef.current,
+            indicators: computable.map((ind) => ({
+                id: ind.id,
+                workerInit: ind.workerInit,
+                params: (ind as any).workerParams,
+            })),
+        });
+        worker.postMessage({
+            type: 'register-update-fns',
+            horizon: p.horizonRef.current,
+            indicators: computable.map((ind) => ({
+                id: ind.id,
+                workerUpdate: ind.workerUpdate,
+            })),
+        });
     }, []);
 
     const runHorizonAdvance = useCallback((newHorizon: bigint) => {
