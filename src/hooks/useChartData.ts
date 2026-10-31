@@ -1275,6 +1275,11 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             priceHistoryRef.current = [];
             const PAD = 14n * 24n * 60n * 60n * 1_000_000_000n;
             p.sessionMapperRef.current.build(p.resolvedSessionRef.current, ds - PAD, de + PAD);
+            prevHorizonBarRef.current = ohlcvBucketRange(
+                playFrom,
+                activeTfBarNs,
+                p.sessionMapperRef.current,
+            ).start;
             p.eventBus.emit('data:bounds', {
                 start: ds,
                 end: de,
@@ -1469,6 +1474,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             playheadIdxRef.current = newPlayFromIdx;
             replayedUpToRef.current = newPlayFromIdx;
             p.horizonRef.current = effHorizon;
+            followHorizonBar(effHorizon);
             takeFootprints(newFpBars, workerBarNs);
             if (activeTfBarNs > 0n) {
                 phCursorRef.current = extendBucketedPh(
@@ -1697,7 +1703,9 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             const fwd = newHorizonBar > oldHorizonBar;
             prevHorizonBarRef.current = newHorizonBar;
             const inChart =
-                p.viewRef.current!.tMax > newHorizonBar && p.viewRef.current!.tMin < newHorizonBar;
+                !!p.viewRef.current &&
+                p.viewRef.current.tMax > newHorizonBar &&
+                p.viewRef.current.tMin < newHorizonBar;
             if (
                 p.viewRef.current &&
                 !(

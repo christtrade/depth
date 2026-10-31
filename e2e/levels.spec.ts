@@ -237,6 +237,35 @@ for (const level of ['tick', 'l3'] as const) {
         expect(errors).toEqual([]);
     });
 
+    test(`${level} live: the view follows new bars`, async ({ page }) => {
+        const errors = watchErrors(page);
+        await open(page, `/?level=${level}&live=1`);
+        const tMax = () => page.evaluate(() => Number((window as any).__chart.renderEngine.view.tMax / 1_000_000n));
+        const before = await appends(page);
+        await expect.poll(() => appends(page)).toBeGreaterThan(before + 1);
+        expect((await tMax()) - Date.now(), 'the first chunks follow, not jump').toBeLessThan(10 * 60_000);
+        await page.evaluate(() => {
+            const c = (window as any).__chart;
+            c.setChartSettings({ horizonScrollEasing: 'none' });
+            c.setTimeframe('1s');
+        });
+        await settled(page);
+        await expect
+            .poll(() => page.evaluate(() => String((window as any).__chart.renderEngine.drawParams.barNs)))
+            .toBe('1000000000');
+        await page.evaluate(() => {
+            const c = (window as any).__chart;
+            const v = c.renderEngine.view;
+            const span = (v.tMax as bigint) - (v.tMin as bigint);
+            v.tMax = BigInt(c.horizon()) * 1_000_000n + span / 4n;
+            v.tMin = v.tMax - span;
+        });
+        const from = await tMax();
+        await expect.poll(tMax, { timeout: 10_000 }).toBeGreaterThan(from + 2000);
+        expect((await tMax()) - Date.now(), 'by the bars it gained, not a jump').toBeLessThan(60_000);
+        expect(errors).toEqual([]);
+    });
+
     test(`${level} live: grows at the edge with one bar per minute`, async ({ page }) => {
         const errors = watchErrors(page);
         await open(page, `/?level=${level}&live=1`);
