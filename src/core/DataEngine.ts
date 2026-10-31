@@ -1551,7 +1551,7 @@ export class DataEngine {
                 }
                 return processOhlcvChunk(response.ohlcvBars ?? [], barNs);
             case 'tick':
-                return processTickChunk(response.ticks ?? [], barNs);
+                return processTickChunk(response.ticks ?? [], barNs, this.fpOptions);
             case 'l2':
                 return processL2Chunk(response.l2Snapshots ?? [], barNs);
             default: {

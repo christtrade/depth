@@ -63,6 +63,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   load to land and only ohlcv loads told it, so the toolbar snapped back to the old one.
 - A tick/l3 timeframe switch or eviction threw the playhead back to where the chart first loaded,
   reset the view and price zoom and removed every indicator. Keeps all now like ohlcv
+- Tick footprints weren't footprints. levels came as a price map and not the sorted array the type
+  says, no poc, imbalances, max vol and buys landed in the bid col. Builds like l3 now, from the trades.
 - l3 started every page and live chunk from an empty order book, so bid/ask were wrong at the start
   of each and the forming minutes were blank on every update. Chunks picks up the book where the last
   one left it at.

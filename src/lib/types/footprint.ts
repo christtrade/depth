@@ -1,4 +1,4 @@
-// builds the per-bar, per-price-level bid/ask volume maps from raw MBO trades,
+// builds the per-bar, per-price-level bid/ask volume maps from trades,
 // and the orderflow signals off them:
 //
 //   imbalance            ask/bid ratio >= threshold at one level
@@ -7,7 +7,7 @@
 //   unfinished auction   bid or ask side at the bar high/low is 0
 //   diagonal imbalance   ask[n] vs bid[n-1] and bid[n] vs ask[n+1], the
 //                        cross-level comparison Sierra and Bookmap use
-import type { MboEvent } from '.';
+import type { MboEvent, SerialTrade } from '.';
 
 // Types
 /** Volume at a single price level inside one bar. */
@@ -158,6 +158,20 @@ export function buildFootprint(
     options: FootprintOptions = {},
 ): FootprintBar[] {
     if (barNs === 0n || events.length === 0) return [];
+    const trades: SerialTrade[] = [];
+    for (const ev of events) {
+        if (ev.action !== 'T' || ev.price === null || ev.side === 'N') continue;
+        trades.push({ ts: isoToNs(ev.ts_event), price: ev.price, size: ev.size, side: ev.side });
+    }
+    return footprintFromTrades(trades, barNs, options);
+}
+
+export function footprintFromTrades(
+    trades: readonly SerialTrade[],
+    barNs: bigint,
+    options: FootprintOptions = {},
+): FootprintBar[] {
+    if (barNs === 0n || trades.length === 0) return [];
 
     const cfg: Required<FootprintOptions> = { ...DEFAULTS, ...options };
     const {
@@ -185,14 +199,11 @@ export function buildFootprint(
 
     const barMap = new Map<bigint, RawBar>();
 
-    for (const ev of events) {
-        if (ev.action !== 'T' || ev.price === null || ev.side === 'N') continue;
-
-        const tsNs = isoToNs(ev.ts_event);
-        const barTs = (tsNs / barNs) * barNs;
-        const p = roundTick(ev.price);
-        const size = ev.size;
-        const isAggBuy = ev.side === 'B';
+    for (const t of trades) {
+        const barTs = (t.ts / barNs) * barNs;
+        const p = roundTick(t.price);
+        const size = t.size;
+        const isAggBuy = t.side === 'B';
 
         let bar = barMap.get(barTs);
         if (!bar) {
