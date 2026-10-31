@@ -3024,6 +3024,10 @@ function drawPriceLabel(
         if (currPrice?.bid && currPrice?.ask && !stale) {
             hasBidAsk = true;
         }
+    } else if (dataLevel === 'tick') {
+        const idx = nearestTradeIndex(trades, horizon);
+        if (idx === -1) return;
+        price = currPrice = trades[idx];
     }
 
     if (!price || !currPrice) return;
@@ -3110,7 +3114,7 @@ function drawPriceLabel(
         const cutTs = horizon > 0n ? horizon : bounds.tMax;
         const lastBarTs = (cutTs / barNs) * barNs;
 
-        if (dataLevel === 'l3') {
+        if (dataLevel === 'l3' || dataLevel === 'tick') {
             if (candleCache !== null) {
                 for (let ts = lastBarTs; ts >= lastBarTs - barNs * 10n; ts -= barNs) {
                     const c = candleCache.get(ts);

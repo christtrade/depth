@@ -65,22 +65,31 @@ test('tick: the price axis fits the trades on screen', async ({ page }) => {
     expect(errors).toEqual([]);
 });
 
-// a series is saturated colour, the grid, axes and watermark are grey
-const colouredPixels = (page: Page) =>
-    page.locator('canvas').evaluateAll((els) => {
+// a series is saturated colour, the grid, axes and watermark are grey.
+// `fromRight` counts only that many css px off the right edge, the price scale
+const colouredPixels = (page: Page, fromRight = 0) =>
+    page.locator('canvas').evaluateAll((els, fromRight) => {
         let n = 0;
         for (const el of els) {
             const c = el as HTMLCanvasElement;
             const ctx = c.getContext('2d');
             if (!ctx || !c.width || !c.height) continue;
-            const { data } = ctx.getImageData(0, 0, c.width, c.height);
+            const x0 = fromRight ? Math.max(0, c.width - Math.round(fromRight * devicePixelRatio)) : 0;
+            const { data } = ctx.getImageData(x0, 0, c.width - x0, c.height);
             for (let i = 0; i < data.length; i += 4) {
                 const r = data[i], g = data[i + 1], b = data[i + 2];
                 if (data[i + 3] > 0 && Math.max(r, g, b) - Math.min(r, g, b) > 60) n++;
             }
         }
         return n;
-    });
+    }, fromRight);
+
+test('tick: the last price has its pill', async ({ page }) => {
+    const errors = watchErrors(page);
+    await open(page, '/?level=tick');
+    expect(await colouredPixels(page, 50)).toBeGreaterThan(200);
+    expect(errors).toEqual([]);
+});
 
 test('tick: line, area and baseline draw', async ({ page }) => {
     const errors = watchErrors(page);

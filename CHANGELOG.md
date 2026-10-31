@@ -97,6 +97,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   candles ran off the top. Fits to the trades on screen now.
 - Line, area and baseline drew nothing at tick. They run through the candle closes now, like ohlcv.
   The line also threw with no forming bar, at any level.
+- Tick had no price line or pill.
 - While playing or live, a timeframe switch that took more than 200 ms flipped the toolbar back to
   the old one until it landed, and new chunks got bucketed at the old period. A switch to one the
   old period can't build, like None, never landed.
