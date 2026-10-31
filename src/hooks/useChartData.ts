@@ -38,7 +38,7 @@ import { type HeatmapRequest, type WorkerInitMessage } from '../lib/types/heatma
 import { serializeBounds } from '../lib/types/heatmap-types';
 import { applyHeatmapContrast } from '../lib/renderers/renderer';
 import { X_AXIS_HEIGHT } from '../lib/renderers/renderer';
-import { followsEdge as followsDataEdge } from '../lib/view-edges';
+import { followsEdge as followsDataEdge, loadedHorizon } from '../lib/view-edges';
 import { nanoid } from 'nanoid';
 
 // Local types
@@ -1175,18 +1175,14 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             datasetStartRef.current = ds;
             datasetEndRef.current = de;
             p.onDataBoundsChange?.(ds, de);
-            // a swap keeps the panes horizon, following the edge if it was live and
-            // the new data still reaches it. a hole up to the live bar keeps it on the
-            // far side, so an eviction landing then doesn't drag it back a year.
-            // playFromIso is the engine's load time horizon, long stale on a live chart
-            const h = p.horizonRef.current;
-            const playFrom = payload.replaced
-                ? followsEdge(oldEnd, de) && de >= oldEnd
-                    ? de
-                    : h
-                : payload.playFromIso
-                  ? isoToNs(payload.playFromIso)
-                  : de;
+            // protect the horizon from being dragged back a year after an eviction
+            const playFrom = loadedHorizon({
+                replaced: !!payload.replaced,
+                follows: followsEdge(oldEnd, de),
+                horizon: p.horizonRef.current,
+                newEnd: de,
+                playFrom: payload.playFromIso ? isoToNs(payload.playFromIso) : null,
+            });
             p.horizonRef.current = playFrom;
             playheadIdxRef.current = 0;
             replayedUpToRef.current = 0;
@@ -1293,10 +1289,17 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             else requestFootprintRebuild();
             const ds = BigInt(dataStart) * 1_000_000n;
             const de = BigInt(dataEnd) * 1_000_000n;
+            const oldEnd = datasetEndRef.current;
             datasetStartRef.current = ds;
             datasetEndRef.current = de;
             p.onDataBoundsChange?.(ds, de);
-            const playFrom = payload.playFromIso ? isoToNs(payload.playFromIso) : de;
+            const playFrom = loadedHorizon({
+                replaced: !!payload.replaced,
+                follows: followsEdge(oldEnd, de),
+                horizon: p.horizonRef.current,
+                newEnd: de,
+                playFrom: payload.playFromIso ? isoToNs(payload.playFromIso) : null,
+            });
             const playFromIdx = findFloorIndex(compactBufRef.current, playFrom);
             playheadIdxRef.current = playFromIdx;
             replayedUpToRef.current = playFromIdx;
@@ -1310,7 +1313,9 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             liveBookRef.current = liveBook;
             getPanel()?.update(liveBook);
             const _SCRIPTED = '__scripted__';
-            const _keptIndsL3 = p.indicatorsRef.current.filter((i) => i.workerInit === _SCRIPTED);
+            const _keptIndsL3 = payload.replaced
+                ? p.indicatorsRef.current
+                : p.indicatorsRef.current.filter((i) => i.workerInit === _SCRIPTED);
             p.indicatorsRef.current = _keptIndsL3;
             p.setIndicators(_keptIndsL3);
             const { ingestOhlcvBuf, ingestBucketedPhBuf, ingestTradesBuf, ingestPhBuf } = payload;
@@ -1341,13 +1346,15 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                     p.eventBus.emit('session:status', { ...s, symbol: cellSymbolRef.current });
                 }
             }
-            const timeSpan = 800_000_000_000n;
-            const offset = 100_000_000_000n;
-            p.viewRef.current = {
-                ...(p.viewRef.current ?? { tMin: 0n, tMax: 0n, pMin: 0, pMax: 0, pRef: 0 }),
-                tMin: playFrom - timeSpan + offset,
-                tMax: playFrom + offset,
-            };
+            if (!payload.replaced) {
+                const timeSpan = 800_000_000_000n;
+                const offset = 100_000_000_000n;
+                p.viewRef.current = {
+                    ...(p.viewRef.current ?? { tMin: 0n, tMax: 0n, pMin: 0, pMax: 0, pRef: 0 }),
+                    tMin: playFrom - timeSpan + offset,
+                    tMax: playFrom + offset,
+                };
+            }
             p.transformer.update(p.viewRef.current);
             p.transformer.setSessionMapper(p.sessionMapperRef.current);
             p.transformer.setSession(p.resolvedSessionRef.current);
@@ -1362,7 +1369,8 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 runIndicatorWorker(getTradesUpToHorizon(playFrom), activeTfBarNs);
             if (ingestBucketedPhBuf) {
                 priceHistoryRef.current = deserializePriceHistoryFromBuf(ingestBucketedPhBuf);
-                autoFitPriceAxis(
+                // a switch keeps the price zoom too
+                if (!payload.replaced) autoFitPriceAxis(
                     p.viewRef.current!,
                     priceHistoryRef.current,
                     tradesRef.current,

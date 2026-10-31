@@ -1,8 +1,44 @@
 // the harness serving simulated l3
 import { expect, test, type Page } from '@playwright/test';
-import { drag, drawsSomething, settled, watchErrors } from './helpers';
+import { drag, drawsSomething, pickTimeframe, settled, watchErrors } from './helpers';
 
 const heatmaps = (page: Page) => page.evaluate(() => (window as any).__heatmaps as number);
+
+const view = (page: Page) =>
+    page.evaluate(() => {
+        const v = (window as any).__chart.renderEngine.view;
+        return { center: String((v.tMin + v.tMax) / 2n), horizon: (window as any).__chart.horizon() as number };
+    });
+
+test('l3: a timeframe switch keeps the view and the horizon', async ({ page }) => {
+    const errors = watchErrors(page);
+    await page.goto('/?level=l3');
+    await settled(page);
+
+    await page.evaluate(() => {
+        for (let i = 0; i < 20; i++) (window as any).__chart.playback.stepBack();
+    });
+    await drag(page, 300);
+    await settled(page);
+    const before = await view(page);
+
+    const replaced = page.evaluate(
+        () =>
+            new Promise<void>((resolve) => {
+                const off = (window as any).__chart.on('data:load', (p: any) => {
+                    if (!p.replaced) return;
+                    off();
+                    resolve();
+                });
+            }),
+    );
+    await pickTimeframe(page, '1h');
+    await replaced;
+    await settled(page);
+
+    expect(await view(page)).toEqual(before);
+    expect(errors).toEqual([]);
+});
 
 test('l3: the heatmap draws, and draws again after a pan', async ({ page }) => {
     const errors = watchErrors(page);

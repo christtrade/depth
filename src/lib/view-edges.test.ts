@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { TypedEventBus } from '../core/TypedEventBus';
-import { followsEdge, hasHole, panEnd, requestPastEdges } from './view-edges';
+import { followsEdge, hasHole, loadedHorizon, panEnd, requestPastEdges } from './view-edges';
 
 const SEC = 1_000_000_000n;
 const BAR = 60n * SEC;
@@ -94,5 +94,36 @@ describe('followsEdge', () => {
 
     it('keeps it when an eviction leaves the end where it was', () => {
         assert.equal(at(END + YEAR, END), false);
+    });
+});
+
+describe('loadedHorizon', () => {
+    const PLAY_FROM = END - 100n * BAR;
+    const load = (replaced: boolean, follows: boolean, horizon: bigint, newEnd: bigint) =>
+        loadedHorizon({ replaced, follows, horizon, newEnd, playFrom: PLAY_FROM });
+
+    it('a fresh load starts at the engine horizon', () => {
+        assert.equal(load(false, true, END - 5n * BAR, END), PLAY_FROM);
+        assert.equal(
+            loadedHorizon({ replaced: false, follows: false, horizon: 0n, newEnd: END, playFrom: null }),
+            END,
+            'or the data end without one',
+        );
+    });
+
+    it("a switch keeps the pane's horizon, not the stale engine one", () => {
+        assert.equal(load(true, false, END - 5n * BAR, END), END - 5n * BAR);
+    });
+
+    it('a switch at the live edge follows a newer end', () => {
+        assert.equal(load(true, true, END, END + BAR), END + BAR);
+    });
+
+    it('but never steps back when the new window ends earlier', () => {
+        assert.equal(load(true, true, END, END - BAR), END);
+    });
+
+    it('nor when the horizon sits past the last item, inside the forming bar', () => {
+        assert.equal(load(true, true, END + BAR / 2n, END), END + BAR / 2n);
     });
 });

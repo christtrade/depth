@@ -20,6 +20,18 @@ export function followsEdge(e: {
     return !hasHole(e.oldEnd, e.horizon, e.barNs) || e.newEnd >= e.horizon;
 }
 
+// keep track of the horizon
+export function loadedHorizon(e: {
+    replaced: boolean;
+    follows: boolean;
+    horizon: bigint;
+    newEnd: bigint;
+    playFrom: bigint | null;
+}): bigint {
+    if (e.replaced) return e.follows && e.newEnd > e.horizon ? e.newEnd : e.horizon;
+    return e.playFrom ?? e.newEnd;
+}
+
 // newest time a pan may reach
 export function panEnd(dataEnd: bigint, horizon: bigint, barNs: bigint): bigint {
     if (horizon <= 0n) return dataEnd;
