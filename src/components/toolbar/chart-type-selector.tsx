@@ -76,7 +76,7 @@ export function ChartTypeSelector({
         { id: 'line', label: 'Line', icon: <LineIcon /> },
         { id: 'step', label: 'Step', icon: <StepIcon /> },
         { id: 'baseline', label: 'Baseline', icon: <BaselineIcon /> },
-    ].filter((type) => dataLevel === 'l3' || type.id !== 'footprint');
+    ].filter((type) => dataLevel === 'l3' || dataLevel === 'tick' || type.id !== 'footprint');
 
     // A plugin chart type stays listed on a symbol it cant compute from - its
     // installed, it just has nothing to work with here. Greyed out with the

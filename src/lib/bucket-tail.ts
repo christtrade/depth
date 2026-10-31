@@ -1,4 +1,5 @@
 import type { PriceHistory, TradePoint } from './types';
+import { footprintFromTrades, type FootprintBar, type FootprintOptions } from './types/footprint';
 
 export type Candle = { open: number; high: number; low: number; close: number; volume: number; delta: number };
 
@@ -40,6 +41,19 @@ export function extendCandles(
             b.delta += delta;
         }
     }
+}
+
+export function extendFootprints(
+    bars: FootprintBar[],
+    trades: readonly TradePoint[],
+    barNs: bigint,
+    horizon: bigint,
+    opts: FootprintOptions = {},
+): void {
+    const from = bars.length ? bars.pop()!.ts : null;
+    const start = from === null ? 0 : firstTsAtOrAfter(trades, from);
+    const end = firstTsAtOrAfter(trades, horizon + 1n);
+    if (end > start) bars.push(...footprintFromTrades(trades.slice(start, end), barNs, opts));
 }
 
 // one entry a bucket, its last bid/ask

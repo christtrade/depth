@@ -101,6 +101,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Tick candles ignored playback. A step back left every bar after the playhead on screen, and the bar
   at the playhead showed its final close. Footprints too.
 - Indicators got no bars at tick, scripted or not. They get the tick candles now, like l3.
+- Footprint wasn't in the chart type menu at tick, though tick has footprints. And a step forward
+  never grew them, since the forming one was built from l3 events.
 - While playing or live, a timeframe switch that took more than 200 ms flipped the toolbar back to
   the old one until it landed, and new chunks got bucketed at the old period. A switch to one the
   old period can't build, like None, never landed.

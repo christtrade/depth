@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { extendBucketedPh, extendCandles, type Candle } from './bucket-tail';
+import { extendBucketedPh, extendCandles, extendFootprints, type Candle } from './bucket-tail';
+import { footprintFromTrades, type FootprintBar } from './types/footprint';
 import type { PriceHistory, TradePoint } from './types';
 
 const SEC = 1_000_000_000n;
@@ -50,6 +51,16 @@ describe('extending the buckets a chunk at a time', () => {
         extendCandles(candles, t, MIN, 600n * SEC);
         const cursor = extendBucketedPh(ph, q, MIN, 600n * SEC);
         assert.deepEqual({ candles: [...candles], ph, cursor }, whole(t, q, 600n * SEC));
+    });
+
+    it('footprints step forward to what building them whole gives', () => {
+        const bars: FootprintBar[] = [];
+        for (let edge = 30n * SEC; edge <= 600n * SEC; edge += 30n * SEC) {
+            extendFootprints(bars, trades, MIN, edge);
+            assert.deepEqual(bars, footprintFromTrades(upTo(trades, edge), MIN));
+        }
+        extendFootprints(bars, trades, MIN, 600n * SEC);
+        assert.deepEqual(bars, footprintFromTrades(trades, MIN));
     });
 
     it('stops at the playhead', () => {

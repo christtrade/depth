@@ -5,7 +5,7 @@ import { type BookState } from '../lib/types';
 import { type PriceHistory, type TradePoint, type ViewBounds, type OhlcvBarMs } from '../lib/types';
 import { footprintFromTrades, type FootprintBar } from '../lib/types/footprint';
 import { openBarFrom } from '../lib/open-bar';
-import { extendBucketedPh, extendCandles } from '../lib/bucket-tail';
+import { extendBucketedPh, extendCandles, extendFootprints } from '../lib/bucket-tail';
 import {
     type CompactBuffer,
     createCompactBuffer,
@@ -1914,7 +1914,8 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
 
         playheadIdxRef.current = newIdx;
         if (barNs > 0n) {
-            foldEventsIntoOpenBar(prevIdx, newIdx, barNs, horizon);
+            if (tick) extendFootprints(footprintBarsRef.current, allTradesRef.current, barNs, horizon, fpSettingsFromRef());
+            else foldEventsIntoOpenBar(prevIdx, newIdx, barNs, horizon);
             syncOhlcvOpenBar(horizon);
             mergeOpenBar();
         }
