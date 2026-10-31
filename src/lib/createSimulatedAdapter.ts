@@ -421,7 +421,14 @@ export class SimulatedMarketAdapter implements IDataAdapter {
     }
 
     private _events(path: RecordedPath, fromMs: number, toMs: number) {
-        return simMboEvents(path.at, fromMs, toMs, { tickSize: this.cfg.tickSize, seed: this.cfg.seed });
+        // a book a heatmap has something to show in
+        return simMboEvents(path.at, fromMs, toMs, {
+            tickSize: this.cfg.tickSize,
+            seed: this.cfg.seed,
+            levels: 40,
+            lifeSlots: 600,
+            wallOdds: 60,
+        });
     }
 
     private _fetchL3(request: FetchRequest): BarResponse {

@@ -10,10 +10,13 @@ export interface SimLevelOptions {
     /** one slot of activity per this many ms. Default 100. */
     slotMs?: number;
     seed?: number;
+    /** l3: how many ticks from the mid an order can rest. Default 8. */
+    levels?: number;
+    /** l3: slots an order rests before it's canceled, unless the mid reaches it first. Default 50. */
+    lifeSlots?: number;
+    /** l3: one order in this many is a wall, 12x the size. Default 0, none. */
+    wallOdds?: number;
 }
-
-const LIFE_SLOTS = 50;
-const LEVELS = 8;
 
 function hash(k: number, salt: number, seed: number): number {
     let x = Math.imul((k >>> 0) ^ seed, 0x9e3779b1) ^ Math.imul(Math.floor(k / 4294967296), 0x85ebca6b);
@@ -27,16 +30,18 @@ function setup(price: (ms: number) => number, fromMs: number, toMs: number, o: S
     const tick = o.tickSize ?? 0.01;
     const slot = o.slotMs ?? 100;
     const seed = o.seed ?? 0;
+    const levels = o.levels ?? 8;
+    const life = o.lifeSlots ?? 50;
     const k0 = Math.ceil(fromMs / slot);
     const k1 = Math.max(k0, Math.ceil(toMs / slot));
 
     // set up mids
-    // mid in ticks, life_slots either side of the range for the orders that straddle it
-    const base = k0 - LIFE_SLOTS;
-    const mids = new Float64Array(k1 + LIFE_SLOTS - base);
+    // mid in ticks, life either side of the range for the orders that straddle it
+    const base = k0 - life;
+    const mids = new Float64Array(k1 + life - base);
     for (let i = 0; i < mids.length; i++) mids[i] = Math.round(price((base + i) * slot) / tick);
     const mid = (k: number) => mids[k - base];
-    return { tick, slot, seed, k0, k1, mid };
+    return { tick, slot, seed, levels, life, k0, k1, mid };
 }
 
 type Trade = { side: 'B' | 'A'; ticks: number; size: number };
@@ -73,24 +78,29 @@ export function simMboEvents(
     toMs: number,
     opts: SimLevelOptions = {},
 ): MboEvent[] {
-    const { tick, slot, seed, k0, k1, mid } = setup(price, fromMs, toMs, opts);
+    const { tick, slot, seed, levels, life, k0, k1, mid } = setup(price, fromMs, toMs, opts);
+    const wallOdds = opts.wallOdds ?? 0;
     type Order = { id: number; side: 'B' | 'A'; ticks: number; size: number };
     const orderAt = (k: number, side: 'B' | 'A'): Order => {
-        const away = 1 + (hash(k, side === 'B' ? 1 : 2, seed) % LEVELS);
+        // most rest near the mid, or a deep book leaves the touch empty and the spread wide
+        const u = hash(k, side === 'B' ? 1 : 2, seed) / 4294967296;
+        const away = 1 + Math.floor(levels * u * u);
+        const size = 1 + (hash(k, side === 'B' ? 6 : 7, seed) % 20);
+        const wall = wallOdds > 0 && hash(k, side === 'B' ? 8 : 9, seed) % wallOdds === 0;
         return {
             id: 2 * k + (side === 'A' ? 1 : 0),
             side,
             ticks: side === 'B' ? mid(k) - away : mid(k) + away,
-            size: 1 + (hash(k, side === 'B' ? 6 : 7, seed) % 20),
+            size: wall ? size * 12 : size,
         };
     };
 
     const cancels: Order[][] = Array.from({ length: k1 - k0 }, () => []);
-    for (let k = k0 - LIFE_SLOTS; k < k1; k++) {
+    for (let k = k0 - life; k < k1; k++) {
         for (const side of ['B', 'A'] as const) {
             const o = orderAt(k, side);
-            let end = k + LIFE_SLOTS;
-            for (let j = k + 1; j < k + LIFE_SLOTS; j++) {
+            let end = k + life;
+            for (let j = k + 1; j < k + life; j++) {
                 if (side === 'B' ? mid(j) <= o.ticks : mid(j) >= o.ticks) {
                     end = j;
                     break;
