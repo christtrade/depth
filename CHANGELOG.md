@@ -64,6 +64,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   indicator on the chart. Only done when one is.
 - The l3 pane and the matching engine each copied the whole event buffer on every load, page and live
   chunk. Both read the engine's in place now. a new one is created on every change.
+- A tick/l3 live chunk copied everything held twice, once to drop the forming bar and again to add
+  the chunk. Once now. 8h of l3 went from 15ms/chunk to 6ms
 
 ## Fixed
 - Picking a timeframe on tick/l3 that needed new data never switched. The pane waited for the

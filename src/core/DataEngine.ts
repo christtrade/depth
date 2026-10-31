@@ -136,6 +136,14 @@ function _nsToIso(ns: bigint): string {
 
 const BYTES_PER_EVENT = 20;
 
+function _joined<T>(held: readonly T[], keep: number, add: readonly T[]): T[] {
+    if (keep === held.length) return held.concat(add);
+    const out = new Array<T>(keep + add.length);
+    for (let i = 0; i < keep; i++) out[i] = held[i];
+    for (let i = 0; i < add.length; i++) out[keep + i] = add[i];
+    return out;
+}
+
 // compactbuf event ts is in first 8 bytes
 function firstEventAtOrAfter(buf: ArrayBuffer, ns: bigint): number {
     const view = new DataView(buf);
@@ -1618,42 +1626,29 @@ export class DataEngine {
         if (!master) return;
         const dl = master.dataLevel;
 
-        if (trimFromNs !== null && (dl === 'l3' || dl === 'tick')) {
-            master.trades = master.trades.slice(0, firstTsAtOrAfter(master.trades, trimFromNs));
-            master.priceHistory = master.priceHistory.slice(
-                0,
-                firstTsAtOrAfter(master.priceHistory, trimFromNs),
-            );
-            master.footprintBars = master.footprintBars.slice(
-                0,
-                firstTsAtOrAfter(master.footprintBars, trimFromNs),
-            );
-            if (dl === 'l3') {
-                const keep = firstEventAtOrAfter(master.compactBuf, trimFromNs);
-                master.compactBuf = master.compactBuf.slice(0, keep * BYTES_PER_EVENT);
-            }
-        }
-
         switch (dl) {
-            case 'l3': {
-                const c = chunk as L3DataChunk;
-                const total = master.compactBuf.byteLength + c.compactBuf.byteLength;
-                const merged = new Uint8Array(total);
-                merged.set(new Uint8Array(master.compactBuf), 0);
-                merged.set(new Uint8Array(c.compactBuf), master.compactBuf.byteLength);
-                master.compactBuf = merged.buffer;
-                master.trades = master.trades.concat(c.trades);
-                master.priceHistory = master.priceHistory.concat(c.priceHistory);
-                master.footprintBars = master.footprintBars.concat(c.footprintBars);
-                master.ohlcvBars = _deriveOhlcvFromFootprint(master.footprintBars);
-                master.dataEnd = c.dataEnd > 0 ? c.dataEnd : master.dataEnd;
-                break;
-            }
+            case 'l3':
             case 'tick': {
-                const c = chunk as TickDataChunk;
-                master.trades = master.trades.concat(c.trades);
-                master.priceHistory = master.priceHistory.concat(c.priceHistory);
-                master.footprintBars = master.footprintBars.concat(c.footprintBars);
+                // one copy each
+                // consumers hold the old ones so nothing is changed in place
+                const c = chunk as L3DataChunk | TickDataChunk;
+                const cut = <T extends { ts: bigint }>(a: T[]) => trimFromNs === null ? a.length : firstTsAtOrAfter(a, trimFromNs);
+
+                master.trades = _joined(master.trades, cut(master.trades), c.trades);
+                master.priceHistory = _joined(master.priceHistory, cut(master.priceHistory), c.priceHistory);
+                master.footprintBars = _joined(master.footprintBars, cut(master.footprintBars), c.footprintBars);
+
+                if (dl === 'l3') {
+                    const keep =
+                        trimFromNs === null
+                            ? master.compactBuf.byteLength
+                            : firstEventAtOrAfter(master.compactBuf, trimFromNs) * BYTES_PER_EVENT;
+                    const add = (c as L3DataChunk).compactBuf;
+                    const merged = new Uint8Array(keep + add.byteLength);
+                    merged.set(new Uint8Array(master.compactBuf, 0, keep), 0);
+                    merged.set(new Uint8Array(add), keep);
+                    master.compactBuf = merged.buffer;
+                }
                 master.ohlcvBars = _deriveOhlcvFromFootprint(master.footprintBars);
                 master.dataEnd = c.dataEnd > 0 ? c.dataEnd : master.dataEnd;
                 break;
