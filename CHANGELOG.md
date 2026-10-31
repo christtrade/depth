@@ -20,6 +20,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   path. Every page, live chunk and refetch agrees, since the path is kept as its simulated.
   Every fetch returns up to 30 min of events. The book is 40 ticks deep each side with orders resting
   up to a minute, most near the touch, and the odd wall, so a heatmap becomes a little more interesting.
+  The touch is a tick wide about half the time, and most trades print on it.
   Every timeframe is open at l3, down to None.
 - `features.timeframe.lockedReason`: the message for a timeframe `features.timeframe.timeframes`
   leaves out, for when your plan isn't called Pro.

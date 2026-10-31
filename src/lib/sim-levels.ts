@@ -51,7 +51,7 @@ function tradeAt(k: number, mid: (k: number) => number, seed: number): Trade | n
     const dq = mid(k) - mid(k - 1);
     const side = dq > 0 ? 'B' : dq < 0 ? 'A' : hash(k, 4, seed) & 1 ? 'B' : 'A';
     // a buy lifts the nearest ask and a sell hits the nearest bid
-    return { side, ticks: side === 'B' ? mid(k) + 1 : mid(k) - 1, size: 1 + (hash(k, 5, seed) % 5) };
+    return { side, ticks: side === 'B' ? mid(k) + 1 : mid(k), size: 1 + (hash(k, 5, seed) % 5) };
 }
 
 export function simTicks(
@@ -84,13 +84,14 @@ export function simMboEvents(
     const orderAt = (k: number, side: 'B' | 'A'): Order => {
         // most rest near the mid, or a deep book leaves the touch empty and the spread wide
         const u = hash(k, side === 'B' ? 1 : 2, seed) / 4294967296;
-        const away = 1 + Math.floor(levels * u * u);
+        const away = 1 + Math.floor(levels * u * u * u);
         const size = 1 + (hash(k, side === 'B' ? 6 : 7, seed) % 20);
         const wall = wallOdds > 0 && hash(k, side === 'B' ? 8 : 9, seed) % wallOdds === 0;
         return {
             id: 2 * k + (side === 'A' ? 1 : 0),
             side,
-            ticks: side === 'B' ? mid(k) - away : mid(k) + away,
+            // bids from mid down, asks from mid + 1 up, so the touch can be a tick wide
+            ticks: side === 'B' ? mid(k) + 1 - away : mid(k) + away,
             size: wall ? size * 12 : size,
         };
     };
@@ -101,7 +102,7 @@ export function simMboEvents(
             const o = orderAt(k, side);
             let end = k + life;
             for (let j = k + 1; j < k + life; j++) {
-                if (side === 'B' ? mid(j) <= o.ticks : mid(j) >= o.ticks) {
+                if (side === 'B' ? mid(j) < o.ticks : mid(j) >= o.ticks) {
                     end = j;
                     break;
                 }
@@ -113,7 +114,8 @@ export function simMboEvents(
     const out: MboEvent[] = [];
     for (let k = k0; k < k1; k++) {
         const ts_event = new Date(k * slot).toISOString();
-        let seq = k * 16;
+        // room for a slot's cancels, which bunch up at the touch when the mid moves
+        let seq = k * 1024;
         const ev = (action: MboEvent['action'], side: 'B' | 'A', ticks: number, size: number, id: number) =>
             out.push({
                 ts_event,

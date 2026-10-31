@@ -76,6 +76,13 @@ describe('simulated levels', () => {
         assert.ok(checked > events.length / 2);
     });
 
+    it('the touch is often a tick wide', () => {
+        const { priceHistory } = processL3Chunk(simMboEvents(price, T0, T0 + 30 * MIN_MS, { levels: 40 }), MIN);
+        const ticks = priceHistory.map((p) => Math.round((p.bestAsk - p.bestBid) / 0.01));
+        const oneTick = ticks.filter((t) => t === 1).length / ticks.length;
+        assert.ok(oneTick > 0.3, `a tick wide ${(oneTick * 100).toFixed(0)}% of the time`);
+    });
+
     it('tick and l3 print the same trades', () => {
         const ticks = simTicks(price, T0, T0 + 5 * MIN_MS);
         const trades = simMboEvents(price, T0, T0 + 5 * MIN_MS)
