@@ -9,7 +9,7 @@ export type SerializedBounds = {
 
 // a copy of the charts compact buffer. the worker decodes it itself
 export type WorkerInitMessage = {
-    type: 'init';
+    type: 'init' | 'append';
     buf: ArrayBuffer;
     length: number;
 };

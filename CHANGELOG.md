@@ -66,6 +66,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   chunk. Both read the engine's in place now. a new one is created on every change.
 - A tick/l3 live chunk copied everything held twice, once to drop the forming bar and again to add
   the chunk. Once now. 8h of l3 went from 15ms/chunk to 6ms
+- The l3 heatmap rebuilt from the first event on every live chunk, after a copy of the whole buffer
+  on the main thread. It gets just the new events now and carries on from where it was. A page in
+  front, or a late event sorted into the forming bar, still rebuilds it whole.
 
 ## Fixed
 - Picking a timeframe on tick/l3 that needed new data never switched. The pane waited for the

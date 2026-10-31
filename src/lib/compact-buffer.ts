@@ -180,6 +180,16 @@ export function getTsNs(cb: CompactBuffer, idx: number): bigint {
     return cb._view.getBigInt64(idx * BYTES_PER_EVENT, true);
 }
 
+// whether event idx is byte for byte the same in 2 raw buffers
+export function sameEvent(a: ArrayBuffer, b: ArrayBuffer, idx: number): boolean {
+    const off = idx * BYTES_PER_EVENT;
+    if (off + BYTES_PER_EVENT > a.byteLength || off + BYTES_PER_EVENT > b.byteLength) return false;
+    const x = new Uint8Array(a, off, BYTES_PER_EVENT);
+    const y = new Uint8Array(b, off, BYTES_PER_EVENT);
+    for (let i = 0; i < BYTES_PER_EVENT; i++) if (x[i] !== y[i]) return false;
+    return true;
+}
+
 // Binary search
 /**
  * Returns the index of the last event with ts <= `targetNs`, or -1 if none.

@@ -12,6 +12,7 @@ import {
     findFloorIndex,
     getTsNs,
     getEvent,
+    sameEvent,
 } from '../lib/compact-buffer';
 import {
     deserializePriceHistoryFromBuf,
@@ -377,6 +378,8 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
 
     // Worker refs
     const workerRef = useRef<Worker | null>(null);
+    // the engine never writes into a buffer it handed out, so holding it costs nothing
+    const heatmapSentRef = useRef<{ buf: ArrayBuffer; length: number } | null>(null);
     const workerRequestIdRef = useRef(0);
     const workerReadyRef = useRef(false);
     const indicatorWorkerRef = useRef<Worker | null>(null);
@@ -787,6 +790,24 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         const buf = cb._buf.slice(0, cb.length * 20);
         const msg: WorkerInitMessage = { type: 'init', buf, length: cb.length };
         worker.postMessage(msg, [buf]);
+        heatmapSentRef.current = { buf: cb._buf, length: cb.length };
+    }, []);
+
+    // just the new events when what was sent is still there as it was, the whole buffer otherwise
+    const sendHeatmapUpdate = useCallback(() => {
+        const cb = compactBufRef.current;
+        const worker = workerRef.current;
+        const sent = heatmapSentRef.current;
+        if (!worker || !sent || !cb.length || cb.length < sent.length) return sendHeatmapInit();
+        if (!sameEvent(sent.buf, cb._buf, 0) || !sameEvent(sent.buf, cb._buf, sent.length - 1)) {
+            return sendHeatmapInit();
+        }
+        if (cb.length > sent.length) {
+            const buf = cb._buf.slice(sent.length * 20, cb.length * 20);
+            const msg: WorkerInitMessage = { type: 'append', buf, length: cb.length - sent.length };
+            worker.postMessage(msg, [buf]);
+        }
+        heatmapSentRef.current = { buf: cb._buf, length: cb.length };
     }, []);
 
     const runIndicatorWorker = useCallback((trades: SerialTrade[], barNs: bigint) => {
@@ -1494,7 +1515,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             p.pushDrawParamsRef.current();
             p.renderEngineRef.current?.markAllDirty();
             runIndicatorWorker(getTradesUpToHorizon(p.horizonRef.current), activeTfBarNs);
-            sendHeatmapInit();
+            sendHeatmapUpdate();
             scheduleResample();
         } catch (e) {
             console.error('[chart] ingestAppendedData failed', e);
@@ -2159,6 +2180,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         if (dataLoadedRef.current) return;
         dataLoadedRef.current = true;
         workerRef.current = new Worker(new URL('../lib/heatmap.worker.ts', import.meta.url));
+        heatmapSentRef.current = null;
         workerRef.current.onmessage = onWorkerMessage;
         indicatorWorkerRef.current = new Worker(
             new URL('../lib/indicator-worker.ts', import.meta.url),

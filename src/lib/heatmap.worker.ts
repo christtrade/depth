@@ -3,33 +3,23 @@ import {
     type HeatmapResponse,
     type WorkerInitMessage,
 } from './types/heatmap-types';
-import type { MboEvent, BookState } from './types';
+import type { MboEvent } from './types';
 import { createCompactBuffer, sliceToMboEvents } from './compact-buffer';
 import type { ViewBounds } from './types';
+import {
+    type Build,
+    type Snapshot,
+    LOD_INTERVALS_NS,
+    feed,
+    newBuild,
+    seal,
+    sortPairs,
+    unseal,
+} from './heatmap-build';
 
-// LOD levels
-// Multiple snapshot pyramids built once at init from a single event-log pass.
-// renderView picks the finest level where intervalNs <= nsPerPixel * LOD_RATIO,
-// so the number of visible snapshots never exceeds chartW * LOD_RATIO.
-// Levels: 25ms | 100ms | 500ms | 2s  (fine -> coarse)
-const LOD_INTERVALS_NS: bigint[] = [
-    250_000_000n, // 250ms - zoomed in tight (<= ~5 min visible)
-    1_000_000_000n, // 1s   - default mid-zoom
-    5_000_000_000n, // 5s   - zoomed out (a few hours)
-    30_000_000_000n, // 30s  - fully zoomed out (full session)
-];
 // How many columns-per-pixel we tolerate before stepping up to a coarser level.
 // 3 = switch levels when the snapshot count exceeds 3x the canvas width.
 const LOD_RATIO = 3;
-
-// Persistent state
-type Snapshot = {
-    ts: bigint;
-    // Flat sorted arrays: [price0, size0, price1, size1, ...]
-    // bids sorted high->low, asks sorted low->high - ready to paint directly
-    bids: Float64Array;
-    asks: Float64Array;
-};
 
 // One snapshot array per LOD level, indexed same as LOD_INTERVALS_NS.
 let lodSnapshots: Snapshot[][] = [];
@@ -62,30 +52,51 @@ function flushRender() {
     });
 }
 
+function decode(msg: WorkerInitMessage): MboEvent[] {
+    const cb = createCompactBuffer(0);
+    cb._buf = msg.buf;
+    cb._view = new DataView(msg.buf);
+    cb.length = cb.capacity = msg.length;
+    return sliceToMboEvents(cb, 0, msg.length);
+}
+
+// builds run one after another so an append always lands on the build before it
+let chain: Promise<unknown> = Promise.resolve();
+
 // Message router
-self.onmessage = async (e: MessageEvent<WorkerInitMessage | HeatmapRequest>) => {
+self.onmessage = (e: MessageEvent<WorkerInitMessage | HeatmapRequest>) => {
     const msg = e.data;
 
-    if (msg.type === 'init') {
-        // the old snapshots keep drawing while this builds, and a newer init stops it
-        const gen = ++buildGen;
-        const cb = createCompactBuffer(0);
-        cb._buf = msg.buf;
-        cb._view = new DataView(msg.buf);
-        cb.length = cb.capacity = msg.length;
-        const built = await buildMasterSnapshots(sliceToMboEvents(cb, 0, msg.length), gen);
-        if (!built) return;
-        initDone = true;
-        if (pendingRender) {
-            const req = pendingRender;
-            pendingRender = null;
-            pendingRenderReq = req;
-            flushRender();
-        } else if (lastRender) {
-            // same view, new data
-            pendingRenderReq = lastRender;
-            flushRender();
-        }
+    if (msg.type === 'init' || msg.type === 'append') {
+        // keep drawing old snapshots while an init bulds and a newer init stops it
+        const gen = msg.type === 'init' ? ++buildGen : buildGen;
+        chain = chain.then(async () => {
+            // a newer init holds these events too
+            if (gen !== buildGen) return;
+            if (msg.type === 'init') {
+                const fresh = newBuild();
+                if (!(await feed(fresh, decode(msg), () => gen !== buildGen))) return;
+                build = fresh;
+            } else {
+                if (!build) return;
+                unseal(build);
+                await feed(build, decode(msg));
+            }
+            seal(build);
+            lodSnapshots = build.snaps;
+            masterSnapshots = build.snaps[0];
+            initDone = true;
+            if (pendingRender) {
+                const req = pendingRender;
+                pendingRender = null;
+                pendingRenderReq = req;
+                flushRender();
+            } else if (lastRender) {
+                // same view new data
+                pendingRenderReq = lastRender;
+                flushRender();
+            }
+        });
         return;
     }
 
@@ -118,79 +129,7 @@ function handleRender(msg: HeatmapRequest & { type: 'render' }) {
     (self as unknown as Worker).postMessage(response, [bitmap]);
 }
 
-// Init: parse timestamps once, build master snapshots
-function isoToNs(isoString: string): bigint {
-    const ms = Date.parse(isoString);
-    const wholeSecMs = ms - (ms % 1000);
-    const base = BigInt(wholeSecMs) * 1_000_000n;
-
-    const dotIdx = isoString.indexOf('.');
-    if (dotIdx === -1) return base + BigInt(ms % 1000) * 1_000_000n;
-
-    let end = dotIdx + 1;
-    while (
-        end < isoString.length &&
-        isoString.charCodeAt(end) >= 48 &&
-        isoString.charCodeAt(end) <= 57
-    )
-        end++;
-
-    const fracStr = isoString.slice(dotIdx + 1, end);
-    const fracNs = BigInt(fracStr.padEnd(9, '0').slice(0, 9));
-    return base + fracNs;
-}
-
-// Chunk size for async init - yields control every N events so the worker
-// stays responsive to incoming render requests during long dataset loads.
-const INIT_CHUNK_SIZE = 5_000;
-
-// false when a newer init took over
-async function buildMasterSnapshots(events: MboEvent[], gen: number): Promise<boolean> {
-    // Single pass through the event log. For each LOD level we maintain an
-    // independent nextSnapTime cursor and append to its own array.
-    //@ts-ignore
-    const book: BookState = { bids: new Map(), asks: new Map() };
-    const levels = LOD_INTERVALS_NS.length;
-    const snapsArrays: Snapshot[][] = Array.from({ length: levels }, () => []);
-    const nextSnapTimes: (bigint | null)[] = new Array(levels).fill(null);
-    let lastEventTs = 0n;
-
-    for (let i = 0; i < events.length; i++) {
-        if (i > 0 && i % INIT_CHUNK_SIZE === 0) {
-            await new Promise<void>((resolve) => setTimeout(resolve, 0));
-            if (gen !== buildGen) return false;
-        }
-
-        const event = events[i];
-        const ts = isoToNs(event.ts_event);
-        lastEventTs = ts;
-
-        for (let lvl = 0; lvl < levels; lvl++) {
-            const interval = LOD_INTERVALS_NS[lvl];
-            if (nextSnapTimes[lvl] === null) {
-                nextSnapTimes[lvl] = (ts / interval) * interval;
-            }
-            while (ts >= nextSnapTimes[lvl]!) {
-                snapsArrays[lvl].push(snapshotToArrays(book, nextSnapTimes[lvl]!));
-                nextSnapTimes[lvl] = nextSnapTimes[lvl]! + interval;
-            }
-        }
-
-        applyEvent(book, event);
-    }
-
-    if (gen !== buildGen) return false;
-    // Push a trailing snapshot at the actual last event timestamp for all levels.
-    if (events.length > 0) {
-        for (let lvl = 0; lvl < levels; lvl++) {
-            snapsArrays[lvl].push(snapshotToArrays(book, lastEventTs));
-        }
-    }
-
-    lodSnapshots = snapsArrays;
-    masterSnapshots = snapsArrays[0]; // finest level - keeps compat with any direct refs
-    return true;
-}
+let build: Build | null = null;
 
 /** Pick the LOD level whose interval best matches the current ns-per-pixel density. */
 function pickLodLevel(nsPerPixel: number): Snapshot[] {
@@ -203,68 +142,6 @@ function pickLodLevel(nsPerPixel: number): Snapshot[] {
         }
     }
     return lodSnapshots[lodSnapshots.length - 1] ?? masterSnapshots;
-}
-
-// Convert book Maps -> flat sorted Float64Arrays (no allocation during render)
-// Reusable scratch maps - avoids allocating new Maps on every snapshot.
-// Safe because snapshotToArrays is always called synchronously (never concurrent).
-const _bidScratch = new Map<number, number>();
-const _askScratch = new Map<number, number>();
-
-function snapshotToArrays(book: BookState, ts: bigint): Snapshot {
-    _bidScratch.clear();
-    _askScratch.clear();
-
-    for (const o of (book.bids as Map<string, { price: number; size: number }>).values()) {
-        const r = Math.round(o.price * 100) / 100;
-        _bidScratch.set(r, (_bidScratch.get(r) ?? 0) + o.size);
-    }
-    for (const o of (book.asks as Map<string, { price: number; size: number }>).values()) {
-        const r = Math.round(o.price * 100) / 100;
-        _askScratch.set(r, (_askScratch.get(r) ?? 0) + o.size);
-    }
-
-    const bids = new Float64Array(_bidScratch.size * 2);
-    const asks = new Float64Array(_askScratch.size * 2);
-
-    // Fill and sort in one pass using index tracking
-    let bi = 0;
-    for (const [price, size] of _bidScratch) {
-        bids[bi++] = price;
-        bids[bi++] = size;
-    }
-    let ai = 0;
-    for (const [price, size] of _askScratch) {
-        asks[ai++] = price;
-        asks[ai++] = size;
-    }
-
-    // Sort bids high->low, asks low->high - typed array sort is in-place, no extra alloc
-    // We sort pairs by swapping, using a simple insertion sort shim on Float64Array pairs
-    sortPairs(bids, true);
-    sortPairs(asks, false);
-
-    return { ts, bids, asks };
-}
-
-/** Sort a flat [price, size, price, size, ...] Float64Array by price.
- *  highToLow=true for bids, false for asks. Uses insertion sort - O(n²) but
- *  the number of price levels is small (~50-500) so it's faster than creating
- *  an intermediate array for Array.sort. */
-function sortPairs(arr: Float64Array, highToLow: boolean): void {
-    const n = arr.length;
-    for (let i = 2; i < n; i += 2) {
-        const kp = arr[i],
-            ks = arr[i + 1];
-        let j = i - 2;
-        while (j >= 0 && (highToLow ? arr[j] < kp : arr[j] > kp)) {
-            arr[j + 2] = arr[j];
-            arr[j + 3] = arr[j + 1];
-            j -= 2;
-        }
-        arr[j + 2] = kp;
-        arr[j + 3] = ks;
-    }
 }
 
 // Render: direct single-pass paint, no tile compositing
@@ -490,30 +367,6 @@ function recordToSortedArray(rec: Record<number, number>, highToLow: boolean): F
     return arr;
 }
 
-function applyEvent(book: BookState, event: MboEvent): void {
-    if (event.action === 'R') {
-        book.bids.clear();
-        book.asks.clear();
-        return;
-    }
-    let side = event.side;
-    if (event.action === 'T' || event.action === 'F') side = side === 'B' ? 'A' : 'B';
-    const map = side === 'B' ? book.bids : book.asks;
-    if (event.action === 'A') {
-        map.set(event.order_id, { price: event.price!, size: event.size } as any);
-    } else if (event.action === 'C') {
-        map.delete(event.order_id);
-    } else if (event.action === 'M') {
-        const o = map.get(event.order_id) as any;
-        if (o) {
-            if (event.price !== null) o.price = event.price;
-            o.size = event.size;
-        }
-    } else if (event.action === 'T' || event.action === 'F') {
-        book.bids.delete(event.order_id);
-        book.asks.delete(event.order_id);
-    }
-}
 
 function bsFloor(arr: { ts: bigint }[], target: bigint): number {
     let lo = 0,

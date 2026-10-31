@@ -53,7 +53,10 @@ for (const level of ['tick', 'l3'] as const) {
         await open(page, `/?level=${level}&live=1`);
 
         const before = await appends(page);
+        const heatmaps = () => page.evaluate(() => (window as any).__heatmaps as number);
+        const drawn = await heatmaps();
         await expect.poll(() => appends(page), { message: 'live chunks land', timeout: 10_000 }).toBeGreaterThan(before + 4);
+        if (level === 'l3') expect(await heatmaps(), 'the heatmap redraws as they do').toBeGreaterThan(drawn + 2);
 
         const data = await page.evaluate(() => (window as any).__chart.getData().dataEnd as number);
         expect(Date.now() - data, 'the data reaches the live edge').toBeLessThan(5_000);
