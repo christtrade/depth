@@ -352,6 +352,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
     const openBarTradeCountRef = useRef<number>(0);
     const phCursorRef = useRef<number>(-1);
     const playheadIdxRef = useRef<number>(-1);
+    const tickHorizonRef = useRef<bigint>(0n);
     const replayedUpToRef = useRef<number>(-1);
     const dataLevelRef = useRef<DataLevel | null>(null);
     const datasetStartRef = useRef<bigint>(0n);
@@ -1789,7 +1790,10 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         const newIdx = findFloorIndex(cb, horizon);
         const prevIdx = playheadIdxRef.current;
         const barNs = p.activeTimeframeRef.current.barNs;
-        const isForward = newIdx >= prevIdx;
+        // tick has no event buffer, so its index never moves and a step back looked like a step forward
+        const tick = dataLevelRef.current === 'tick';
+        const isForward = tick ? horizon >= tickHorizonRef.current : newIdx >= prevIdx;
+        if (tick) tickHorizonRef.current = horizon;
 
         followHorizonBar(horizon);
         p.onHorizonUpdate(horizon);
@@ -1937,7 +1941,9 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             );
 
         if (hotPath) {
-            if (barNs > 0n && candleCacheRef.current && newIdx > prevIdx) {
+            if (tick && barNs > 0n && candleCacheRef.current) {
+                extendCandles(candleCacheRef.current, allTradesRef.current, barNs, horizon);
+            } else if (barNs > 0n && candleCacheRef.current && newIdx > prevIdx) {
                 const all = allTradesRef.current;
                 const prevTs = prevIdx >= 0 ? getTsNs(cb, prevIdx) : 0n;
                 let tradeStart = 0,

@@ -84,6 +84,52 @@ const colouredPixels = (page: Page, fromRight = 0) =>
         return n;
     }, fromRight);
 
+// every candle the chart holds against the trades up to the playhead
+const candlesVsTrades = (page: Page) =>
+    page.evaluate(() => {
+        const c = (window as any).__chart;
+        const dp = c.renderEngine.drawParams;
+        const h = BigInt(c.horizon()) * 1_000_000n;
+        const barNs = dp.barNs as bigint;
+        const want = new Map<bigint, { high: number; low: number; close: number }>();
+        for (const t of c.getData().trades as any[]) {
+            if (t.ts > h) break;
+            const k = (t.ts / barNs) * barNs;
+            const b = want.get(k);
+            if (!b) want.set(k, { high: t.price, low: t.price, close: t.price });
+            else {
+                b.high = Math.max(b.high, t.price);
+                b.low = Math.min(b.low, t.price);
+                b.close = t.price;
+            }
+        }
+        const cache: Map<bigint, any> = dp.candleCache ?? new Map();
+        const wrong: string[] = [];
+        for (const [k, v] of want) {
+            const got = k === dp.openBar?.ts ? dp.openBar : cache.get(k);
+            if (!got || got.close !== v.close || got.high !== v.high || got.low !== v.low) wrong.push(String(k));
+        }
+        const past = [...cache.keys()].filter((k) => k > h).length;
+        const fpPast = (dp.footprintBars as any[]).filter((b) => b.ts > h).length;
+        return { wrong, past, fpPast };
+    });
+
+test('tick: candles follow the playhead both ways', async ({ page }) => {
+    const errors = watchErrors(page);
+    await open(page, '/?level=tick');
+    await page.evaluate(() => {
+        for (let i = 0; i < 20; i++) (window as any).__chart.playback.stepBack();
+    });
+    await settled(page);
+    expect(await candlesVsTrades(page), 'after a step back').toEqual({ wrong: [], past: 0, fpPast: 0 });
+    await page.evaluate(() => {
+        for (let i = 0; i < 5; i++) (window as any).__chart.playback.stepForward();
+    });
+    await settled(page);
+    expect(await candlesVsTrades(page), 'and forward').toEqual({ wrong: [], past: 0, fpPast: 0 });
+    expect(errors).toEqual([]);
+});
+
 test('tick: the last price has its pill', async ({ page }) => {
     const errors = watchErrors(page);
     await open(page, '/?level=tick');

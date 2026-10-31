@@ -98,6 +98,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Line, area and baseline drew nothing at tick. They run through the candle closes now, like ohlcv.
   The line also threw with no forming bar, at any level.
 - Tick had no price line or pill.
+- Tick candles ignored playback. A step back left every bar after the playhead on screen, and the bar
+  at the playhead showed its final close. Footprints too.
 - While playing or live, a timeframe switch that took more than 200 ms flipped the toolbar back to
   the old one until it landed, and new chunks got bucketed at the old period. A switch to one the
   old period can't build, like None, never landed.
