@@ -5,6 +5,7 @@ import { drag, drawsSomething, pickTimeframe, settled, watchErrors } from './hel
 const MIN_NS = 60_000_000_000n;
 
 const appends = (page: Page) => page.evaluate(() => (window as any).__appends as number);
+const rebuilding = (page: Page) => page.evaluate(() => (window as any).__rebuilding ?? false);
 
 async function open(page: Page, url: string) {
     await page.addInitScript(() => {
@@ -14,6 +15,7 @@ async function open(page: Page, url: string) {
             if (!w.__chart) return;
             clearInterval(hook);
             w.__chart.on('data:append', () => w.__appends++);
+            w.__chart.on('heatmap:status', (s: any) => (w.__rebuilding = s.recalculating));
         }, 10);
     });
     await page.goto(url);
@@ -189,6 +191,13 @@ test('tick: footprint can be picked and draws', async ({ page }) => {
     await expect(page.getByRole('button', { name: 'Footprint', exact: true })).toBeVisible();
     expect(await colouredPixels(page)).toBeGreaterThan(500);
     expect(errors).toEqual([]);
+});
+
+test('tick: no heatmap pill, it has no heatmap', async ({ page }) => {
+    await open(page, '/?level=tick');
+    await drag(page, 200);
+    await page.waitForTimeout(1000);
+    expect(await rebuilding(page)).toBe(false);
 });
 
 for (const level of ['tick', 'l3'] as const) {

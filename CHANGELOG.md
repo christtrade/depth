@@ -103,6 +103,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Indicators got no bars at tick, scripted or not. They get the tick candles now, like l3.
 - Footprint wasn't in the chart type menu at tick, though tick has footprints. And a step forward
   never grew them, since the forming one was built from l3 events.
+- "Rebuilding heatmap" showed forever at tick, which has no heatmap (lol)
 - While playing or live, a timeframe switch that took more than 200 ms flipped the toolbar back to
   the old one until it landed, and new chunks got bucketed at the old period. A switch to one the
   old period can't build, like None, never landed.

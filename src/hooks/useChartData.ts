@@ -1021,6 +1021,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 }
             }
             if (!workerReadyRef.current || !p.chartSettingsRef.current.showHeatmap) return;
+            if (dataLevelRef.current === 'tick') return;
             const bitmapW = canvas.width - p.priceScaleWidthRef.current;
             const mainLayout = p.layoutsCacheRef.current['main'];
             const bitmapH = mainLayout
