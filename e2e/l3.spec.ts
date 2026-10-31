@@ -130,12 +130,13 @@ test('l3: None opens on half a minute', async ({ page }) => {
     await settled(page);
     await page.evaluate(() => (window as any).__chart.setTimeframe('None'));
     await expect.poll(() => page.evaluate(() => (window as any).__chart.getTimeframe())).toBe('None');
-    await settled(page);
-    const spanMs = await page.evaluate(() => {
-        const v = (window as any).__chart.renderEngine.view;
-        return Number(v.tMax - v.tMin) / 1e6;
-    });
-    expect(spanMs).toBe(30_000);
+    // getTimeframe already says None while the switch is landing
+    const spanMs = () =>
+        page.evaluate(() => {
+            const v = (window as any).__chart.renderEngine.view;
+            return Number(v.tMax - v.tMin) / 1e6;
+        });
+    await expect.poll(spanMs).toBe(30_000);
     expect(errors).toEqual([]);
 });
 
