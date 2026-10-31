@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it, mock } from 'node:test';
 import { SimulatedMarketAdapter } from './createSimulatedAdapter';
+import { servableBarNs } from './timeframes';
 
 const MIN = 60_000;
 const range = (fromMs: number, toMs: number) =>
@@ -170,5 +171,11 @@ describe('SimulatedMarketAdapter realtime', () => {
             assert.deepEqual(sim.resolveSymbol().supportedResolutions, [5n * SEC_NS]);
         }
         assert.deepEqual(new SimulatedMarketAdapter().resolveSymbol().supportedResolutions, [60n * SEC_NS]);
+    });
+
+    it('at l3 serves any period, down to None', () => {
+        const info = new SimulatedMarketAdapter({ seed: 7, dataLevel: 'l3' }).resolveSymbol();
+        assert.equal(info.supportedResolutions, undefined);
+        assert.equal(servableBarNs(info.supportedResolutions, 1_000_000n), 1_000_000n);
     });
 });

@@ -492,9 +492,9 @@ export class SimulatedMarketAdapter implements IDataAdapter {
                 minTick: 0.25,
                 precision: 2,
             },
-            // bars only ever come at bardurationns
-            // so the chart builds every coarser timeframe from them
-            supportedResolutions: [this.cfg.barDurationNs],
+            // bars only ever come at bardurationns, so the chart builds every coarser timeframe from
+            // them. l3 events have no period, any timeframe down to None buckets them
+            ...(this.cfg.dataLevel === 'ohlcv' && { supportedResolutions: [this.cfg.barDurationNs] }),
         };
     }
 

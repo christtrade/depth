@@ -19,7 +19,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `SimulatedMarketAdapter` takes `dataLevel: 'l3'` and serves mbo events along the same price
   path. Every page, live chunk and refetch agrees, since the path is kept as its simulated.
   Every fetch returns up to 30 min of events. The book is 40 ticks deep each side with orders resting
-  up to a minute, most near the touch, and the odd wall, so a heatmap becomes a little more interesting
+  up to a minute, most near the touch, and the odd wall, so a heatmap becomes a little more interesting.
+  Every timeframe is open at l3, down to None.
 - `features.timeframe.lockedReason`: the message for a timeframe `features.timeframe.timeframes`
   leaves out, for when your plan isn't called Pro.
 - `dataBudget: { maxBytes }`, a cap on the ohlcv bars the chart holds across every symbol. Uses 256 MB
