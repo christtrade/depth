@@ -1609,7 +1609,11 @@ export class DataEngine {
         });
         if (!processed || isEmptyChunk(processed)) return false;
 
+        const oldEnd = st.loadedTo;
         st.loadedTo = BigInt(processed.dataEnd) * 1_000_000n;
+        const horizon = isoToNs(this.horizonIso);
+        if (from === 'realtime' && oldEnd !== null && horizon >= oldEnd && st.loadedTo > horizon)
+            this.horizonIso = _nsToIso(st.loadedTo);
         this._growMaster(st, processed, joined.trimFromNs);
         st.forming = next;
         st.formingBook = (processed as L3DataChunk).bookAt ?? null;

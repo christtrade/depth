@@ -265,6 +265,22 @@ for (const level of ['tick', 'l3'] as const) {
             assert.equal(last.totalVol, vol, 'holds both chunks, once');
         });
 
+        it('a rehydrate after live chunks plays from the new edge', async () => {
+            const { de, next, announce, push, settle } = levelEngine(level);
+            const loaded = next('data:load');
+            await de.load('NQ');
+            await loaded;
+            announce(MIN, T0 - 20 * MIN_MS, T0);
+            await settle();
+            const appended = next('data:append');
+            push(T0, T0 + 15_000);
+            await appended;
+            const again = next('data:load');
+            de.rehydrate();
+            const p = await again;
+            assert.equal(new Date(p.playFromIso).getTime(), p.dataEnd);
+        });
+
         it('a live chunk that re-sends the seam keeps one copy of it', async () => {
             const { de, next, announce, push, settle } = levelEngine(level);
             const loaded = next('data:load');
