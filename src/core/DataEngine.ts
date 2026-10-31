@@ -128,6 +128,11 @@ function bigMax(a: bigint, b: bigint): bigint {
     return a > b ? a : b;
 }
 
+// an empty window holds nothing up to where it was asked to end
+function loadedEdge(ms: number, emptyNs: bigint): bigint {
+    return ms > 0 ? BigInt(ms) * 1_000_000n : emptyNs;
+}
+
 function _nsToIso(ns: bigint): string {
     const ms = Number(ns / 1_000_000n);
     const subMs = Number(ns % 1_000_000n);
@@ -713,8 +718,8 @@ export class DataEngine {
             return;
         }
 
-        st.loadedFrom = BigInt(processed.dataStart) * 1_000_000n;
-        st.loadedTo = BigInt(processed.dataEnd) * 1_000_000n;
+        st.loadedFrom = loadedEdge(processed.dataStart, toNs);
+        st.loadedTo = loadedEdge(processed.dataEnd, toNs);
         st.hasMoreHistory = response.hasMore;
         st.fetchBarNs = fetchBarNs;
         st.master = this._buildMaster(st, processed, fetchBarNs);
@@ -1555,10 +1560,8 @@ export class DataEngine {
                 return processTickChunk(response.ticks ?? [], barNs, this.fpOptions);
             case 'l2':
                 return processL2Chunk(response.l2Snapshots ?? [], barNs);
-            default: {
-                if (!response.events?.length) return null;
-                return processL3Chunk(response.events, barNs, this.fpOptions, carry);
-            }
+            default:
+                return processL3Chunk(response.events ?? [], barNs, this.fpOptions, carry);
         }
     }
 
@@ -2173,10 +2176,12 @@ export class DataEngine {
         // but not if the chart is being driven programmatically so guard here too
         if (need === null) return;
 
-        // left edge only. right edge is the forward prefetch's job
+        // left edge only. right edge is the forward prefetch's job.
+        // tick/l3 events start mid-bucket, so the first bucket's slack doesnt count
+        const slack = st.master.dataLevel === 'ohlcv' ? 0n : st.fetchBarNs;
         const shortOfHistory =
             switchWindow !== null &&
-            (st.loadedFrom === null || st.loadedFrom > switchWindow.from);
+            (st.loadedFrom === null || st.loadedFrom > switchWindow.from + slack);
         if (need === st.fetchBarNs && !shortOfHistory) return;
         if (!shortOfHistory && this._rebucket(st, need)) return;
 

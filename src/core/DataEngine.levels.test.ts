@@ -34,7 +34,7 @@ const tfOf = (barNs: bigint) => ({ label: String(barNs), barNs, defaultBars: 100
 const nsOf = (ms: number) => BigInt(ms) * 1_000_000n;
 
 // an adapter serving `level` from START up to a live edge the test moves
-function levelEngine(level: Level, opts: { liveEdge?: number; barNs?: bigint } = {}) {
+function levelEngine(level: Level, opts: { liveEdge?: number; barNs?: bigint; quietFrom?: number } = {}) {
     let edge = opts.liveEdge ?? T0;
     const fetches: { direction: string; fromMs: number; toMs: number }[] = [];
     const subs: { symbol: string; onBar: (r: BarResponse) => void; open: boolean }[] = [];
@@ -55,7 +55,9 @@ function levelEngine(level: Level, opts: { liveEdge?: number; barNs?: bigint } =
             const toMs = Math.min(edge, Number(req.range.toNs / 1_000_000n));
             fetches.push({ direction: req.direction, fromMs, toMs });
             const hasMore = req.direction === 'forward' ? toMs < edge : fromMs > START;
-            return { ...respond(level, req.symbolInfo.symbol, fromMs, toMs), hasMore };
+            // nothing printed from quietFrom on
+            const printTo = Math.max(fromMs, Math.min(toMs, opts.quietFrom ?? toMs));
+            return { ...respond(level, req.symbolInfo.symbol, fromMs, printTo), hasMore };
         },
         subscribeRealtime: (req: any, onBar: any) => {
             const sub = { symbol: req.symbolInfo.symbol, onBar, open: true };
@@ -187,6 +189,19 @@ for (const level of ['tick', 'l3'] as const) {
             assertFootprintsClean(p, MIN);
         });
 
+        it('pages back from an empty first window', async () => {
+            const { bus, de, fetches, next } = levelEngine(level, { quietFrom: T0 - 40 * MIN_MS });
+            const loaded = next('data:load');
+            await de.load('NQ');
+            await loaded;
+            const fetched = fetches.length;
+            const prepended = next('data:prepend');
+            bus.emit('data:request-backward', { viewMin: nsOf(T0 - 90 * MIN_MS), symbol: 'NQ' });
+            const p = await prepended;
+            assert.equal(fetches.length, fetched + 1);
+            assertTradesAre(p, 'NQ', firstMs(p), T0 - 40 * MIN_MS);
+        });
+
         it('pages forward without repeating the seam', async () => {
             const { bus, de, next, moveEdge } = levelEngine(level);
             const loaded = next('data:load');
@@ -313,6 +328,20 @@ for (const level of ['tick', 'l3'] as const) {
             assert.equal(p.replaced, true);
             assertTradesAre(p, 'NQ', firstMs(p), T0);
             assertFootprintsClean(p, FIVE);
+        });
+
+        it('a finer switch over exactly the loaded window rebuckets, no fetch', async () => {
+            const { de, state, bus, fetches, announce, next } = levelEngine(level);
+            const loaded = next('data:load');
+            await de.load('NQ');
+            await loaded;
+            const HALF = MIN / 2n;
+            const fetched = fetches.length;
+            const replaced = next('data:load');
+            announce(HALF, T0 - 30 * MIN_MS, T0);
+            state.set('timeframe', tfOf(HALF) as never, bus);
+            await replaced;
+            assert.equal(fetches.length, fetched, `fetched ${JSON.stringify(fetches.slice(fetched))}`);
         });
 
         // the chart's pane announces first, the shared timeframe follows
