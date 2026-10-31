@@ -8,6 +8,7 @@ import type { BarResponse, IDataAdapter } from '../interfaces/IDataAdapter';
 import { installInlineSliceWorker } from '../lib/inline-slice-worker';
 import { simMboEvents, simTicks } from '../lib/sim-levels';
 import { processL3Chunk } from './processing/l3-processor';
+import { footprintFromTrades } from '../lib/types/footprint';
 
 installInlineSliceWorker();
 
@@ -296,6 +297,40 @@ for (const level of ['tick', 'l3'] as const) {
             assert.equal(p.replaced, true);
             assertTradesAre(p, 'NQ', firstMs(p), T0);
             assertFootprintsClean(p, FIVE);
+        });
+
+        it('a switch to a finer timeframe rebuckets what is held, no fetch', async () => {
+            const { de, state, bus, fetches, announce, push, next, settle } = levelEngine(level);
+            const loaded = next('data:load');
+            await de.load('NQ');
+            await loaded;
+            announce(MIN, T0 - 20 * MIN_MS, T0);
+            await settle();
+            let appended = next('data:append');
+            push(T0, T0 + 20_500);
+            await appended;
+
+            const SEC = 1_000_000_000n;
+            const fetched = fetches.length;
+            const replaced = next('data:load');
+            state.set('timeframe', tfOf(SEC) as never, bus);
+            announce(SEC, T0 - 10_000, T0 + 20_500);
+            const p = await replaced;
+            assert.equal(p.replaced, true);
+            assert.equal(fetches.length, fetched, 'nothing fetched');
+            assertTradesAre(p, 'NQ', T0 - 30 * MIN_MS, T0 + 20_500);
+            assertFootprintsClean(p, SEC);
+            const json = (v: unknown) => JSON.stringify(v, (_, x) => (typeof x === 'bigint' ? String(x) : x));
+            const fresh = (q: any) => json(footprintFromTrades(q.trades, SEC));
+            assert.equal(json(p.footprintBars), fresh(p));
+
+            // the forming second carries on
+            appended = next('data:append');
+            push(T0 + 20_500, T0 + 22_500);
+            const a = await appended;
+            assertTradesAre(a, 'NQ', T0 - 30 * MIN_MS, T0 + 22_500);
+            assertEventsAre(a, 'NQ', T0 - 30 * MIN_MS, T0 + 22_500);
+            assert.equal(json(a.footprintBars), fresh(a));
         });
 
         it('switching symbol and back hands each pane its own data', async () => {

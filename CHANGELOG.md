@@ -83,6 +83,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A tick/l3 page back doesn't serialize and re-bucket everything held in the slice worker anymore,
   the pane rebuilds from the page. Tick at 220k trades 39ms -> 13ms until the page is drawn, l3 sheds
   5-40 ms. **Breaking:** `data:prepend` doesn't carry the `ingest*` buffers.
+- A tick/l3 switch to a finer timeframe re-buckets what's loaded and fetches nothing. It fetched
+  the whole window again, sized in the new bars, so going to None at l3 kept 5 min of the 30.
+  A coarser one still fetches, since its forming bar reaches back past what's held raw.
 
 ## Fixed
 - A tick/l3 page back in a replay drew the bid/ask lines past the playhead, and the next step forward

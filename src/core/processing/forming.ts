@@ -44,6 +44,22 @@ export function formingOf(level: string, response: BarResponse, barNs: bigint): 
     return { bucket, items: items.slice(i) };
 }
 
+// the forming bucket at a finer period
+export function narrowForming(
+    level: string,
+    forming: Forming | null,
+    barNs: bigint,
+): { forming: Forming; before: Item[] } | null {
+    if ((level !== 'tick' && level !== 'l3') || barNs <= 0n || !forming?.items.length) return null;
+    const items = forming.items;
+    const last = tsOf(level, items[items.length - 1]);
+    const bucket = last - (last % barNs);
+    if (bucket < forming.bucket) return null;
+    let i = items.length;
+    while (i > 0 && tsOf(level, items[i - 1]) >= bucket) i--;
+    return { forming: { bucket, items: items.slice(i) }, before: items.slice(0, i) };
+}
+
 // a chunk joined onto what's held
 // so anything it re-sends is dropped, and if it carries on the forming bucket the held items
 // go in front so that bucket gets built whole.

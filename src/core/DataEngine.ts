@@ -21,7 +21,7 @@ import {
     searchSymbolsLocally,
     symbolSearchCacheKey,
 } from '../lib/symbol-search';
-import type { FootprintOptions } from '../lib/types/footprint';
+import { footprintFromTrades, type FootprintOptions } from '../lib/types/footprint';
 import type { SerialTrade } from '../lib/types';
 import type { PriceHistory } from '../lib/types';
 import type { FootprintBar } from '../lib/types/footprint';
@@ -35,7 +35,7 @@ import {
 import { processTickChunk, type TickDataChunk } from './processing/tick-processor';
 import { processL2Chunk, type L2DataChunk } from './processing/l2-processor';
 import { type DataChunk, isEmptyChunk } from './processing/data-chunk';
-import { type Forming, formingOf, joinForming } from './processing/forming';
+import { type Forming, formingOf, joinForming, narrowForming } from './processing/forming';
 import { applyEvent, cloneBook } from '../lib/book';
 import type { BookState, MboEvent } from '../lib/types';
 import { isoToNs } from '../lib/sampler';
@@ -2174,6 +2174,7 @@ export class DataEngine {
             switchWindow !== null &&
             (st.loadedFrom === null || st.loadedFrom > switchWindow.from);
         if (need === st.fetchBarNs && !shortOfHistory) return;
+        if (!shortOfHistory && this._rebucket(st, need)) return;
 
         const win = this._switchWindow(st, symbol, need);
 
@@ -2188,6 +2189,38 @@ export class DataEngine {
         }
 
         void this._stageLoad(st, need, win.from, win.to, win.capped);
+    }
+
+    // tick/l3 events have no period, so a switch whose forming bucket is still held raw
+    // re-buckets whats loaded instead of fetching it all again
+    private _rebucket(st: SymbolState, barNs: bigint): boolean {
+        const master = st.master;
+        if (!master) return false;
+        const level = master.dataLevel;
+        const narrowed = narrowForming(level, st.forming, barNs);
+        if (!narrowed) return false;
+        let book: BookState | null = null;
+        if (level === 'l3') {
+            if (!st.formingBook) return false;
+            book = cloneBook(st.formingBook);
+            for (const e of narrowed.before) applyEvent(book, e as MboEvent);
+        }
+
+        // a switch already on its way would land over this
+        st.stageToken++;
+        st.staging = null;
+        st.fetchBarNs = barNs;
+        st.forming = narrowed.forming;
+        st.formingBook = book;
+        master.footprintBars = footprintFromTrades(master.trades, this._chunkBarNs(), this.fpOptions);
+        master.ohlcvBars = _deriveOhlcvFromFootprint(master.footprintBars);
+        master.barNs = this._masterBarNs(st);
+        this._syncShared();
+        this._syncRealtime();
+        this._emitLoad(st, /* rehydrate */ false, /* replaced */ true).catch((err) =>
+            console.error('[DataEngine] _rebucket _emitLoad failed', err),
+        );
+        return true;
     }
 
     private _switchWindow(
