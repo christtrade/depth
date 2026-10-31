@@ -299,7 +299,9 @@ for (const level of ['tick', 'l3'] as const) {
             assertFootprintsClean(p, FIVE);
         });
 
-        it('a switch to a finer timeframe rebuckets what is held, no fetch', async () => {
+        // the chart's pane announces first, the shared timeframe follows
+        for (const paneFirst of [false, true])
+        it(`a switch to a finer timeframe rebuckets what is held, no fetch${paneFirst ? ', pane first' : ''}`, async () => {
             const { de, state, bus, fetches, announce, push, next, settle } = levelEngine(level);
             const loaded = next('data:load');
             await de.load('NQ');
@@ -313,10 +315,12 @@ for (const level of ['tick', 'l3'] as const) {
             const SEC = 1_000_000_000n;
             const fetched = fetches.length;
             const replaced = next('data:load');
-            state.set('timeframe', tfOf(SEC) as never, bus);
+            if (!paneFirst) state.set('timeframe', tfOf(SEC) as never, bus);
             announce(SEC, T0 - 10_000, T0 + 20_500);
             const p = await replaced;
+            if (paneFirst) state.set('timeframe', tfOf(SEC) as never, bus);
             assert.equal(p.replaced, true);
+            assert.equal(p.barNs, SEC);
             assert.equal(fetches.length, fetched, 'nothing fetched');
             assertTradesAre(p, 'NQ', T0 - 30 * MIN_MS, T0 + 20_500);
             assertFootprintsClean(p, SEC);

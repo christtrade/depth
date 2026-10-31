@@ -2212,9 +2212,10 @@ export class DataEngine {
         st.fetchBarNs = barNs;
         st.forming = narrowed.forming;
         st.formingBook = book;
-        master.footprintBars = footprintFromTrades(master.trades, this._chunkBarNs(), this.fpOptions);
+        // the pane announces before the shared timeframe moves, so not _chunkBarNs()
+        master.footprintBars = footprintFromTrades(master.trades, barNs, this.fpOptions);
         master.ohlcvBars = _deriveOhlcvFromFootprint(master.footprintBars);
-        master.barNs = this._masterBarNs(st);
+        master.barNs = barNs;
         this._syncShared();
         this._syncRealtime();
         this._emitLoad(st, /* rehydrate */ false, /* replaced */ true).catch((err) =>
