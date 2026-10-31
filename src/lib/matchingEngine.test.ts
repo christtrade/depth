@@ -418,6 +418,33 @@ describe('a bracket added to a resting order', () => {
 
         assert.equal(positions.length, 0, 'a restored order must not settle against the past');
     });
+
+    it('leaves a restored tick stop alone on the trades it predates', () => {
+        const { state, positions } = stubTradingState();
+        const engine = createL3MatchingEngine(state, { symbolInfo: SYMBOL_INFO });
+        const SEC = 1_000_000_000n;
+        engine.ingestTicks!([
+            { ts: T0, price: 100, size: 1, side: 'B' },
+            { ts: T0 + SEC, price: 98, size: 1, side: 'A' },
+            { ts: T0 + 2n * SEC, price: 100, size: 1, side: 'B' },
+        ]);
+        engine.syncOrder({
+            id: 'restored-stop',
+            symbol: 'TEST',
+            side: 'short',
+            type: 'stop',
+            status: 'working',
+            quantity: 1,
+            filledQuantity: 0,
+            price: 0,
+            stopPrice: 99,
+            bracket: { takeProfits: [], stopLosses: [] },
+        } as any);
+
+        engine.seekTo(T0 + 3n * SEC);
+
+        assert.equal(positions.length, 0);
+    });
 });
 
 describe('a micro contract', () => {

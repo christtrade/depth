@@ -1257,6 +1257,7 @@ export function createL3MatchingEngine(
         for (const [id, qo] of workingOrders) {
             const { order } = qo;
             if (order.type !== 'stop' && order.type !== 'stop_limit') continue;
+            if (predatesSeed(id, BigInt(tick.ts))) continue;
             // an already-triggered stop_limit is a resting limit now, so
             // checkQueueFills fills it, not this. skipping it also stops the
             // promote below re-visiting and re-promoting it forever.

@@ -80,6 +80,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   twice or on prices from before they were placed. A timeframe switch never reached the matching
   engine at all, and a new window was played onto the old book. The book is rebuilt at the playhead
   now, without settling anything
+- A restored stop could fire on prices from before the session it was restored into. Stops get the
+  same guard limits and brackets already had.
 - l3 started every page and live chunk from an empty order book, so bid/ask were wrong at the start
   of each and the forming minutes were blank on every update. Chunks picks up the book where the last
   one left it at.
