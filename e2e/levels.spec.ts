@@ -290,3 +290,25 @@ for (const level of ['tick', 'l3'] as const) {
         expect(errors).toEqual([]);
     });
 }
+
+test('the toolbar offers what the focused cell can draw, not the last cell loaded', async ({ page }) => {
+    const errors = watchErrors(page);
+    await page.goto('/?layout=2h');
+    await settled(page);
+    await page.evaluate(() => {
+        const w = window as any;
+        w.__l3Loaded = false;
+        w.__chart.on('data:load', (p: any) => {
+            if (p.symbol === 'HARNESS-L3') w.__l3Loaded = true;
+        });
+        w.__chart.eventBus.emit('chart:set-symbol', { symbol: 'HARNESS-L3', id: 1 });
+    });
+    await expect.poll(() => page.evaluate(() => (window as any).__l3Loaded)).toBe(true);
+    await settled(page);
+
+    // cell 0 is still focused, on ohlcv
+    await page.getByRole('button', { name: 'All timeframes' }).click();
+    await expect(page.getByRole('button', { name: '1h', exact: true }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'None', exact: true })).toHaveCount(0);
+    expect(errors).toEqual([]);
+});

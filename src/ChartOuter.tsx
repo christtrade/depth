@@ -254,10 +254,6 @@ export default function Depth({
 
     const chartRefs = useRef<(ChartHandle | null)[]>(Array(MAX).fill(null));
 
-    const [dataLevel, setDataLevel] = useState<DataLevel>('ohlcv');
-    const dataLevelRef = useRef(dataLevel);
-    dataLevelRef.current = dataLevel;
-
     const currentTimeRef = useRef<HTMLSpanElement>(null);
     const timeFormatterRef = useRef<Intl.DateTimeFormat | null>(null);
     const dateFormatterRef = useRef<Intl.DateTimeFormat | null>(null);
@@ -433,6 +429,9 @@ export default function Depth({
     };
 
     const focusedBridge = cellBridges[focused] ?? cellBridges[0];
+    const dataLevel: DataLevel = focusedBridge?.dataLevel ?? 'ohlcv';
+    const dataLevelRef = useRef(dataLevel);
+    dataLevelRef.current = dataLevel;
 
     const focusedBridgeRef = useRef(focusedBridge);
     useEffect(() => {
@@ -924,7 +923,6 @@ export default function Depth({
                 setSupportedResolutions(symbolInfo.supportedResolutions);
             }),
             eventBus.on('data:load', (payload) => {
-                setDataLevel(payload.dataLevel);
                 // dont do a full load to avoid filling live orders from back in the past
                 ingestForExecution(
                     payload,

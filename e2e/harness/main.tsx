@@ -11,6 +11,7 @@ const sim = params.get('sim') === '1';
 const live = sim || params.get('live') === '1';
 const budget = params.get('budget');
 const level = (['l3', 'tick'] as const).find((l) => l === params.get('level')) ?? 'ohlcv';
+const split = params.get('layout') === '2h';
 
 const win = window as any;
 win.__status = [];
@@ -43,6 +44,9 @@ function App() {
         timePrecision: 's',
         features: { timeframe: { timeframes: 'any', allowCustom: true } },
         ...(budget && { dataBudget: { maxBytes: Number(budget) } }),
+        ...(split && {
+            restore: { layout: { id: '2h', label: '2', count: 2, cols: 2, rows: 1, areas: '"a b"' } },
+        }),
     });
 
     useEffect(() => {

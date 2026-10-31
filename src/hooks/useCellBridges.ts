@@ -163,7 +163,7 @@ export function useTradingBridge(
         trading.registerRedraw(redrawFnRef.current);
     }, [redrawFnRef.current]);
 
-    return { symbol, trading, executionEngine, redrawFnRef, tradingEvents };
+    return { symbol, dataLevel, trading, executionEngine, redrawFnRef, tradingEvents };
 }
 
 export type TradingBridge = ReturnType<typeof useTradingBridge>;

@@ -112,6 +112,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A finer timeframe at tick refetched the whole window. The first trade lands mid-bucket, so the
   loaded window looked short of the view.
 - A tick/l3 chart that loaded an empty window never paged back. l3 never loaded at all.
+- In a split layout the toolbar went by whichever cell loaded last, so an ohlcv cell could offer
+  None or l3-only chart types and indicators. follows the focused cell now
 - The status bar kept the old bar after a wheel zoom until the mouse moved. The last move of a fast
   swipe got dropped the same way, it waited on a throttle with no trailing call.
 - While playing or live, a timeframe switch that took more than 200 ms flipped the toolbar back to
