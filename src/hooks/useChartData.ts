@@ -104,13 +104,27 @@ export function autoFitPriceAxis(
         }
     };
 
+    const scanTrades = () => {
+        for (const t of trades) {
+            if (t.ts > horizon || t.ts < view.tMin || t.ts >= view.tMax) continue;
+            if (t.price > hi) hi = t.price;
+            if (t.price < lo) lo = t.price;
+            if (!found) {
+                view.pRef = t.price;
+                found = true;
+            }
+        }
+    };
+
     if (
         settings.chartType === 'area' ||
         settings.chartType === 'line' ||
         settings.chartType === 'step' ||
         settings.chartType === 'baseline'
     ) {
-        if (dataLevel === 'l3') {
+        // tick bid/ask start at 0 until each side has traded, so its trades
+        if (dataLevel === 'tick') scanTrades();
+        else if (dataLevel === 'l3') {
             for (const h of priceHistory) {
                 if (h.ts > horizon || h.ts < view.tMin || h.ts >= view.tMax) continue;
                 if (h.bestAsk > hi) hi = h.bestAsk;
@@ -135,17 +149,7 @@ export function autoFitPriceAxis(
         settings.chartType === 'kagi' ||
         settings.chartType === 'line-break'
     ) {
-        if (dataLevel === 'l3') {
-            for (const t of trades) {
-                if (t.ts > horizon || t.ts < view.tMin || t.ts >= view.tMax) continue;
-                if (t.price > hi) hi = t.price;
-                if (t.price < lo) lo = t.price;
-                if (!found) {
-                    view.pRef = t.price;
-                    found = true;
-                }
-            }
-        }
+        if (dataLevel === 'l3' || dataLevel === 'tick') scanTrades();
         scanBars();
         foldOpenBar();
     }

@@ -43,6 +43,28 @@ test('the public simulated adapter at l3: live, heatmap and all', async ({ page 
     expect(errors).toEqual([]);
 });
 
+// l3 lines fit to the bid/ask, which a trade can poke past between samples
+test('tick: the price axis fits the trades on screen', async ({ page }) => {
+    const errors = watchErrors(page);
+    await open(page, '/?level=tick');
+    for (const chartType of ['candles', 'line']) {
+        await page.evaluate((t) => (window as any).__chart.setChartSettings({ chartType: t }), chartType);
+        await page.waitForTimeout(300);
+        const fit = await page.evaluate(() => {
+            const c = (window as any).__chart;
+            const v = c.renderEngine.view;
+            const prices = (c.getData().trades as any[])
+                .filter((t) => t.ts >= v.tMin && t.ts < v.tMax)
+                .map((t) => t.price);
+            return { pMin: v.pMin, pMax: v.pMax, lo: Math.min(...prices), hi: Math.max(...prices) };
+        });
+        expect(fit.pMin, chartType).toBeLessThanOrEqual(fit.lo);
+        expect(fit.pMax, chartType).toBeGreaterThanOrEqual(fit.hi);
+        expect(fit.pMax - fit.pMin, chartType).toBeLessThan((fit.hi - fit.lo) * 3);
+    }
+    expect(errors).toEqual([]);
+});
+
 for (const level of ['tick', 'l3'] as const) {
     test(`${level}: loads, draws, pans back and switches timeframe`, async ({ page }) => {
         const errors = watchErrors(page);
