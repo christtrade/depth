@@ -1356,6 +1356,8 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 status: 'ready',
                 symbol: payload.symbol ?? cellSymbolRef.current,
             });
+            // a switch waiting on this load can land now
+            p.onLoadAppliedRef.current(workerBarNs);
             if (_keptIndsL3.length > 0)
                 runIndicatorWorker(getTradesUpToHorizon(playFrom), activeTfBarNs);
             if (ingestBucketedPhBuf) {

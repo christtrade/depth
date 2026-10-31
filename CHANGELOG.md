@@ -59,6 +59,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   to say "Pro timeframe". The `timeframe:add-failed` messages match the tooltips now.
 
 ## Fixed
+- Picking a timeframe on tick/l3 that needed new data never switched. The pane waited for the
+  load to land and only ohlcv loads told it, so the toolbar snapped back to the old one.
 - l3 started every page and live chunk from an empty order book, so bid/ask were wrong at the start
   of each and the forming minutes were blank on every update. Chunks picks up the book where the last
   one left it at.
