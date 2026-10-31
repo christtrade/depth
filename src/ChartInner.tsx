@@ -802,7 +802,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
             openBarRef.current = null;
             openBarTsRef.current = 0n;
             openBarTradeCountRef.current = 0;
-            requestFootprintRebuild();
+            rebuildFootprints();
             pushDrawParams();
             renderEngineRef.current?.markDirty('base');
             renderEngineRef.current?.markDirty('drawings');
@@ -972,7 +972,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         scheduleResample,
         runIndicatorWorker,
         getTradesUpToHorizon,
-        requestFootprintRebuild,
+        rebuildFootprints,
         syncOhlcvOpenBar,
         rebuildCandleCache,
         rebuildContrastBitmap,
@@ -1315,12 +1315,11 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         previewBarsRef,
         openBarRef,
         horizonRef,
-        compactBufRef,
         selectedDrawingIdRef,
         renderEngineRef,
         scheduleResample,
         rebuildContrastBitmap,
-        requestFootprintRebuild,
+        rebuildFootprints,
         pushDrawParams,
         updateSettingsBarPos,
         hidePriceScale,

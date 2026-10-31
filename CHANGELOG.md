@@ -67,6 +67,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   says, no poc, imbalances, max vol and buys landed in the bid col. Builds like l3 now, from the trades.
 - The forming l3 footprint bar had buys and sells in swapped columns from the closed bars next to it,
   had unrounded prices & no imbalances. Built the same way as the closed ones now.
+- Footprints (l3/tick) never rebuilt. A seek left bars from past the playhead on screen, a fp setting
+  didnt touch the closed bars, the rebuild went to a worker that never existed, and a pane on another
+  tf than the data kept the wrong size. Theyre rebuilt from the trades now
 - l3 started every page and live chunk from an empty order book, so bid/ask were wrong at the start
   of each and the forming minutes were blank on every update. Chunks picks up the book where the last
   one left it at.

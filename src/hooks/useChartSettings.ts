@@ -5,7 +5,6 @@ import { type ChartSettings, DEFAULT_CHART_SETTINGS } from '../lib/types/chart-s
 import { type DataLevel } from '../interfaces/IDataAdapter';
 import { type RenderEngine } from '../core/RenderEngine';
 import { type BarStore } from '../core/BarStore';
-import { type CompactBuffer } from '../lib/compact-buffer';
 import { StorageKey, readJSON, writeJSON } from '../lib/storage';
 import { autoFitPriceAxis } from './useChartData';
 
@@ -25,12 +24,11 @@ export interface UseChartSettingsParams {
     previewBarsRef: MutableRefObject<BarStore>;
     openBarRef: MutableRefObject<FootprintBar | null>;
     horizonRef: MutableRefObject<bigint>;
-    compactBufRef: MutableRefObject<CompactBuffer>;
     selectedDrawingIdRef: MutableRefObject<string | null>;
     renderEngineRef: MutableRefObject<RenderEngine | null>;
     scheduleResample: () => void;
     rebuildContrastBitmap: (contrast: number) => void;
-    requestFootprintRebuild: () => void;
+    rebuildFootprints: () => void;
     pushDrawParams: () => void;
     updateSettingsBarPos: (id: string | null) => void;
     hidePriceScale: boolean;
@@ -86,12 +84,11 @@ export function useChartSettings(p: UseChartSettingsParams): UseChartSettingsRes
         previewBarsRef,
         openBarRef,
         horizonRef,
-        compactBufRef,
         selectedDrawingIdRef,
         renderEngineRef,
         scheduleResample,
         rebuildContrastBitmap,
-        requestFootprintRebuild,
+        rebuildFootprints,
         pushDrawParams,
         updateSettingsBarPos,
     } = p;
@@ -184,9 +181,9 @@ export function useChartSettings(p: UseChartSettingsParams): UseChartSettingsRes
         ] as const;
         if (
             footprintRebuildKeys.some((k) => chartSettings[k] !== prev[k]) &&
-            compactBufRef.current.length > 0
+            (dataLevelRef.current === 'l3' || dataLevelRef.current === 'tick')
         ) {
-            requestFootprintRebuild();
+            rebuildFootprints();
         }
 
         pushDrawParams();

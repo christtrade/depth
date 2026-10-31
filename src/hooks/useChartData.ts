@@ -3,7 +3,7 @@ import { isoToNs } from '../lib/sampler';
 import { applyEvent, createBook } from '../lib/book';
 import { type BookState } from '../lib/types';
 import { type PriceHistory, type TradePoint, type ViewBounds, type OhlcvBarMs } from '../lib/types';
-import { type FootprintBar } from '../lib/types/footprint';
+import { footprintFromTrades, type FootprintBar } from '../lib/types/footprint';
 import { openBarFrom } from '../lib/open-bar';
 import {
     type CompactBuffer,
@@ -40,7 +40,6 @@ import { serializeBounds } from '../lib/types/heatmap-types';
 import { applyHeatmapContrast } from '../lib/renderers/renderer';
 import { X_AXIS_HEIGHT } from '../lib/renderers/renderer';
 import { followsEdge as followsDataEdge, loadedHorizon } from '../lib/view-edges';
-import { nanoid } from 'nanoid';
 
 // Local types
 // Pure utility functions
@@ -260,7 +259,6 @@ export interface ChartDataResult {
     serialisedTradesBufRef: MutableRefObject<ArrayBuffer | null>;
     serialisedPhBufRef: MutableRefObject<ArrayBuffer | null>;
     serialisedOhlcvBufRef: MutableRefObject<ArrayBuffer | null>;
-    fpRebuildSeqRef: MutableRefObject<number>;
     rawBitmapRef: MutableRefObject<ImageBitmap | null>;
     heatmapBitmapRef: MutableRefObject<ImageBitmap | null>;
     heatmapBitmapOffsetsRef: MutableRefObject<{
@@ -276,7 +274,6 @@ export interface ChartDataResult {
     horizonScrollAnimRef: MutableRefObject<any>;
     // Worker refs (needed by ChartInner for worker-related logic)
     workerRef: MutableRefObject<Worker | null>;
-    dataWorkerRef: MutableRefObject<Worker | null>;
     indicatorWorkerRef: MutableRefObject<Worker | null>;
     workerReadyRef: MutableRefObject<boolean>;
     workerRequestIdRef: MutableRefObject<number>;
@@ -296,7 +293,7 @@ export interface ChartDataResult {
     scheduleResample: () => void;
     runIndicatorWorker: (trades: SerialTrade[], barNs: bigint) => void;
     getTradesUpToHorizon: (horizon: bigint) => TradePoint[];
-    requestFootprintRebuild: () => void;
+    rebuildFootprints: () => void;
     syncOhlcvOpenBar: (horizon: bigint) => void;
     rebuildCandleCache: (trades: TradePoint[], barNs: bigint) => void;
     rebuildContrastBitmap: (contrast: number) => void;
@@ -368,7 +365,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
     const serialisedTradesBufRef = useRef<ArrayBuffer | null>(null);
     const serialisedPhBufRef = useRef<ArrayBuffer | null>(null);
     const serialisedOhlcvBufRef = useRef<ArrayBuffer | null>(null);
-    const fpRebuildSeqRef = useRef(0);
     const rawBitmapRef = useRef<ImageBitmap | null>(null);
     const heatmapBitmapRef = useRef<ImageBitmap | null>(null);
     const heatmapBitmapOffsetsRef = useRef<{ x: number; y: number; w: number; h: number } | null>(
@@ -388,7 +384,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
     const workerRef = useRef<Worker | null>(null);
     const workerRequestIdRef = useRef(0);
     const workerReadyRef = useRef(false);
-    const dataWorkerRef = useRef<Worker | null>(null);
     const indicatorWorkerRef = useRef<Worker | null>(null);
     const indicatorRequestIdRef = useRef(0);
     const dataLoadedRef = useRef(false);
@@ -544,24 +539,12 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         return r;
     };
 
-    const requestFootprintRebuild = useCallback(() => {
-        const cb = compactBufRef.current;
-        const horizonIdx = playheadIdxRef.current;
-        if (horizonIdx < 0 || !dataWorkerRef.current) return;
-        const relevantLength = horizonIdx + 1;
-        const copy = cb._buf.slice(0, relevantLength * 20);
-        const seq = ++fpRebuildSeqRef.current;
-        dataWorkerRef.current.postMessage(
-            {
-                event: 'rebuild_footprint',
-                requestId: nanoid(),
-                compactBuf: copy,
-                barNs: p.activeTimeframeRef.current.barNs,
-                fpSeq: seq,
-                fpHorizonIdx: horizonIdx,
-                fpOptions: fpSettingsFromRef(),
-            },
-            [copy],
+    // up to the playhead so the open bar merges onto the last one
+    const rebuildFootprints = useCallback((horizon = p.horizonRef.current) => {
+        footprintBarsRef.current = footprintFromTrades(
+            getTradesUpToHorizon(horizon),
+            p.activeTimeframeRef.current.barNs,
+            fpSettingsFromRef(),
         );
     }, []);
 
@@ -1245,8 +1228,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             phCursorRef.current = newHistory.length - 1;
             candleCacheRef.current = null;
             const activeTfBarNs = p.activeTimeframeRef.current.barNs;
-            if (workerBarNs === activeTfBarNs) footprintBarsRef.current = newFpBars;
-            else requestFootprintRebuild();
             const ds = BigInt(dataStart) * 1_000_000n;
             const de = BigInt(dataEnd) * 1_000_000n;
             const oldEnd = datasetEndRef.current;
@@ -1267,6 +1248,8 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             openBarTsRef.current = 0n;
             openBarTradeCountRef.current = 0;
             p.horizonRef.current = playFrom;
+            if (workerBarNs === activeTfBarNs) footprintBarsRef.current = newFpBars;
+            else rebuildFootprints();
             const liveBook = createBook();
             const cb = compactBufRef.current;
             for (let i = 0; i <= playFromIdx; i++) applyEvent(liveBook, getEvent(cb, i));
@@ -1472,7 +1455,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             tradesRef.current = newTrades;
             const activeTfBarNs = p.activeTimeframeRef.current.barNs;
             if (workerBarNs === activeTfBarNs) footprintBarsRef.current = newFpBars;
-            else requestFootprintRebuild();
+            else rebuildFootprints();
             const de = BigInt(dataEnd) * 1_000_000n;
             const oldEnd = datasetEndRef.current;
             datasetEndRef.current = de;
@@ -1611,7 +1594,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             if (newFpBars.length > 0) {
                 if (payload.barNs === p.activeTimeframeRef.current.barNs)
                     footprintBarsRef.current = newFpBars;
-                else requestFootprintRebuild();
+                else rebuildFootprints();
             }
             playheadIdxRef.current = findFloorIndex(compactBufRef.current, p.horizonRef.current);
             replayedUpToRef.current = playheadIdxRef.current;
@@ -1895,7 +1878,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 if (openBarRef.current) rebuildOpenBarLevels(newIdx, barNs);
             }
             syncOhlcvOpenBar(horizon);
-            requestFootprintRebuild();
+            rebuildFootprints(horizon);
             updatePriceHistoryToRawIdx(findPriceHistoryIdx(horizon));
             const targetIdx = newIdx;
             if (getPanel()) {
@@ -1945,8 +1928,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
 
         playheadIdxRef.current = newIdx;
         if (barNs > 0n) {
-            const barClosed = foldEventsIntoOpenBar(prevIdx, newIdx, barNs, horizon);
-            if (barClosed) requestFootprintRebuild();
+            foldEventsIntoOpenBar(prevIdx, newIdx, barNs, horizon);
             syncOhlcvOpenBar(horizon);
             mergeOpenBar();
         }
@@ -2208,7 +2190,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         indicatorWorkerRef.current.onmessage = onIndicatorWorkerMessage;
         return () => {
             workerRef.current?.terminate();
-            dataWorkerRef.current?.terminate();
             indicatorWorkerRef.current?.terminate();
             // Clear the guard so a remount rebuilds the workers. React
             // StrictMode mounts, unmounts and remounts in development; refs
@@ -2317,7 +2298,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         serialisedTradesBufRef,
         serialisedPhBufRef,
         serialisedOhlcvBufRef,
-        fpRebuildSeqRef,
         rawBitmapRef,
         heatmapBitmapRef,
         heatmapBitmapOffsetsRef,
@@ -2327,7 +2307,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         lastBarAdvanceTimeRef,
         horizonScrollAnimRef,
         workerRef,
-        dataWorkerRef,
         indicatorWorkerRef,
         workerReadyRef,
         workerRequestIdRef,
@@ -2338,7 +2317,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         scheduleResample,
         runIndicatorWorker,
         getTradesUpToHorizon,
-        requestFootprintRebuild,
+        rebuildFootprints,
         syncOhlcvOpenBar,
         rebuildCandleCache,
         rebuildContrastBitmap,
