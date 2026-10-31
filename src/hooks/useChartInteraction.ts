@@ -54,7 +54,7 @@ import { type ViewBounds, type PriceHistory, type TradePoint } from '../lib/type
 import { MIN_TIME_SPAN, MAX_TIME_SPAN } from '../lib/constants';
 import { type FootprintBar } from '../lib/types/footprint';
 import { type ChartSettings } from '../lib/types/chart-settings';
-import { type Timeframe } from '../lib/timeframes';
+import { type Timeframe, zoomSpanLimits } from '../lib/timeframes';
 import { type BookState } from '../lib/types';
 import { type SerialTrade } from '../lib/types';
 import { type FeaturesOptions } from '../core/DepthChart';
@@ -429,9 +429,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
         }
         const barNs = activeTimeframeRef.current.barNs;
         if (barNs <= 0n) return { min: MIN_TIME_SPAN, max: MAX_TIME_SPAN };
-        const minSpan = barNs * 3n;
-        const maxSpan = barNs * 3400n;
-        return { min: minSpan, max: maxSpan };
+        return zoomSpanLimits(barNs);
     }
 
     function lastBarTs(): bigint | null {

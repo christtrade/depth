@@ -87,7 +87,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A tick/l3 switch to a finer timeframe re-buckets what's loaded and fetches nothing. It fetched
   the whole window again, sized in the new bars, so going to None at l3 kept 5 min of the 30.
   A coarser one still fetches, since its forming bar reaches back past what's held raw.
-- None opens on 30 s, not 100 ms, which was an empty screen.
+- None opens on 30s and not 100ms which was just an empty screen. sub second tfs zoom out as far
+  as 1s does (~57 min). None stopped at 3.4s so the first scroll snapped it in from those 30s
 
 ## Fixed
 - While playing or live, a timeframe switch that took more than 200 ms flipped the toolbar back to

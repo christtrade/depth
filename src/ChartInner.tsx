@@ -21,6 +21,7 @@ import {
     tfViewSpan,
     unsupportedReason,
     timeframeFromBarNs,
+    zoomSpanLimits,
     type Timeframe,
 } from './lib/timeframes';
 import { ChartContextMenu } from './components/chart/chart-context-menu';
@@ -2033,8 +2034,9 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         const view = viewRef.current;
         if (!view) return;
         const barNs = activeTimeframeRef.current.barNs;
-        const minSpan = barNs > 0n ? Number(barNs * 3n) : Number(MIN_TIME_SPAN);
-        const maxSpan = barNs > 0n ? Number(barNs * 3400n) : Number(MAX_TIME_SPAN);
+        const limits = barNs > 0n ? zoomSpanLimits(barNs) : { min: MIN_TIME_SPAN, max: MAX_TIME_SPAN };
+        const minSpan = Number(limits.min);
+        const maxSpan = Number(limits.max);
         const sm = transformer.getSessionMapper();
         if (sm && sm.hasSession) {
             const mMin = sm.tsToMarket(view.tMin);

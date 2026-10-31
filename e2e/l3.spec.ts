@@ -1,6 +1,6 @@
 // the harness serving simulated l3
 import { expect, test, type Page } from '@playwright/test';
-import { drag, drawsSomething, pickTimeframe, settled, watchErrors } from './helpers';
+import { drag, drawsSomething, pickTimeframe, settled, watchErrors, wheel } from './helpers';
 
 const heatmaps = (page: Page) => page.evaluate(() => (window as any).__heatmaps as number);
 
@@ -136,6 +136,24 @@ test('l3: None opens on half a minute', async ({ page }) => {
         return Number(v.tMax - v.tMin) / 1e6;
     });
     expect(spanMs).toBe(30_000);
+    expect(errors).toEqual([]);
+});
+
+test('l3: None zooms out past its own 30 s', async ({ page }) => {
+    const errors = watchErrors(page);
+    await page.goto('/?sim=1&level=l3');
+    await settled(page);
+    await page.evaluate(() => (window as any).__chart.setTimeframe('None'));
+    await expect.poll(() => page.evaluate(() => (window as any).__chart.getTimeframe())).toBe('None');
+    await settled(page);
+    // positive dy zooms out
+    await wheel(page, 400, 20);
+    await page.waitForTimeout(500);
+    const spanMs = await page.evaluate(() => {
+        const v = (window as any).__chart.renderEngine.view;
+        return Number(v.tMax - v.tMin) / 1e6;
+    });
+    expect(spanMs).toBeGreaterThan(5 * 60_000);
     expect(errors).toEqual([]);
 });
 

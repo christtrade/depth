@@ -123,6 +123,13 @@ export function tfViewSpan(tf: Timeframe, bars?: number): bigint {
     return tf.barNs * BigInt(bars ?? tf.defaultBars);
 }
 
+const SEC_NS = 1_000_000_000n;
+
+// 3 to 3400 bars. sub-second ones zoom out as far as 1s, or 'none' stops at 3.4 s
+export function zoomSpanLimits(barNs: bigint): { min: bigint; max: bigint } {
+    return { min: barNs * 3n, max: (barNs > SEC_NS ? barNs : SEC_NS) * 3400n };
+}
+
 // Resolution a timeframe can be built from
 export function servableBarNs(
     supported: readonly bigint[] | undefined,
