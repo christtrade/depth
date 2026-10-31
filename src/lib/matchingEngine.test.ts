@@ -11,6 +11,9 @@ import {
 } from './matchingEngine';
 import { getTickValue } from './types/trading-types';
 import { BarStore } from '../core/BarStore';
+import { appendEvents, createCompactBuffer } from './compact-buffer';
+import { isoToNs } from './sampler';
+import type { MboEvent } from './types';
 
 // The engine talks to trading state through a handful of setters. None of them
 // matter here - these tests are about what the engine does before it has been
@@ -262,6 +265,70 @@ describe('tick trades handed over again', () => {
         engine.appendTicks!([tr(-1n, 100), ...held, tr(4n, 99)]);
         engine.seekTo(T0 + 5n * SEC);
         assert.equal(positions.length > 0, true);
+    });
+});
+
+describe('l3 events handed over again', () => {
+    const SEC = 1_000_000_000n;
+    const ev = (k: bigint, action: string, side: string, price: number, id: number): MboEvent => ({
+        ts_event: new Date(Number((T0 + k * SEC) / 1_000_000n)).toISOString(),
+        action: action as MboEvent['action'],
+        side: side as MboEvent['side'],
+        price,
+        size: 1,
+        order_id: String(id),
+        sequence: 0,
+        flags: 0,
+    });
+    const bufOf = (events: MboEvent[]) => {
+        const cb = createCompactBuffer();
+        appendEvents(cb, events, isoToNs);
+        return cb._buf.slice(0, cb.length * 20);
+    };
+    // a sell sweeps through 98 before the order exists
+    const held = [ev(0n, 'A', 'B', 100, 1), ev(0n, 'A', 'A', 101, 2), ev(1n, 'T', 'A', 98, 9)];
+    const limit: PlaceOrderRequest = { side: 'long', type: 'limit', qty: 1, limitPrice: 99, symbol: 'TEST' };
+
+    function placedAfterReplay() {
+        const s = stubTradingState();
+        const engine = createL3MatchingEngine(s.state, { symbolInfo: SYMBOL_INFO });
+        engine.ingestCompactBuf!(bufOf(held));
+        engine.seekTo(T0 + 2n * SEC);
+        engine.placeOrder(limit);
+        return { engine, ...s };
+    }
+
+    it('does not settle the history again after a page back', () => {
+        const { engine, positions } = placedAfterReplay();
+        engine.appendCompactBuf!(bufOf([ev(-2n, 'A', 'B', 99.5, 3), ...held]));
+        engine.seekTo(T0 + 2n * SEC);
+        assert.equal(positions.length, 0);
+        assert.deepEqual(
+            engine.getDepth!(5).bids.map((l) => l.price),
+            [100, 99.5],
+            'and the book has the page in it',
+        );
+    });
+
+    it('still fills on what comes after', () => {
+        const { engine, positions } = placedAfterReplay();
+        engine.appendCompactBuf!(bufOf([ev(-2n, 'A', 'B', 99.5, 3), ...held, ev(3n, 'T', 'A', 98, 9)]));
+        engine.seekTo(T0 + 4n * SEC);
+        assert.equal(positions.length > 0, true);
+    });
+
+    it('starts a new window on an empty book', () => {
+        const { state } = stubTradingState();
+        const engine = createL3MatchingEngine(state, { symbolInfo: SYMBOL_INFO });
+        engine.ingestCompactBuf!(bufOf(held));
+        engine.seekTo(T0 + 2n * SEC);
+
+        engine.ingestCompactBuf!(bufOf([ev(5n, 'A', 'B', 90, 5), ev(5n, 'A', 'A', 91, 6)]));
+        engine.seekTo(T0 + 6n * SEC);
+        assert.deepEqual(
+            engine.getDepth!(5).bids.map((l) => l.price),
+            [90],
+        );
     });
 });
 

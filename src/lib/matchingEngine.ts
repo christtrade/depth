@@ -1059,18 +1059,22 @@ export function createL3MatchingEngine(
         }
     }
     //  MBO event processor
-    function onMboEvent(event: MboEvent, tsNs: bigint): void {
+    function clearBook(): void {
+        bidBook.clear();
+        askBook.clear();
+        bidOrderIndex.clear();
+        askOrderIndex.clear();
+        bestBid = null;
+        bestAsk = null;
+    }
+
+    function onMboEvent(event: MboEvent, tsNs: bigint, settle = true): void {
         if (destroyed) return;
 
         const { action, side, price, size, order_id } = event;
 
         if (action === 'R') {
-            bidBook.clear();
-            askBook.clear();
-            bidOrderIndex.clear();
-            askOrderIndex.clear();
-            bestBid = null;
-            bestAsk = null;
+            clearBook();
             return;
         }
 
@@ -1138,7 +1142,7 @@ export function createL3MatchingEngine(
                 bestAsk = askBook.getBest('ask');
             }
 
-            if (price !== null) {
+            if (settle && price !== null) {
                 checkQueueFills(price, size, side, tsNs);
                 checkBracketTriggers(price, side, tsNs);
             }
@@ -2334,11 +2338,29 @@ export function createL3MatchingEngine(
         _nonL3Cursor = cursor;
     }
 
-    /** L3 counterpart: the master buffer only ever grows at the end. */
+    // this is the l3 counterpart
+    // a buffer that only grew at the end keeps the book, anything else rebuilds it up
+    // to the last seek without settling
     function appendCompactBuf(buf: ArrayBuffer): void {
+        if (_nonL3 || _cb.length === 0 || buf.byteLength === 0) {
+            ingestCompactBuf(buf);
+            return;
+        }
+        const firstTs = getTsNs(_cb, 0);
         const processed = _processedUpToIdx;
-        ingestCompactBuf(buf);
-        _processedUpToIdx = Math.min(processed, _cb.length);
+        setCompactBuf(buf);
+        if (getTsNs(_cb, 0) === firstTs && _cb.length >= processed) {
+            _processedUpToIdx = processed;
+            return;
+        }
+        clearBook();
+        let i = 0;
+        for (; i < _cb.length; i++) {
+            const ts = getTsNs(_cb, i);
+            if (ts > _cbSeekTs) break;
+            onMboEvent(getEvent(_cb, i), ts, false);
+        }
+        _processedUpToIdx = i;
     }
     //  Non-L3 seekTo paths
     function seekToOhlcv(tNs: bigint): void {
@@ -2516,14 +2538,22 @@ export function createL3MatchingEngine(
 
     let _cb: CompactBuffer = createCompactBuffer(0);
     let _processedUpToIdx = 0;
+    let _cbSeekTs = 0n;
 
-    function ingestCompactBuf(buf: ArrayBuffer): void {
+    function setCompactBuf(buf: ArrayBuffer): void {
         const count = buf.byteLength / CBUF_BYTES;
         _cb._buf = buf;
         _cb._view = new DataView(buf);
         _cb.length = count;
         _cb.capacity = count;
+    }
+
+    function ingestCompactBuf(buf: ArrayBuffer): void {
+        setCompactBuf(buf);
+        _nonL3 = null;
+        clearBook();
         _processedUpToIdx = 0;
+        _cbSeekTs = 0n;
     }
 
     /** Last traded price, or NaN until this book has been seeked into its data. */
@@ -2562,12 +2592,7 @@ export function createL3MatchingEngine(
                     _processedUpToIdx > 0 ? getTsNs(_cb, _processedUpToIdx - 1) : 0n;
 
                 if (tNs < lastProcessedTs) {
-                    bidBook.clear();
-                    askBook.clear();
-                    bidOrderIndex.clear();
-                    askOrderIndex.clear();
-                    bestBid = null;
-                    bestAsk = null;
+                    clearBook();
                     _processedUpToIdx = 0;
                 }
 
@@ -2577,6 +2602,7 @@ export function createL3MatchingEngine(
                     onMboEvent(getEvent(_cb, _processedUpToIdx), ts);
                     _processedUpToIdx++;
                 }
+                _cbSeekTs = tNs;
 
                 if (bestBid !== null && bestAsk !== null) {
                     onTick({ symbol, bid: bestBid, ask: bestAsk, ts: Number(tNs) });

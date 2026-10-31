@@ -604,12 +604,10 @@ export default function Depth({
 
             switch (payload.dataLevel) {
                 case 'l3': {
-                    // l3 events dont have a bar period to swap so a resolution
-                    // change is nothing to this level
-                    if (mode === 'swap') break;
+                    // a swap is a new window of the same events
                     const buf = (payload.compactBuf as ArrayBuffer).slice(0);
-                    if (mode === 'append') eng.appendCompactBuf(buf, sym);
-                    else eng.ingestCompactBuf(buf, sym);
+                    if (mode === 'load') eng.ingestCompactBuf(buf, sym);
+                    else eng.appendCompactBuf(buf, sym);
                     break;
                 }
                 case 'ohlcv': {
@@ -943,7 +941,8 @@ export default function Depth({
             eventBus.on('data:append', (payload) => ingestForExecution(payload, 'append')),
             // ohlcv reads the chart's store in place, so it already has the page
             eventBus.on('data:prepend', (payload) => {
-                if (payload.dataLevel === 'tick') ingestForExecution(payload, 'append');
+                if (payload.dataLevel === 'tick' || payload.dataLevel === 'l3')
+                    ingestForExecution(payload, 'append');
             }),
             eventBus.on('playback:play', () => pb.play()),
             eventBus.on('playback:pause', () => pb.pause()),
