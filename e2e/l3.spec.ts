@@ -124,6 +124,21 @@ test('l3: stepping on after a page back keeps the bid/ask history in order', asy
     expect(errors).toEqual([]);
 });
 
+test('l3: None opens on half a minute', async ({ page }) => {
+    const errors = watchErrors(page);
+    await page.goto('/?sim=1&level=l3');
+    await settled(page);
+    await page.evaluate(() => (window as any).__chart.setTimeframe('None'));
+    await expect.poll(() => page.evaluate(() => (window as any).__chart.getTimeframe())).toBe('None');
+    await settled(page);
+    const spanMs = await page.evaluate(() => {
+        const v = (window as any).__chart.renderEngine.view;
+        return Number(v.tMax - v.tMin) / 1e6;
+    });
+    expect(spanMs).toBe(30_000);
+    expect(errors).toEqual([]);
+});
+
 test('l3: a footprint setting rebuilds the closed bars', async ({ page }) => {
     const errors = watchErrors(page);
     await page.goto('/?level=l3');

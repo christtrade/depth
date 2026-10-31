@@ -21,7 +21,7 @@ export type Timeframe = {
 
 // How many bars fit comfortably in view per timeframe
 export const DEFAULT_BARS: Record<string, number> = {
-    none: 100,
+    none: 30_000,
     '1s': 120,
     '5s': 120,
     '15s': 96,
