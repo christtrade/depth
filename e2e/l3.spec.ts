@@ -69,6 +69,27 @@ test('l3: after a step back the footprints stop at the playhead', async ({ page 
     expect(errors).toEqual([]);
 });
 
+test('l3: a page back in a replay keeps the footprints at the playhead', async ({ page }) => {
+    const errors = watchErrors(page);
+    await page.goto('/?level=l3');
+    await settled(page);
+    await page.evaluate(() => {
+        const w = window as any;
+        w.__prepends = 0;
+        w.__chart.on('data:prepend', () => w.__prepends++);
+        for (let i = 0; i < 20; i++) w.__chart.playback.stepBack();
+    });
+    await settled(page);
+
+    const prepends = () => page.evaluate(() => (window as any).__prepends as number);
+    for (let i = 0; i < 15 && (await prepends()) === 0; i++) await drag(page, 600);
+    await expect.poll(prepends, { message: 'a page back landed' }).toBeGreaterThan(0);
+    await settled(page);
+
+    expect((await footprints(page)).pastHorizon).toBe(0);
+    expect(errors).toEqual([]);
+});
+
 test('l3: a footprint setting rebuilds the closed bars', async ({ page }) => {
     const errors = watchErrors(page);
     await page.goto('/?level=l3');

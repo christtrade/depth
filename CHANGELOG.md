@@ -70,6 +70,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Footprints (l3/tick) never rebuilt. A seek left bars from past the playhead on screen, a fp setting
   didnt touch the closed bars, the rebuild went to a worker that never existed, and a pane on another
   tf than the data kept the wrong size. Theyre rebuilt from the trades now
+- A replay's footprints showed the future. A load or page back took every bar up to the data end, so
+  the bar at the playhead had trades from after it and the forming bar never drew. They stop at the
+  playhead now.
 - l3 started every page and live chunk from an empty order book, so bid/ask were wrong at the start
   of each and the forming minutes were blank on every update. Chunks picks up the book where the last
   one left it at.

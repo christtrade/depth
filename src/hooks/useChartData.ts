@@ -548,6 +548,13 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         );
     }, []);
 
+    // the engines bars run to the data end, a replay needs them to stop at the playhead
+    const takeFootprints = useCallback((bars: FootprintBar[], barNs: bigint) => {
+        if (barNs === p.activeTimeframeRef.current.barNs && p.horizonRef.current >= datasetEndRef.current)
+            footprintBarsRef.current = bars;
+        else rebuildFootprints();
+    }, []);
+
     const rebuildOpenBarLevels = useCallback((toEvIdx: number, barNs: bigint) => {
         const bar = openBarRef.current;
         if (!bar) return;
@@ -1248,8 +1255,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             openBarTsRef.current = 0n;
             openBarTradeCountRef.current = 0;
             p.horizonRef.current = playFrom;
-            if (workerBarNs === activeTfBarNs) footprintBarsRef.current = newFpBars;
-            else rebuildFootprints();
+            takeFootprints(newFpBars, workerBarNs);
             const liveBook = createBook();
             const cb = compactBufRef.current;
             for (let i = 0; i <= playFromIdx; i++) applyEvent(liveBook, getEvent(cb, i));
@@ -1454,8 +1460,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             allPriceHistoryRef.current = newHistory;
             tradesRef.current = newTrades;
             const activeTfBarNs = p.activeTimeframeRef.current.barNs;
-            if (workerBarNs === activeTfBarNs) footprintBarsRef.current = newFpBars;
-            else rebuildFootprints();
             const de = BigInt(dataEnd) * 1_000_000n;
             const oldEnd = datasetEndRef.current;
             datasetEndRef.current = de;
@@ -1465,6 +1469,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             playheadIdxRef.current = newPlayFromIdx;
             replayedUpToRef.current = newPlayFromIdx;
             p.horizonRef.current = effHorizon;
+            takeFootprints(newFpBars, workerBarNs);
             const {
                 ingestOhlcvBuf: appendOhlcvBuf,
                 ingestBucketedPhBuf: appendBucketedPhBuf,
@@ -1591,11 +1596,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             allTradesRef.current = newTrades;
             allPriceHistoryRef.current = newHistory;
             tradesRef.current = newTrades;
-            if (newFpBars.length > 0) {
-                if (payload.barNs === p.activeTimeframeRef.current.barNs)
-                    footprintBarsRef.current = newFpBars;
-                else rebuildFootprints();
-            }
+            if (newFpBars.length > 0) takeFootprints(newFpBars, payload.barNs);
             playheadIdxRef.current = findFloorIndex(compactBufRef.current, p.horizonRef.current);
             replayedUpToRef.current = playheadIdxRef.current;
             datasetStartRef.current = ds;
