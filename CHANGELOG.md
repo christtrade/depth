@@ -102,6 +102,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   or a first window not on a bar edge) drew that bar twice, half its trades each.
 - A playback jump back while live kept the feed open, so live bars landed right after the old window
   with a hole up to now. The feed waits now until playback pages back to the live edge to continue
+- Switching timeframe while playback was loading more bars could mix the old timeframe's bars into the
+  new one. A page that comes back after a switch gets dropped now.
 - The price axis never fit at tick. It looked for bars, which tick doesn't have, so it sat at 0 and the
   candles ran off the top. Fits to the trades on screen now.
 - Line, area and baseline drew nothing at tick. They run through the candle closes now, like ohlcv.

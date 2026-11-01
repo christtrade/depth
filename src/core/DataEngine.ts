@@ -1096,6 +1096,7 @@ export class DataEngine {
         // the current resolution and not what's being requested
         const _fwdFetchBarNs = st.fetchBarNs;
         const _fwdTimeframe = this._fetchTimeframe(st, _fwdFetchBarNs);
+        const master = st.master;
         adapter
             .fetchBars({
                 symbolInfo: st.symbolInfo,
@@ -1107,6 +1108,8 @@ export class DataEngine {
             .then((response) => {
                 if (this.destroyed) return;
                 recovered(st.retry.forward);
+                // window got swapped while this was out, itd land at the wrong res or edge
+                if (st.master !== master) return;
 
                 // nothing past this window, so stop future forward fetches and let
                 // playback know it hit the real end so it pauses instead of stalling

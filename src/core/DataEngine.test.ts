@@ -101,6 +101,7 @@ function tfEngine(opts: {
     supplemental?: bigint;
     maxBytes?: number;
     onEvict?: 'throws' | 'rejects';
+    slowForward?: number;
 }) {
     const fetches: Fetch[] = [];
     // copied out, since the view goes stale once the engine moves on
@@ -130,6 +131,9 @@ function tfEngine(opts: {
                     : undefined,
             });
             if (opts.fail?.()) throw opts.failWith?.() ?? new Error('adapter is down');
+            if (opts.slowForward && req.direction === 'forward') {
+                await new Promise((r) => setTimeout(r, opts.slowForward));
+            }
 
             if (opts.barren?.includes(req.timeframe.barNs)) {
                 return { events: [], ohlcvBars: [], hasMore: false };
@@ -789,6 +793,27 @@ describe('a switch over the budget', () => {
         }
         assert.equal(subs.length, opened + 1, 'subscribed again');
         assert.equal(subs.at(-1)!.req.since, nsOf(de.getSnapshot().bars.time.at(-1)!), 'from where the data ends');
+    });
+
+    it('a forward page that lands after a switch is dropped, not mixed in', async () => {
+        const { bus, de, announce, switchTo, settle, storePeriods } = tfEngine({
+            timeframe: MIN,
+            loadFrom: T2026 - 1000 * 60_000,
+            loadTo: T2026,
+            slowForward: 100,
+        });
+        await de.load('NQ');
+        announce(0, MIN, T2026 - 100 * 60_000, T2026);
+        await settle();
+        const target = T2026 - 2 * DAY_MS;
+        bus.emit('playback:seek', { tNs: nsOf(target) });
+        await de.seekLoad(nsOf(target), nsOf(T2026));
+        await settle();
+
+        bus.emit('data:prefetch', { spanNs: HOUR });
+        switchTo(HOUR, target - 50 * 3_600_000, target);
+        await new Promise((r) => setTimeout(r, 200));
+        assert.deepEqual([...storePeriods()], [HOUR]);
     });
 
     it('evicting the live edge holds the feed too', async () => {
