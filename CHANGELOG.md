@@ -137,6 +137,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Live tick/l3 froze about half the time on load. A live chunk landing before the second load put the
   playhead behind the edge, and it never followed again.
 - Live tick/l3 never scrolled with new bars, the playhead ran off the right of a still view.
+- Going to a finer timeframe, the first new bar scrolled the view by its distance from the old
+  timeframe's bar. 30s into a minute, 1m to 1s jumped the view 31s ahead of the playhead (tick)
 - A finer timeframe at tick refetched the whole window. The first trade lands mid-bucket, so the
   loaded window looked short of the view.
 - A tick/l3 chart that loaded an empty window never paged back. l3 never loaded at all.

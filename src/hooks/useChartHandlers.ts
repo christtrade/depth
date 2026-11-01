@@ -21,6 +21,7 @@ import { type SessionMapper } from '../core/SessionMapper';
 import { type FootprintBar } from '../lib/types/footprint';
 import { type SerialTrade } from '../lib/types';
 import { autoFitPriceAxis, displayFor } from './useChartData';
+import { ohlcvBucketRange } from '../lib/bar-grid';
 
 export interface UseChartHandlersParams {
     // Drawing refs
@@ -49,6 +50,7 @@ export interface UseChartHandlersParams {
     openBarRef: MutableRefObject<FootprintBar | null>;
     openBarTsRef: MutableRefObject<bigint>;
     openBarTradeCountRef: MutableRefObject<number>;
+    prevHorizonBarRef: MutableRefObject<bigint>;
     compactBufRef: MutableRefObject<CompactBuffer>;
     isYAxisAutoRef: MutableRefObject<boolean>;
     priceHistoryRef: MutableRefObject<PriceHistory[]>;
@@ -140,6 +142,7 @@ export function useChartHandlers(p: UseChartHandlersParams): UseChartHandlersRes
         openBarRef,
         openBarTsRef,
         openBarTradeCountRef,
+        prevHorizonBarRef,
         compactBufRef,
         isYAxisAutoRef,
         priceHistoryRef,
@@ -451,6 +454,7 @@ export function useChartHandlers(p: UseChartHandlersParams): UseChartHandlersRes
         openBarRef.current = null;
         openBarTsRef.current = 0n;
         openBarTradeCountRef.current = 0;
+        prevHorizonBarRef.current = ohlcvBucketRange(horizonRef.current, tf.barNs, sessionMapperRef.current).start;
 
         // ...and rebuild it for the new timeframe right away. Clearing alone left
         // the chart with no forming bar until the horizon next moved, so switching

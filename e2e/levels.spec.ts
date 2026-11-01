@@ -111,6 +111,46 @@ const candlesVsTrades = (page: Page) =>
         return { wrong, past, fpWrong, fpPast };
     });
 
+test('tick: a step after going finer scrolls one new bar, not the old bar', async ({ page }) => {
+    const errors = watchErrors(page);
+    await open(page, '/?level=tick');
+    await page.evaluate(() => (window as any).__chart.setChartSettings({ horizonScrollEasing: 'none' }));
+    await page.evaluate(() => (window as any).__chart.setTimeframe('1m'));
+    await settled(page);
+    await expect
+        .poll(() => page.evaluate(() => String((window as any).__chart.renderEngine.drawParams.barNs)))
+        .toBe('60000000000');
+    // off the data end, a 1m bar followed, then 30s into it
+    await page.evaluate(() => {
+        const pb = (window as any).__chart.playback;
+        for (let i = 0; i < 3; i++) pb.stepBack();
+        pb.stepForward();
+        pb.setStepSize('1s');
+        for (let i = 0; i < 30; i++) pb.stepForward();
+    });
+    await settled(page);
+    await page.evaluate(() => (window as any).__chart.setTimeframe('1s'));
+    await settled(page);
+    await expect
+        .poll(() => page.evaluate(() => String((window as any).__chart.renderEngine.drawParams.barNs)))
+        .toBe('1000000000');
+    const moved = await page.evaluate(async () => {
+        const c = (window as any).__chart;
+        const v = c.renderEngine.view;
+        const span = (v.tMax as bigint) - (v.tMin as bigint);
+        v.tMax = BigInt(c.horizon()) * 1_000_000n + span / 4n;
+        v.tMin = v.tMax - span;
+        const from = v.tMax as bigint;
+        const h0 = c.horizon();
+        c.playback.stepForward();
+        await new Promise((r) => requestAnimationFrame(r));
+        return { view: Number(((v.tMax as bigint) - from) / 1_000_000n), playhead: c.horizon() - h0, at: h0 % 60_000 };
+    });
+    expect(moved.playhead).toBeGreaterThan(0);
+    expect(moved.view, JSON.stringify(moved)).toBe(moved.playhead);
+    expect(errors).toEqual([]);
+});
+
 test('tick: candles follow the playhead both ways', async ({ page }) => {
     const errors = watchErrors(page);
     await open(page, '/?level=tick');
