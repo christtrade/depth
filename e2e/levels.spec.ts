@@ -180,6 +180,13 @@ test('tick: footprint can be picked and draws', async ({ page }) => {
     expect(errors).toEqual([]);
 });
 
+test('tick: the context menu offers orders', async ({ page }) => {
+    await open(page, '/?level=tick');
+    const box = (await page.locator('canvas').first().boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button: 'right' });
+    await expect(page.getByText(/Buy 1\.00/).first()).toBeVisible({ timeout: 5000 });
+});
+
 test('tick: no heatmap pill, it has no heatmap', async ({ page }) => {
     await open(page, '/?level=tick');
     await drag(page, 200);

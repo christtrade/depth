@@ -2335,33 +2335,14 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
                                 return Math.round(contextMenu.priceAtClick / tick) * tick;
                             })()}
                             tickSize={resolveTickSize(resolvedSymbolInfoRef.current)}
-                            currentAsk={(() => {
-                                if (dataLevelRef.current === 'l3') {
-                                    const idx = nearestIndex(
-                                        priceHistoryRef.current,
-                                        horizonRef.current,
-                                    );
-                                    return idx >= 0 ? priceHistoryRef.current[idx].bestAsk : 0;
-                                } else if (dataLevelRef.current === 'ohlcv') {
-                                    if (!openBarRef.current) {
-                                        return 0;
-                                    }
-                                    return openBarRef.current.close;
+                            {...(() => {
+                                if (dataLevelRef.current === 'ohlcv') {
+                                    const close = openBarRef.current?.close ?? 0;
+                                    return { currentAsk: close, currentBid: close };
                                 }
-                            })()}
-                            currentBid={(() => {
-                                if (dataLevelRef.current === 'l3') {
-                                    const idx = nearestIndex(
-                                        priceHistoryRef.current,
-                                        horizonRef.current,
-                                    );
-                                    return idx >= 0 ? priceHistoryRef.current[idx].bestBid : 0;
-                                } else if (dataLevelRef.current === 'ohlcv') {
-                                    if (!openBarRef.current) {
-                                        return 0;
-                                    }
-                                    return openBarRef.current.close;
-                                }
+                                const idx = nearestIndex(priceHistoryRef.current, horizonRef.current);
+                                const q = idx >= 0 ? priceHistoryRef.current[idx] : null;
+                                return { currentAsk: q?.bestAsk ?? 0, currentBid: q?.bestBid ?? 0 };
                             })()}
                             drawings={drawingsRef.current}
                             indicators={indicatorsRef.current}

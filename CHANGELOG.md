@@ -99,6 +99,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   bar is a dot per trade. It wasn't in the list at all.
 
 ## Fixed
+- The context menu had no orders at tick. It only read a bid/ask at l3 and ohlcv.
 - A live chunk or a switch's reload that landed before the toolbar's tf caught up got bucketed at the
   old one, so like a 5s bar could end up behind the 1s bars or the whole store was off. (tick/l3)
 - L3 playback could throw once the playhead passed the last loaded trade, and a step with no new trade
