@@ -899,6 +899,43 @@ describe('a fetch that fails', () => {
         assert.ok(de.getSnapshot().bars.time[0] < T2026 - 1000 * 60_000, 'and got it');
     });
 
+    it('a pan doesnt sit out a long wait, but tries at most once every 3 s', async () => {
+        const { bus, de, fetches, announce, settle, source } = flaky();
+        await de.load('NQ');
+        announce(0, MIN, T2026 - 100 * 60_000, T2026);
+        await settle();
+        const backward = () => fetches.filter((f) => f.direction === 'backward').length;
+        const pan = async () => {
+            bus.emit('data:request-backward', { viewMin: nsOf(T2026 - 2000 * 60_000), symbol: 'NQ' });
+            await settle();
+        };
+
+        // a failed assert leaves the source down, retrying forever
+        try {
+            // fails at 0, 1 and 3 s, so the next try is 4 s off
+            source.down = true;
+            await pan();
+            await after(1100);
+            await settle();
+            await after(2100);
+            await settle();
+            assert.equal(backward(), 3);
+
+            await pan();
+            assert.equal(backward(), 4, 'a pan tries now');
+            await pan();
+            assert.equal(backward(), 4, 'not again straight after');
+
+            source.down = false;
+            await after(3100);
+            await pan();
+            assert.equal(backward(), 5, 'the next pan 3 s on does');
+            assert.ok(de.getSnapshot().bars.time[0] < T2026 - 1000 * 60_000, 'and gets the history');
+        } finally {
+            de.destroy();
+        }
+    });
+
     it('holds a playback prefetch until the retry, rather than letting it spin', async () => {
         const { bus, de, fetches, announce, settle, source } = flaky();
         await de.load('NQ');

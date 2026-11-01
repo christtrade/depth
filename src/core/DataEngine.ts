@@ -319,10 +319,23 @@ interface Retry {
     at: number;
     ms: number;
     timer: ReturnType<typeof setTimeout> | null;
+    panAt: number;
 }
 
 const RETRY_MIN_MS = 1000;
 const RETRY_MAX_MS = 30_000;
+const PAN_RETRY_MS = 3000;
+
+// a pan doesnt sit out a long wait - the source may be back by now
+// but keep it to one try per PAN_RETRY_MS at most
+function panRetry(r: Retry): void {
+    const now = Date.now();
+    if (r.at - now <= PAN_RETRY_MS || now - r.panAt < PAN_RETRY_MS) return;
+    r.panAt = now;
+    r.at = 0;
+    if (r.timer) clearTimeout(r.timer);
+    r.timer = null;
+}
 
 // twice as long after each failure in a row, so a source thats down isnt hammered
 function backOff(r: Retry): void {
@@ -335,7 +348,7 @@ function recovered(r: Retry): void {
     r.at = 0;
 }
 
-const noRetry = (): Retry => ({ at: 0, ms: 0, timer: null });
+const noRetry = (): Retry => ({ at: 0, ms: 0, timer: null, panAt: 0 });
 
 export class DataEngine {
     private adapter: IDataAdapter | null = null;
@@ -1140,7 +1153,7 @@ export class DataEngine {
             });
     }
 
-    private _fetchBackward(symbol: string, viewMin: bigint): void {
+    private _fetchBackward(symbol: string, viewMin: bigint, fromPan = false): void {
         if (this.destroyed) return;
         const adapter = this._adapterFor(symbol);
         if (!adapter) return;
@@ -1153,6 +1166,7 @@ export class DataEngine {
             st.pendingBackwardViewMin = null;
             if (queued !== null) this._fetchBackward(symbol, queued);
         };
+        if (fromPan) panRetry(st.retry.backward);
         if (st.backwardInFlight || this._waiting(st.retry.backward, retry)) {
             if (st.pendingBackwardViewMin === null || viewMin < st.pendingBackwardViewMin) {
                 st.pendingBackwardViewMin = viewMin;
@@ -1838,7 +1852,7 @@ export class DataEngine {
                 this._requestForward(this._targetSymbol(symbol), viewMax);
             }),
             this.eventBus.on('data:request-backward', ({ viewMin, symbol }) => {
-                this._fetchBackward(this._targetSymbol(symbol), viewMin);
+                this._fetchBackward(this._targetSymbol(symbol), viewMin, true);
             }),
             this.eventBus.on('data:rehydrate', () => this.rehydrate()),
             this.eventBus.on('data:retry', ({ symbol }) => {
