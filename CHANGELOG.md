@@ -11,6 +11,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Added
 - The baseline chart type's base line value is now fixed to screen pixels, and is now draggable. Used
   to be fixed to the start of loaded data.
+- `chart.getChartSettings()`: the focused pane's settings, as a copy. Couldnt read them back before.
 - `chart.isRealtime()`: whether the chart follows the adapter's realtime feed, also while the feed
   waits for the data to reach the live edge.
 - `SimulatedMarketAdapter` takes `realtime: true` to run as a live feed: one path from

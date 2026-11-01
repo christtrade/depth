@@ -181,6 +181,19 @@ test('picks a timeframe from the full list with the keyboard', async ({ page }) 
     await expect.poll(() => page.evaluate(() => (window as any).__chart.getTimeframe())).toBe('30s');
 });
 
+test('getChartSettings reads back what setChartSettings set, as a copy', async ({ page }) => {
+    await page.goto('/');
+    await settled(page);
+    const get = () => page.evaluate(() => (window as any).__chart.getChartSettings());
+    await page.evaluate(() => (window as any).__chart.setChartSettings({ chartType: 'line', showTradeDots: true }));
+    await expect.poll(async () => (await get()).chartType).toBe('line');
+    expect((await get()).showTradeDots).toBe(true);
+    await page.evaluate(() => {
+        (window as any).__chart.getChartSettings().chartType = 'bars';
+    });
+    expect((await get()).chartType).toBe('line');
+});
+
 test('the status bar follows a wheel zoom without a mouse move', async ({ page }) => {
     await page.goto('/');
     await settled(page);

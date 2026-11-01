@@ -944,6 +944,14 @@ export class DepthChart {
     }
 
     /**
+     * The focused pane's chart settings, as a copy. A `setChartSettings` shows up
+     * here once the pane has rendered it.
+     */
+    getChartSettings(): ChartSettings {
+        return { ...this.getChart(this.state.get('focusedPane') ?? 0).settings };
+    }
+
+    /**
      * Switch the active symbol on this chart instance only. Emits
      * `chart:set-symbol`; the data engine, panes and trading bridge all react
      * through their own subscriptions.
