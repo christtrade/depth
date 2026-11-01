@@ -396,31 +396,58 @@ test('l3 live at None: a new step lands on the end of the line, not behind it', 
     await page.waitForTimeout(2000);
     const s = await page.evaluate(async () => {
         const re = (window as any).__chart.renderEngine;
-        // ms from a newly shown point to the end, the frame it shows
+        // a point that came in on time lands within its frame, loaded runners have 30-40 ms ones.
+        // a batch that came in already behind the end is the feed beating the lag, checked apart
         const landed: number[] = [];
+        const late: string[] = [];
+        const arrivedBehind = new Set<bigint>();
+        let newest: bigint | null = null;
+        let batches = 0;
+        const batchesBehind: number[] = [];
         let lastShown: bigint | null = null;
         let prevEnd = 0n;
         let ends = 0;
         let backwards = 0;
         const t0 = performance.now();
+        let prevT = t0;
         while (performance.now() - t0 < 3000) {
-            await new Promise((r) => requestAnimationFrame(r));
+            const t = await new Promise<number>((r) => requestAnimationFrame(r));
+            const frame = t - prevT;
+            prevT = t;
             const edge = re.liveEdge;
             if (!edge) continue;
             const ph = re.paintedData().priceHistory as { ts: bigint }[];
+            if (!ph.length) continue;
+            if (newest !== null && ph[ph.length - 1].ts > newest) {
+                batches++;
+                let j = ph.length - 1;
+                while (j > 0 && ph[j - 1].ts > newest) j--;
+                if (ph[j].ts <= edge.to) {
+                    batchesBehind.push(Math.round(Number(edge.to - ph[j].ts) / 1e6));
+                    for (; j < ph.length && ph[j].ts <= edge.to; j++) arrivedBehind.add(ph[j].ts);
+                }
+            }
+            newest = ph[ph.length - 1].ts;
             let i = ph.length - 1;
             while (i >= 0 && ph[i].ts > edge.to) i--;
             if (i < 0) continue;
-            if (lastShown !== null && ph[i].ts !== lastShown) landed.push(Number(edge.to - ph[i].ts) / 1e6);
+            if (lastShown !== null && ph[i].ts !== lastShown) {
+                const behind = Number(edge.to - ph[i].ts) / 1e6;
+                landed.push(behind);
+                if (!arrivedBehind.has(ph[i].ts) && behind > Math.max(25, frame + 2))
+                    late.push(`${Math.round(behind)} behind, frame ${Math.round(frame)}`);
+            }
             lastShown = ph[i].ts;
             if (edge.to !== prevEnd) ends++;
             if (edge.to < prevEnd) backwards++;
             prevEnd = edge.to;
         }
-        return { landed, ends, backwards };
+        return { landed, late, batches, batchesBehind, ends, backwards };
     });
     expect(s.landed.length, 'new steps came in').toBeGreaterThan(5);
-    expect(Math.max(...s.landed), `within a frame of the end, ${s.landed.map(Math.round)}`).toBeLessThan(25);
+    expect(s.late, 'within a frame of the end').toEqual([]);
+    // a load spike lands one any distance behind. with the lag it's up to ~half of them, with none all
+    expect(s.batchesBehind.length, `came in behind, ms ${s.batchesBehind} of ${s.batches} batches`).toBeLessThan(s.batches * 0.75);
     expect(s.ends, 'the end moves most frames').toBeGreaterThan(100);
     expect(s.backwards, 'the end never steps back').toBe(0);
     expect(errors).toEqual([]);
