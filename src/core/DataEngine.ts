@@ -25,7 +25,7 @@ import { footprintFromTrades, type FootprintOptions } from '../lib/types/footpri
 import type { SerialTrade } from '../lib/types';
 import type { PriceHistory } from '../lib/types';
 import type { FootprintBar } from '../lib/types/footprint';
-import { processL3Chunk } from './processing/l3-processor';
+import { bookAfter, carryBookInto, processL3Chunk } from './processing/l3-processor';
 import type { L3DataChunk } from './processing/l3-processor';
 import {
     processOhlcvChunk,
@@ -1198,7 +1198,7 @@ export class DataEngine {
             .then((response) => {
                 if (this.destroyed) return;
                 recovered(st.retry.backward);
-                const processed = this._process(response, st);
+                const processed = this._process(response, st, { snapAt: rawTo });
 
                 if (!processed || isEmptyChunk(processed)) {
                     st.loadedFrom = from;
@@ -1714,13 +1714,20 @@ export class DataEngine {
         switch (dl) {
             case 'l3': {
                 const c = chunk as L3DataChunk;
+                // what was held started from an empty book
+                const held = carryBookInto(
+                    c.bookAt ?? bookAfter(c.compactBuf),
+                    master.compactBuf,
+                    master.priceHistory,
+                    c.priceHistory.at(-1),
+                );
                 const total = c.compactBuf.byteLength + master.compactBuf.byteLength;
                 const merged = new Uint8Array(total);
                 merged.set(new Uint8Array(c.compactBuf), 0);
                 merged.set(new Uint8Array(master.compactBuf), c.compactBuf.byteLength);
                 master.compactBuf = merged.buffer;
                 master.trades = c.trades.concat(master.trades);
-                master.priceHistory = c.priceHistory.concat(master.priceHistory);
+                master.priceHistory = c.priceHistory.concat(held);
                 master.footprintBars = c.footprintBars.concat(master.footprintBars);
                 master.ohlcvBars = _deriveOhlcvFromFootprint(master.footprintBars);
                 master.dataStart = c.dataStart > 0 ? c.dataStart : master.dataStart;

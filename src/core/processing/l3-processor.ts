@@ -11,7 +11,14 @@ import { buildFootprint, type FootprintBar, type FootprintOptions } from '../../
 import { isoToNs } from '../../lib/sampler';
 import type { BookState, MboEvent, PriceHistory } from '../../lib/types';
 import type { SerialTrade } from '../../lib/types';
-import { BYTES_PER_EVENT, encodeAt } from '../../lib/compact-buffer';
+import {
+    BYTES_PER_EVENT,
+    createCompactBuffer,
+    encodeAt,
+    getEvent,
+    getTsNs,
+    type CompactBuffer,
+} from '../../lib/compact-buffer';
 
 // 50ms, the price history downsample interval
 const PRICE_HISTORY_INTERVAL_NS = 50_000_000n;
@@ -139,6 +146,75 @@ export function processL3Chunk(
         dataEnd: new Date(events[events.length - 1].ts_event).getTime(),
         ...(carry.snapAt !== undefined && { bookAt: bookAt ?? cloneBook(book) }),
     };
+}
+
+function wrap(buf: ArrayBuffer): CompactBuffer {
+    const cb = createCompactBuffer(0);
+    cb._buf = buf;
+    cb._view = new DataView(buf);
+    cb.length = cb.capacity = buf.byteLength / BYTES_PER_EVENT;
+    return cb;
+}
+
+export function bookAfter(buf: ArrayBuffer): BookState {
+    const cb = wrap(buf);
+    const book = createBook();
+    for (let i = 0; i < cb.length; i++) applyEvent(book, getEvent(cb, i));
+    return book;
+}
+
+// bid/ask of `buf` again with `book` carried in
+export function carryBookInto(
+    book: BookState,
+    buf: ArrayBuffer,
+    held: PriceHistory[],
+    before: PriceHistory | undefined,
+): PriceHistory[] {
+    const carried = new Set([...book.bids.keys(), ...book.asks.keys()]);
+    if (carried.size === 0) return held;
+    const cb = wrap(buf);
+    const out: PriceHistory[] = [];
+    let last = before;
+    let lastTs = before?.ts ?? 0n;
+    let lastAsk = getBestAsk(book);
+    let lastBid = getBestBid(book);
+    let j = 0;
+
+    for (let i = 0; i < cb.length; i++) {
+        const ts = getTsNs(cb, i);
+        const e = getEvent(cb, i);
+        applyEvent(book, e);
+        if (e.action === 'R') carried.clear();
+        else if (e.action === 'A' || !(book.bids.has(e.order_id) || book.asks.has(e.order_id)))
+            carried.delete(e.order_id);
+
+        const ask = getBestAsk(book);
+        const bid = getBestBid(book);
+        if (ask !== lastAsk || bid !== lastBid) {
+            if (ts - lastTs >= PRICE_HISTORY_INTERVAL_NS || lastTs === 0n) {
+                last = { ts, bestAsk: ask ?? 0, bestBid: bid ?? 0 };
+                out.push(last);
+                lastTs = ts;
+            } else if (last) {
+                last.bestAsk = ask ?? 0;
+                last.bestBid = bid ?? 0;
+            }
+            lastAsk = ask;
+            lastBid = bid;
+        }
+
+        // same book and same sampling phase
+        // so the rest of `held` is what this would give
+        if (carried.size > 0) continue;
+        while (j < held.length && held[j].ts <= ts) j++;
+
+        const heldTs = j > 0 ? held[j - 1].ts : 0n;
+        if (heldTs !== lastTs) continue;
+        if (out.length === 0) return held.slice(j > 0 ? j - 1 : 0);
+
+        return out.slice(0, -1).concat(held.slice(j - 1));
+    }
+    return out;
 }
 
 /** Merge two chunks in order, earlier one first. */

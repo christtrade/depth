@@ -35,7 +35,10 @@ const tfOf = (barNs: bigint) => ({ label: String(barNs), barNs, defaultBars: 100
 const nsOf = (ms: number) => BigInt(ms) * 1_000_000n;
 
 // an adapter serving `level` from START up to a live edge the test moves
-function levelEngine(level: Level, opts: { liveEdge?: number; barNs?: bigint; quietFrom?: number } = {}) {
+function levelEngine(
+    level: Level,
+    opts: { liveEdge?: number; barNs?: bigint; quietFrom?: number; preProcessed?: boolean } = {},
+) {
     let edge = opts.liveEdge ?? T0;
     const fetches: { direction: string; fromMs: number; toMs: number }[] = [];
     const subs: { symbol: string; onBar: (r: BarResponse) => void; open: boolean }[] = [];
@@ -58,7 +61,10 @@ function levelEngine(level: Level, opts: { liveEdge?: number; barNs?: bigint; qu
             const hasMore = req.direction === 'forward' ? toMs < edge : fromMs > START;
             // nothing printed from quietFrom on
             const printTo = Math.max(fromMs, Math.min(toMs, opts.quietFrom ?? toMs));
-            return { ...respond(level, req.symbolInfo.symbol, fromMs, printTo), hasMore };
+            const r = respond(level, req.symbolInfo.symbol, fromMs, printTo);
+            if (opts.preProcessed && req.direction === 'backward')
+                return { events: [], _preProcessed: processL3Chunk(r.events as never, tf.barNs), hasMore };
+            return { ...r, hasMore };
         },
         subscribeRealtime: (req: any, onBar: any) => {
             const sub = { symbol: req.symbolInfo.symbol, onBar, open: true };
@@ -225,9 +231,11 @@ for (const level of ['tick', 'l3'] as const) {
             const assertBboIsOnePass = (p: any, fromMs: number, toMs: number) => {
                 const want = processL3Chunk(simMboEvents(priceOf('NQ'), fromMs, toMs), 0n).priceHistory;
                 const got = p.priceHistory;
+                // the held buffer stores prices as scaled ints
+                const s = (h: any) => h && `${h.ts} ${h.bestBid.toFixed(6)}/${h.bestAsk.toFixed(6)}`;
                 for (let i = 0; i < Math.max(got.length, want.length); i++) {
-                    const g = got[i] && `${got[i].ts} ${got[i].bestBid}/${got[i].bestAsk}`;
-                    const w = want[i] && `${want[i].ts} ${want[i].bestBid}/${want[i].bestAsk}`;
+                    const g = s(got[i]);
+                    const w = s(want[i]);
                     assert.ok(g === w, `bbo ${i} of ${want.length}: got ${g}, expected ${w}`);
                 }
             };
@@ -258,6 +266,28 @@ for (const level of ['tick', 'l3'] as const) {
                 const appended = next('data:append');
                 bus.emit('data:prefetch', { symbol: 'NQ' });
                 assertBboIsOnePass(await appended, T0 - 30 * MIN_MS, T0 + 10 * MIN_MS);
+            });
+
+            it('a backward page carries its book into what was held', async () => {
+                const { bus, de, next } = levelEngine(level);
+                const loaded = next('data:load');
+                await de.load('NQ');
+                await loaded;
+                const prepended = next('data:prepend');
+                bus.emit('data:request-backward', { viewMin: nsOf(T0 - 90 * MIN_MS), symbol: 'NQ' });
+                const p = await prepended;
+                assertBboIsOnePass(p, p.dataStart, T0);
+            });
+
+            it('a pre-processed backward page carries its book in too', async () => {
+                const { bus, de, next } = levelEngine(level, { preProcessed: true });
+                const loaded = next('data:load');
+                await de.load('NQ');
+                await loaded;
+                const prepended = next('data:prepend');
+                bus.emit('data:request-backward', { viewMin: nsOf(T0 - 90 * MIN_MS), symbol: 'NQ' });
+                const p = await prepended;
+                assertBboIsOnePass(p, p.dataStart, T0);
             });
         }
 

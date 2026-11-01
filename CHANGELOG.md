@@ -154,7 +154,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   back from inside one step never fired. They see every change now.
 - l3 started every page and live chunk from an empty order book, so bid/ask were wrong at the start
   of each and the forming minutes were blank on every update. Chunks picks up the book where the last
-  one left it at.
+  one left it at. A page back hands its resting orders on to what was already loaded, ca 65 ms at 250k
+  events when the adapter pre-processes, the page itself still starts empty since nothing's older
 - The l3 heatmap never drew. Its worker waited for the order events but nothing ever sent them. It
   gets them on every load, page and live chunk now, and keeps drawing the old ones while it rebuilds.
 - Tick and l3 update. every live chunk added a 2nd footprint bar for the forming minute instead of
