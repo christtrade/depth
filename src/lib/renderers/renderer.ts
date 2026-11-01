@@ -8,7 +8,8 @@ import { ChartSettings } from '../types/chart-settings';
 import { drawFootprintChart } from './drawFootprintChart';
 import { drawTradeLines } from './drawTradeLines';
 import { ActiveDrawingTool, DraftDrawing, Drawing, DrawingAnchorId } from '../types/drawing-types';
-import { AccountSnapshot, DataLevel, LiveTransformer, OhlcvBar, SymbolInfo } from '../../core';
+import type { AccountSnapshot, DataLevel, OhlcvBar, SymbolInfo } from '../../core';
+import { LiveTransformer } from '../../interfaces/ICoordinateTransformer';
 import { DateTime } from 'luxon';
 import { SessionMapper } from '../../core/SessionMapper';
 import { BarStore } from '../../core/BarStore';
@@ -2965,7 +2966,7 @@ function drawCrosshair(
     ctx.restore();
 }
 
-function drawPriceLabel(
+export function drawPriceLabel(
     ctx: CanvasRenderingContext2D,
     canvas: HTMLCanvasElement,
     priceHistory: PriceHistory[],
@@ -3041,12 +3042,15 @@ function drawPriceLabel(
         textColor: string;
         label: string;
         filled: boolean;
+        ring?: string;
     };
     const pills: Pill[] = [];
+    let ask = 0;
+    let bid = 0;
+    let askPill: Pill | null = null;
+    let bidPill: Pill | null = null;
 
     if (hasBidAsk) {
-        let ask = 0;
-        let bid = 0;
         if (dataLevel === 'l3') {
             ask = currPrice.bestAsk;
             bid = currPrice.bestBid;
@@ -3076,14 +3080,15 @@ function drawPriceLabel(
             ctx.stroke();
             ctx.restore();
 
-            pills.push({
+            askPill = {
                 idealY: askY,
                 actualY: askY,
                 fillColor: chartSettings.askLineColor,
                 textColor: chartSettings.priceLabelTextColor,
                 label: formatPrice(askDisp, symbolInfo),
                 filled: true,
-            });
+            };
+            pills.push(askPill);
         }
 
         if (inPane(bidY) && chartSettings.showBidLine) {
@@ -3098,14 +3103,15 @@ function drawPriceLabel(
             ctx.stroke();
             ctx.restore();
 
-            pills.push({
+            bidPill = {
                 idealY: bidY,
                 actualY: bidY,
                 fillColor: chartSettings.bidLineColor,
                 textColor: chartSettings.priceLabelTextColor,
                 label: formatPrice(bidDisp, symbolInfo),
                 filled: true,
-            });
+            };
+            pills.push(bidPill);
         }
     }
 
@@ -3160,7 +3166,14 @@ function drawPriceLabel(
             let priceY = transformer.priceToY(closeDisp, h);
             priceY += yOffset;
 
-            if (inPane(priceY)) {
+            // a second pill with the same number and colour as the bid/ask reads as a duplicate, so mark that one instead
+            const at = lastCandle.close === ask ? askPill : lastCandle.close === bid ? bidPill : null;
+            if (at) {
+                const isUp = lastCandle.close >= lastCandle.open;
+                at.ring = makeOpaque(
+                    isUp ? (chartSettings?.upBodyColor ?? '#00e676') : (chartSettings?.downBodyColor ?? '#ff1744'),
+                );
+            } else if (inPane(priceY)) {
                 const isUp = lastCandle.close >= lastCandle.open;
                 const color = isUp
                     ? (chartSettings?.upBodyColor ?? '#00e676')
@@ -3298,19 +3311,27 @@ function drawPriceLabel(
 
     // 5. Draw Finalised Pills
     pills.forEach((p) => {
-        if (p.filled) {
+        if (p.ring) {
+            // edge, gap, fill. a plain ring vanishes when its the same color as the fill
+            roundRect(ctx, w, p.actualY - 10, rightScaleWidth, LABEL_H, 3);
+            ctx.fillStyle = p.ring;
+            ctx.fill();
+            roundRect(ctx, w + 1.5, p.actualY - 8.5, rightScaleWidth - 3, LABEL_H - 3, 2);
+            ctx.fillStyle = chartSettings.axisBackgroundColor;
+            ctx.fill();
+            roundRect(ctx, w + 2.5, p.actualY - 7.5, rightScaleWidth - 5, LABEL_H - 5, 1.5);
+            ctx.fillStyle = p.fillColor;
+            ctx.fill();
+        } else if (p.filled) {
             roundRect(ctx, w, p.actualY - 10, rightScaleWidth, LABEL_H, 3);
             ctx.fillStyle = p.fillColor;
             ctx.fill();
-            // ctx.fillRect(w, p.actualY - 10, rightScaleWidth, LABEL_H);
         } else {
-            // ctx.strokeStyle = p.fillColor;
             roundRect(ctx, w + 1, p.actualY - 10, rightScaleWidth - 2, LABEL_H, 3);
             ctx.fillStyle = chartSettings.axisBackgroundColor;
             ctx.strokeStyle = p.fillColor;
             ctx.fill();
             ctx.stroke();
-            // ctx.strokeRect(w, p.actualY - 10, rightScaleWidth, LABEL_H);
         }
 
         ctx.fillStyle = p.textColor;

@@ -100,6 +100,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   no trades to show one by one. It wasnt in the list at all previously.
 
 ## Fixed
+- The last price pill looked gone when the price sat on the bid or ask, same number and color as
+  that pill. Now the bid/ask pill gets an edge in the candle color instead of a second pill.
 - The context menu had no orders at tick. It only read a bid/ask at l3 and ohlcv.
 - A live chunk or a switch's reload that landed before the toolbar's tf caught up got bucketed at the
   old one, so like a 5s bar could end up behind the 1s bars or the whole store was off. (tick/l3)
