@@ -148,6 +148,19 @@ function _joined<T>(held: readonly T[], keep: number, add: readonly T[]): T[] {
     return out;
 }
 
+function _prependFootprints(
+    page: FootprintBar[],
+    held: FootprintBar[],
+    trades: SerialTrade[],
+    barNs: bigint,
+    fp: FootprintOptions,
+): FootprintBar[] {
+    const seam = page.at(-1);
+    if (!seam || held[0]?.ts !== seam.ts) return page.concat(held);
+    const both = trades.slice(firstTsAtOrAfter(trades, seam.ts), firstTsAtOrAfter(trades, seam.ts + barNs));
+    return page.slice(0, -1).concat(footprintFromTrades(both, barNs, fp), held.slice(1));
+}
+
 // compactbuf event ts is in first 8 bytes
 function firstEventAtOrAfter(buf: ArrayBuffer, ns: bigint): number {
     const view = new DataView(buf);
@@ -1737,7 +1750,13 @@ export class DataEngine {
                 master.compactBuf = merged.buffer;
                 master.trades = c.trades.concat(master.trades);
                 master.priceHistory = c.priceHistory.concat(held);
-                master.footprintBars = c.footprintBars.concat(master.footprintBars);
+                master.footprintBars = _prependFootprints(
+                    c.footprintBars,
+                    master.footprintBars,
+                    master.trades,
+                    this._masterBarNs(st),
+                    this.fpOptions,
+                );
                 master.ohlcvBars = _deriveOhlcvFromFootprint(master.footprintBars);
                 master.dataStart = c.dataStart > 0 ? c.dataStart : master.dataStart;
                 break;
@@ -1746,7 +1765,13 @@ export class DataEngine {
                 const c = chunk as TickDataChunk;
                 master.trades = c.trades.concat(master.trades);
                 master.priceHistory = c.priceHistory.concat(master.priceHistory);
-                master.footprintBars = c.footprintBars.concat(master.footprintBars);
+                master.footprintBars = _prependFootprints(
+                    c.footprintBars,
+                    master.footprintBars,
+                    master.trades,
+                    this._masterBarNs(st),
+                    this.fpOptions,
+                );
                 master.ohlcvBars = _deriveOhlcvFromFootprint(master.footprintBars);
                 master.dataStart = c.dataStart > 0 ? c.dataStart : master.dataStart;
                 break;

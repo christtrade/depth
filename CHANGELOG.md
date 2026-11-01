@@ -98,6 +98,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   bar is a dot per trade. It wasn't in the list at all.
 
 ## Fixed
+- Tick and l3: a page back onto history that starts mid-bar (after a switch to a coarser timeframe,
+  or a first window not on a bar edge) drew that bar twice, half its trades each.
 - The price axis never fit at tick. It looked for bars, which tick doesn't have, so it sat at 0 and the
   candles ran off the top. Fits to the trades on screen now.
 - Line, area and baseline drew nothing at tick. They run through the candle closes now, like ohlcv.

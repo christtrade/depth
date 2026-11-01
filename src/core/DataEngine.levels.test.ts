@@ -206,6 +206,20 @@ for (const level of ['tick', 'l3'] as const) {
             assertFootprintsClean(p, MIN);
         });
 
+        it('a page back onto history that starts mid-bucket keeps one bar for that bucket', async () => {
+            const { bus, de, next } = levelEngine(level, { liveEdge: T0 + 30_000 });
+            const loaded = next('data:load');
+            await de.load('NQ');
+            await loaded;
+            const prepended = next('data:prepend');
+            bus.emit('data:request-backward', { viewMin: nsOf(T0 - 90 * MIN_MS), symbol: 'NQ' });
+            const p = await prepended;
+            assertFootprintsClean(p, MIN);
+            const seam = p.footprintBars.find((b: any) => b.ts === nsOf(T0 - 30 * MIN_MS));
+            const vol = simTicks(priceOf('NQ'), T0 - 30 * MIN_MS, T0 - 29 * MIN_MS).reduce((s, t) => s + t.size, 0);
+            assert.equal(seam.totalVol, vol, 'both halves of the seam minute');
+        });
+
         it('pages back from an empty first window', async () => {
             const { bus, de, fetches, next } = levelEngine(level, { quietFrom: T0 - 40 * MIN_MS });
             const loaded = next('data:load');
