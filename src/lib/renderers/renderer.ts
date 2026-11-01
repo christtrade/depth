@@ -3776,7 +3776,7 @@ function drawPriceChart(
             horizon,
             barNs,
             transformer,
-            ohlcvBars,
+            priceSeries(),
             openBar,
             cut,
         );

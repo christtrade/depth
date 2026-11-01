@@ -168,6 +168,33 @@ test('tick: line, area and baseline draw', async ({ page }) => {
     expect(errors).toEqual([]);
 });
 
+test('tick live: the step chart draws at None and 1s', async ({ page }) => {
+    const errors = watchErrors(page);
+    await open(page, '/?sim=1&level=tick');
+    await page.evaluate(() => (window as any).__chart.setChartSettings({ chartType: 'step' }));
+    for (const tf of ['None', '1s']) {
+        await pickTimeframe(page, tf);
+        await settled(page);
+        await page.waitForTimeout(300);
+        const n = await page.locator('canvas').evaluateAll((els) => {
+            let n = 0;
+            for (const el of els) {
+                const c = el as HTMLCanvasElement;
+                const ctx = c.getContext('2d');
+                if (!ctx || !c.width || !c.height) continue;
+                const { data } = ctx.getImageData(0, 0, c.width, c.height);
+                for (let i = 0; i < data.length; i += 4) {
+                    const d = Math.abs(data[i] - 0x11) + Math.abs(data[i + 1] - 0x90) + Math.abs(data[i + 2] - 0xb0);
+                    if (data[i + 3] > 0 && d < 40) n++;
+                }
+            }
+            return n;
+        });
+        expect(n, tf).toBeGreaterThan(200);
+    }
+    expect(errors).toEqual([]);
+});
+
 test('tick: footprint can be picked and draws', async ({ page }) => {
     const errors = watchErrors(page);
     await open(page, '/?level=tick');
