@@ -1,8 +1,6 @@
 // tick and l3, historical and live
 import { expect, test, type Page } from '@playwright/test';
-import { drag, drawsSomething, pickTimeframe, settled, watchErrors } from './helpers';
-
-const MIN_NS = 60_000_000_000n;
+import { drag, drawsSomething, footprints, pickTimeframe, settled, watchErrors } from './helpers';
 
 const appends = (page: Page) => page.evaluate(() => (window as any).__appends as number);
 const rebuilding = (page: Page) => page.evaluate(() => (window as any).__rebuilding ?? false);
@@ -21,17 +19,6 @@ async function open(page: Page, url: string) {
     await page.goto(url);
     await settled(page);
 }
-
-// the footprints the pane draws, or the engine holds, and what's off about them
-const footprints = (page: Page, from: 'pane' | 'engine' = 'pane') =>
-    page.evaluate(([min, from]) => {
-        const c = (window as any).__chart;
-        const bars: any[] = from === 'pane' ? c.renderEngine.drawParams.footprintBars : c.getData().footprintBars;
-        let unordered = 0;
-        for (let i = 1; i < bars.length; i++) if (bars[i].ts <= bars[i - 1].ts) unordered++;
-        const off = bars.filter((b) => b.ts % BigInt(min) !== 0n).length;
-        return { count: bars.length, unordered, off, lastMs: bars.length ? Number(bars.at(-1).ts / 1_000_000n) : 0 };
-    }, [String(MIN_NS), from] as const);
 
 test('the public simulated adapter at l3: live, heatmap and all', async ({ page }) => {
     const errors = watchErrors(page);

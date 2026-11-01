@@ -1,6 +1,6 @@
 // testing a path someone might take in their first min
 import { expect, test, type Page } from '@playwright/test';
-import { chartBox, drag, drawsSomething, pickTimeframe, settled, watchErrors, wheel } from './helpers';
+import { chartBox, drag, drawsSomething, footprints, pickTimeframe, settled, watchErrors, wheel } from './helpers';
 
 const DAY_MS = 86_400_000;
 const firstBar = (page: Page) => page.evaluate(() => (window as any).__chart.getData().bars.time[0] as number);
@@ -65,6 +65,77 @@ async function visit(page: Page, url: string) {
 
     await expect(page.locator('body')).not.toContainText('NaN');
     expect(errors).toEqual([]);
+}
+
+// the same minute at tick and l3
+// adapter pages half an hour at a time
+async function visitLevel(page: Page, url: string) {
+    const errors = watchErrors(page);
+    const firstTrade = () => page.evaluate(() => Number((window as any).__chart.getData().trades[0].ts / 1_000_000n));
+    const ordered = async () => {
+        for (const from of ['pane', 'engine'] as const) expect((await footprints(page, from)).unordered, from).toBe(0);
+    };
+    await page.goto(url);
+    await settled(page);
+    expect(await drawsSomething(page), 'draws the first load').toBe(true);
+
+    await drag(page, 300);
+    await drag(page, -200);
+    await wheel(page, -300, 5);
+    await wheel(page, 300, 5);
+    await settled(page);
+
+    // coarser, then a few pages back
+    await pickTimeframe(page, '5m');
+    await settled(page);
+    await wheel(page, 400, 6);
+    await settled(page);
+    const before = await firstTrade();
+    for (let i = 0; i < 6; i++) {
+        await drag(page, 900, 0, 10);
+        await page.waitForTimeout(150);
+    }
+    await settled(page);
+    expect(before - (await firstTrade()), 'paged history in').toBeGreaterThan(30 * 60_000);
+    await ordered();
+
+    await pickTimeframe(page, '5s');
+    await settled(page);
+    await expect
+        .poll(() => page.evaluate(() => String((window as any).__chart.renderEngine.drawParams.barNs)))
+        .toBe('5000000000');
+    expect(await drawsSomething(page), 'draws after the switch').toBe(true);
+
+    for (let i = 0; i < 3; i++) await drag(page, -700, 0, 10);
+    await settled(page);
+    await pickTimeframe(page, '1m');
+    await settled(page);
+    await ordered();
+
+    await page.getByRole('button', { name: 'Play', exact: true }).click();
+    await page.waitForTimeout(1500);
+    await page.getByRole('button', { name: 'Pause', exact: true }).click();
+    await settled(page);
+
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.waitForTimeout(300);
+    await drag(page, 120);
+    await settled(page);
+    expect(await drawsSomething(page), 'draws on a phone').toBe(true);
+
+    await ordered();
+    await expect(page.locator('body')).not.toContainText('NaN');
+    expect(errors).toEqual([]);
+}
+
+for (const level of ['tick', 'l3'] as const) {
+    test(`a visitor at ${level}`, async ({ page }) => {
+        await visitLevel(page, `/?level=${level}`);
+    });
+
+    test(`a visitor at ${level}, live with a tight budget`, async ({ page }) => {
+        await visitLevel(page, `/?level=${level}&live=1&budget=3000000`);
+    });
 }
 
 test("depth's toasts show up, once", async ({ page }) => {

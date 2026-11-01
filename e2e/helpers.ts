@@ -80,6 +80,17 @@ export async function pickTimeframe(page: Page, label: string): Promise<void> {
     await expect.poll(() => page.evaluate(() => (window as any).__chart.getTimeframe())).toBe(label);
 }
 
+// the footprints the pane draws or the engine holds and whats wrong with them
+export const footprints = (page: Page, from: 'pane' | 'engine' = 'pane') =>
+    page.evaluate(([min, from]) => {
+        const c = (window as any).__chart;
+        const bars: any[] = from === 'pane' ? c.renderEngine.drawParams.footprintBars : c.getData().footprintBars;
+        let unordered = 0;
+        for (let i = 1; i < bars.length; i++) if (bars[i].ts <= bars[i - 1].ts) unordered++;
+        const off = bars.filter((b) => b.ts % BigInt(min) !== 0n).length;
+        return { count: bars.length, unordered, off, lastMs: bars.length ? Number(bars.at(-1).ts / 1_000_000n) : 0 };
+    }, [String(60_000_000_000n), from] as const);
+
 // something on the chart besides the bg
 export async function drawsSomething(page: Page): Promise<boolean> {
     return page.locator('canvas').evaluateAll((els) =>

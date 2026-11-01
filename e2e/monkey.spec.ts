@@ -4,7 +4,7 @@
 //   MONKEY_BASE=5000                              seeds from 5000 on. ci moves it every run
 // replays pick the same actions in the same order. timing still differs a bit, since loads are async
 import { expect, test, type Page } from '@playwright/test';
-import { chartBox, drawsSomething, inside, settled, watchErrors } from './helpers';
+import { chartBox, drawsSomething, footprints, inside, settled, watchErrors } from './helpers';
 
 const BASE = Number(process.env.MONKEY_BASE ?? 1000);
 const SEEDS = process.env.MONKEY_SEED
@@ -12,7 +12,13 @@ const SEEDS = process.env.MONKEY_SEED
     : Array.from({ length: Number(process.env.MONKEY_SEEDS ?? 3) }, (_, i) => BASE + i);
 const RUN_MS = Number(process.env.MONKEY_MS ?? 15_000);
 
-const URLS = ['/', '/?live=1', '/?live=1&budget=4000000'];
+// seed n runs at LEVELS[n % 3], so the default three cover each once
+const LEVELS = ['ohlcv', 'tick', 'l3'] as const;
+const URLS: Record<(typeof LEVELS)[number], string[]> = {
+    ohlcv: ['/', '/?live=1', '/?live=1&budget=4000000'],
+    tick: ['/?level=tick', '/?level=tick&live=1', '/?level=tick&live=1&budget=3000000'],
+    l3: ['/?level=l3', '/?level=l3&live=1', '/?level=l3&live=1&budget=3000000', '/?sim=1&level=l3'],
+};
 const TIMEFRAMES = ['1s', '5s', '30s', '1m', '5m', '15m', '1h', '4h', '1d'];
 const SIZES = [
     { width: 1280, height: 800 },
@@ -180,9 +186,10 @@ function nextAction(r: Rand) {
 }
 
 for (const seed of SEEDS) {
-    test(`monkey seed ${seed}`, async ({ page }) => {
+    const level = LEVELS[seed % LEVELS.length];
+    test(`monkey seed ${seed} (${level})`, async ({ page }) => {
         const r = mulberry32(seed);
-        const url = pick(r, URLS);
+        const url = pick(r, URLS[level]);
         const errors = watchErrors(page);
         const log: string[] = [`goto ${url}`];
         const fail = (why: string) =>
@@ -213,6 +220,11 @@ for (const seed of SEEDS) {
             throw new Error(fail('never finished loading'));
         });
         expect(await drawsSomething(page), fail('blank chart at the end')).toBe(true);
+        if (level !== 'ohlcv') {
+            for (const from of ['pane', 'engine'] as const) {
+                expect((await footprints(page, from)).unordered, fail(`${from} footprints out of order`)).toBe(0);
+            }
+        }
         expect(errors, fail('errors')).toEqual([]);
     });
 }
