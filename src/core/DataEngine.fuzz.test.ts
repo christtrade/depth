@@ -160,7 +160,8 @@ function fuzzEngine(level: Level, maxBytes: number, timeframeMs: number) {
 
 type View = { symbol: string; periodMs: number; from: number; to: number };
 
-function check(level: Level, f: ReturnType<typeof fuzzEngine>, view: View, deep: boolean) {
+// nothing past the playhead is drawn in a replay, so it doesnt need to be held
+function check(level: Level, f: ReturnType<typeof fuzzEngine>, view: View, deep: boolean, playhead: number | null) {
     const s = f.st(view.symbol);
     assert.ok(s?.master, `${view.symbol} is held`);
     const m = s.master;
@@ -175,7 +176,7 @@ function check(level: Level, f: ReturnType<typeof fuzzEngine>, view: View, deep:
     // store covers what the pane shows
     const edge = f.edge();
     const needFrom = Math.max(view.from, START);
-    const needTo = Math.min(view.to, edge);
+    const needTo = Math.min(view.to, edge, playhead ?? Infinity);
     if (needFrom < needTo) {
         assert.ok(bars.time[0] <= Math.max(needFrom, START + periodMs), `first bar ${bars.time[0]} after the view's ${needFrom}`);
         assert.ok(bars.time[bars.length - 1] + periodMs >= Math.min(needTo, edge - periodMs), `last bar ${bars.time[bars.length - 1]} before the view's ${needTo}`);
@@ -262,13 +263,15 @@ async function run(level: Level, seed: number) {
             const s = f.st(view.symbol);
             const bars = s?.master?.ohlcvBars;
             const left = !bars?.length || bars.time[0] > Math.max(view.from, START + view.periodMs);
-            const right = !bars?.length || bars.time[bars.length - 1] + view.periodMs < Math.min(view.to, f.edge() - view.periodMs);
+            const right = !bars?.length || bars.time[bars.length - 1] + view.periodMs < Math.min(view.to, f.edge() - view.periodMs, playhead ?? Infinity);
             if (!left && !right) return;
             if (left) f.bus.emit('data:request-backward', { viewMin: nsOf(view.from), symbol: view.symbol });
             if (right) f.bus.emit('data:request-forward', { viewMax: nsOf(view.to), symbol: view.symbol });
             await f.settle();
         }
     };
+
+    let playhead: number | null = null;
 
     const clampSpan = () => {
         const span = Math.min(Math.max(view.to - view.from, 20 * view.periodMs), 150 * view.periodMs);
@@ -325,7 +328,13 @@ async function run(level: Level, seed: number) {
             run: () => {
                 const ms = int(r, 1, 90) * SEC_MS;
                 const following = view.to >= f.edge() - view.periodMs;
+                const atEdge = playhead !== null && playhead >= f.edge() - view.periodMs;
                 f.advance(ms);
+                // the horizon follows the live edge
+                if (atEdge) {
+                    playhead = f.edge();
+                    f.bus.emit('playback:seek', { tNs: nsOf(playhead) });
+                }
                 if (following) {
                     view.from += ms;
                     view.to += ms;
@@ -348,6 +357,45 @@ async function run(level: Level, seed: number) {
                 return 'rehydrate';
             },
         },
+        {
+            weight: 3,
+            run: async () => {
+                // seek eatch frame and prefech once past the held data (like the playback clock)
+                const span = view.to - view.from;
+                if (playhead === null) playhead = view.from + span * (0.2 + r() * 0.6);
+                const n = int(r, 1, 6);
+                const log: string[] = [];
+                for (let i = 0; i < n; i++) {
+                    playhead = Math.min(f.edge(), playhead + int(r, 1, 40) * view.periodMs);
+                    view.to = playhead + span / 4;
+                    view.from = view.to - span;
+                    f.bus.emit('playback:seek', { tNs: nsOf(playhead) });
+                    announce();
+                    const bars = f.st(view.symbol)?.master?.ohlcvBars;
+                    const end = bars?.length ? bars.time[bars.length - 1] + view.periodMs : 0;
+                    if (playhead > end) {
+                        const gap = nsOf(playhead - end);
+                        f.bus.emit('data:prefetch', { spanNs: gap + gap / 8n });
+                        log.push('prefetch');
+                    }
+                    if (r() < 0.5) await f.settle();
+                }
+                return `replay ${n} steps to ${Math.round((playhead - T0) / 1000)}s from T0 ${log.join(' ')}`;
+            },
+        },
+        {
+            weight: 1,
+            run: () => {
+                const from = playhead ?? f.edge();
+                const span = view.to - view.from;
+                playhead = START + r() * (f.edge() - START);
+                view.from = playhead - span / 2;
+                view.to = playhead + span / 2;
+                f.bus.emit('playback:seek', { tNs: nsOf(playhead) });
+                f.bus.emit('data:seek-load', { tNs: nsOf(playhead), fromNs: nsOf(from) });
+                return `seek-load to ${Math.round((playhead - T0) / 1000)}s from T0`;
+            },
+        },
     ];
     const total = actions.reduce((s, a) => s + a.weight, 0);
     const next = () => {
@@ -361,14 +409,14 @@ async function run(level: Level, seed: number) {
         await f.settle();
         announce();
         await f.settle();
-        check(level, f, view, true);
+        check(level, f, view, true, playhead);
         for (let step = 0; step < STEPS; step++) {
             log.push(await next().run());
             announce();
             await f.settle();
             await drive();
             log.push(`  view ${view.from - T0}..${view.to - T0} at ${view.periodMs / 1000}s`);
-            check(level, f, view, REPLAY || step % 5 === 4 || step === STEPS - 1);
+            check(level, f, view, REPLAY || step % 5 === 4 || step === STEPS - 1, playhead);
         }
     } catch (err) {
         (err as Error).message +=
