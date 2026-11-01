@@ -37,7 +37,7 @@ import {
 import { getSessionStatus, type SessionStatus } from '../core/SessionUtils';
 import { type HeatmapRequest, type WorkerInitMessage } from '../lib/types/heatmap-types';
 import { serializeBounds } from '../lib/types/heatmap-types';
-import { X_AXIS_HEIGHT } from '../lib/renderers/renderer';
+import { X_AXIS_HEIGHT, type LiveEdge } from '../lib/renderers/renderer';
 import { followsEdge as followsDataEdge, loadedHorizon } from '../lib/view-edges';
 
 // Local types
@@ -1671,6 +1671,11 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
 
     const liveScrollRafRef = useRef<number | null>(null);
     const liveScrollLastRef = useRef(0);
+    const liveEdgeRef = useRef<LiveEdge | null>(null);
+    const liveClockRef = useRef(0n);
+    const liveLagRef = useRef(0n);
+    const liveSeenRef = useRef({ ph: { n: 0, last: 0n }, tr: { n: 0, last: 0n } });
+    const liveLagTargetRef = useRef(0n);
 
     // move the view with the clock instead of per trade
     const liveFollowing = (): boolean => {
@@ -1693,6 +1698,10 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         const view = p.viewRef.current;
         if (!view || !liveFollowing()) {
             liveScrollRafRef.current = null;
+            // a stale edge would hide every trade after it
+            liveEdgeRef.current = null;
+            p.renderEngineRef.current?.setLiveEdge(null);
+            p.renderEngineRef.current?.markDirty('base');
             return;
         }
         const nowNs = (ms: number) => BigInt(Math.round((performance.timeOrigin + ms) * 1e6));
@@ -1709,6 +1718,36 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 view.tMin += to - from;
                 view.tMax += to - from;
             }
+            const h = p.horizonRef.current;
+            const edge = liveEdgeRef.current;
+            let clock = edge && h >= edge.from ? liveClockRef.current + (to - from) : h;
+            // data shows up late and the step ends at the worst of that, behind, so new data lands on the end
+            const dt = to - from;
+            let target = liveLagTargetRef.current - dt / 50n;
+            const painted = p.renderEngineRef.current?.paintedData();
+            if (painted) {
+                // the oldest of what just came in is the latest. only off a plain append, a trim would read as late
+                let oldest: bigint | null = null;
+                const firstNew = (arr: { ts: bigint }[], seen: { n: number; last: bigint }) => {
+                    const had = seen.n;
+                    if (arr.length > had && had > 0 && arr[had - 1].ts === seen.last)
+                        if (oldest === null || arr[had].ts < oldest) oldest = arr[had].ts;
+                    seen.n = arr.length;
+                    seen.last = arr.length ? arr[arr.length - 1].ts : 0n;
+                };
+                firstNew(painted.priceHistory, liveSeenRef.current.ph);
+                firstNew(painted.trades, liveSeenRef.current.tr);
+                if (edge && oldest !== null && clock - oldest > target) target = clock - oldest;
+            }
+            target = target < 0n ? 0n : target > 1_000_000_000n ? 1_000_000_000n : target;
+            liveLagTargetRef.current = target;
+            // climbs no faster than time passes, so the end stands still instead of stepping back
+            const lag = liveLagRef.current;
+            liveLagRef.current = target > lag + dt ? lag + dt : target;
+            if (clock < h) clock = h;
+            liveClockRef.current = clock;
+            liveEdgeRef.current = { from: h, to: clock - liveLagRef.current };
+            p.renderEngineRef.current?.setLiveEdge(liveEdgeRef.current);
             p.transformer.update(view);
             p.renderEngineRef.current?.setView(view);
             p.renderEngineRef.current?.markDirty('base');

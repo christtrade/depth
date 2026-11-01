@@ -214,6 +214,7 @@ export function drawBaseLayer(
     hideTimeScale?: boolean,
     symbolInfo?: SymbolInfo,
     rightScaleWidth?: number,
+    liveEdge: LiveEdge | null = null,
 ) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -241,6 +242,8 @@ export function drawBaseLayer(
         computeRightScaleWidth(bounds, symbolInfo, chartSettings, hidePriceScale, ctx);
     const chartW = cssW - rsWidth;
 
+    const cut = chartSettings.chartType === 'step' ? liveCut(barNs, horizon, liveEdge) : null;
+    const shown = cut !== null && cut < horizon ? cut : horizon;
 
     panes.forEach((pane) => {
         const rect = layouts[pane.id];
@@ -318,13 +321,14 @@ export function drawBaseLayer(
                         chartSettings.showLastTradeLine,
                         footprintBars,
                         chartSettings,
-                        horizon,
+                        shown,
                         candleCache,
                         openBar,
                         ohlcvBars,
                         transformer,
                         dataLevel,
                         symbolInfo,
+                        cut,
                     );
 
                 if (chartSettings.showTradeDots)
@@ -336,7 +340,7 @@ export function drawBaseLayer(
                         rect.h,
                         barNs,
                         chartSettings,
-                        horizon,
+                        shown,
                         transformer,
                     );
             } finally {
@@ -2208,7 +2212,7 @@ function drawDynamicLabels(
     ctx.restore();
 }
 
-function drawTradeLine(
+export function drawTradeLine(
     ctx: CanvasRenderingContext2D,
     priceHistory: PriceHistory[],
     bounds: ViewBounds,
@@ -2222,9 +2226,13 @@ function drawTradeLine(
     transformer: LiveTransformer,
     ohlcvBars?: BarStore,
     openBar?: any,
+    cut: bigint | null = null,
 ) {
     const tsToXFn = transformer.makeTsToXFn(w);
     const priceToYFn = transformer.makePriceToYFn(h);
+    // the last price holds until the next trade (none tf)
+    const holdTo = horizon > 0n && barNs <= 1_000_000n ? (cut ?? horizon) : null;
+    if (openBar && openBar.ts > horizon) openBar = null;
 
     if (side === 'price') {
         if (!ohlcvBars.length) return;
@@ -2240,6 +2248,7 @@ function drawTradeLine(
         const startIdx = Math.max(0, ohlcvBars.upperBound(target) - 1);
         let isFirstPoint = true;
         let idx = startIdx;
+        let lastY: number | null = null;
 
         for (let i = startIdx; i < time.length; i++) {
             if (time[i] >= cutTs) break;
@@ -2248,6 +2257,7 @@ function drawTradeLine(
 
             const x = tsToXFn(BigInt(time[i] * 1_000_000));
             const y = priceToYFn(val);
+            lastY = y;
 
             if (isFirstPoint) {
                 ctx.moveTo(x, y);
@@ -2264,8 +2274,10 @@ function drawTradeLine(
         }
         if(openBar){
             ctx.lineTo(tsToXFn(openBar.ts), priceToYFn(close[idx]));
-            ctx.lineTo(tsToXFn(openBar.ts), priceToYFn(openBar.close));
+            lastY = priceToYFn(openBar.close);
+            ctx.lineTo(tsToXFn(openBar.ts), lastY);
         }
+        if (lastY !== null && holdTo !== null) ctx.lineTo(tsToXFn(holdTo), lastY);
 
         ctx.stroke();
     } else {
@@ -2279,6 +2291,7 @@ function drawTradeLine(
 
         const startIdx = Math.max(0, floorIndex(priceHistory, bounds.tMin));
         let isFirstPoint = true;
+        let lastY: number | null = null;
 
         for (let i = startIdx; i < priceHistory.length; i++) {
             if (priceHistory[i].ts > cutTs) break;
@@ -2287,6 +2300,7 @@ function drawTradeLine(
 
             const x = tsToXFn(priceHistory[i].ts);
             const y = priceToYFn(val);
+            lastY = y;
 
             if (isFirstPoint) {
                 ctx.moveTo(x, y);
@@ -2301,8 +2315,18 @@ function drawTradeLine(
 
             if (x > w + 100) break;
         }
+        if (lastY !== null && holdTo !== null) ctx.lineTo(tsToXFn(holdTo), lastY);
         ctx.stroke();
     }
+}
+
+// where the step ends while following live, `from` the horizon it was set at
+export type LiveEdge = { from: bigint; to: bigint };
+
+// the step (step line chart) is drawn up to here (for the none tf following live)
+export function liveCut(barNs: bigint, horizon: bigint, liveEdge: LiveEdge | null): bigint | null {
+    if (!liveEdge || horizon <= 0n || barNs > 1_000_000n || horizon < liveEdge.from) return null;
+    return liveEdge.to;
 }
 
 function drawMidLine(
@@ -3408,6 +3432,7 @@ function drawPriceChart(
     transformer: LiveTransformer,
     dataLevel: DataLevel,
     symbolInfo?: SymbolInfo,
+    cut: bigint | null = null,
 ) {
     const hasBidAsk = dataLevel === 'ohlcv' && !!ohlcvBars?.bid?.[0];
     // tick has no bars, and its bid/ask is just the last trade each side, so lines run through its
@@ -3715,6 +3740,9 @@ function drawPriceChart(
                 horizon,
                 barNs,
                 transformer,
+                undefined,
+                undefined,
+                cut,
             );
         }
         if (showAsk) {
@@ -3730,6 +3758,9 @@ function drawPriceChart(
                 horizon,
                 barNs,
                 transformer,
+                undefined,
+                undefined,
+                cut,
             );
         }
     } else {
@@ -3747,6 +3778,7 @@ function drawPriceChart(
             transformer,
             ohlcvBars,
             openBar,
+            cut,
         );
     }
     if (showMid) drawMidLine(ctx, priceHistory, bounds, w, h, chartSettings, horizon, transformer);

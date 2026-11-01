@@ -47,6 +47,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - At None, following a live feed, the view moves with the clock every frame instead of jumping
   per trade. `horizonScrollEasing` and `horizonScrollDuration` dont apply there. It does cost a repaint
   every frame.
+- At None, the step line's last step runs on with the clock while following live, and to the
+  horizon in playback, instead of stopping at the last trade. The price holds until the next one.
+  Live data shows up late, so the step is drawn as far behind as the feeds worst recent delay (the
+  sim is about 50 ms, goes up to 200) and a new step lands on the end of the line instead of behind it.
+  The price pill and heatmap arent held back.
 - The matching engine reads the chart's bar store instead of keeping its own copy. A `BarStore`
   passed to `ingestOhlcvBars` or `swapOhlcvBars` is read in place now and not copied. Replay finds
   its place by time, so the store can grow at either end or get cut under it.

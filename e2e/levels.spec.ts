@@ -282,6 +282,47 @@ test('historical data: the view sits still at the last bar', async ({ page }) =>
     expect((await viewOverASecond(page)).movedMs).toBe(0);
 });
 
+test('l3 live at None: a new step lands on the end of the line, not behind it', async ({ page }) => {
+    const errors = watchErrors(page);
+    await open(page, '/?sim=1&level=l3');
+    await pickTimeframe(page, 'None');
+    await page.evaluate(() => (window as any).__chart.setChartSettings({ chartType: 'step' }));
+    await settled(page);
+    await toLiveEdge(page);
+    // learning how late the sim is
+    await page.waitForTimeout(2000);
+    const s = await page.evaluate(async () => {
+        const re = (window as any).__chart.renderEngine;
+        // ms from a newly shown point to the end, the frame it shows
+        const landed: number[] = [];
+        let lastShown: bigint | null = null;
+        let prevEnd = 0n;
+        let ends = 0;
+        let backwards = 0;
+        const t0 = performance.now();
+        while (performance.now() - t0 < 3000) {
+            await new Promise((r) => requestAnimationFrame(r));
+            const edge = re.liveEdge;
+            if (!edge) continue;
+            const ph = re.paintedData().priceHistory as { ts: bigint }[];
+            let i = ph.length - 1;
+            while (i >= 0 && ph[i].ts > edge.to) i--;
+            if (i < 0) continue;
+            if (lastShown !== null && ph[i].ts !== lastShown) landed.push(Number(edge.to - ph[i].ts) / 1e6);
+            lastShown = ph[i].ts;
+            if (edge.to !== prevEnd) ends++;
+            if (edge.to < prevEnd) backwards++;
+            prevEnd = edge.to;
+        }
+        return { landed, ends, backwards };
+    });
+    expect(s.landed.length, 'new steps came in').toBeGreaterThan(5);
+    expect(Math.max(...s.landed), `within a frame of the end, ${s.landed.map(Math.round)}`).toBeLessThan(25);
+    expect(s.ends, 'the end moves most frames').toBeGreaterThan(100);
+    expect(s.backwards, 'the end never steps back').toBe(0);
+    expect(errors).toEqual([]);
+});
+
 for (const level of ['tick', 'l3'] as const) {
     test(`${level} live at None: the view moves with the clock, every frame`, async ({ page }) => {
         await followsTheClock(page, `/?sim=1&level=${level}`);

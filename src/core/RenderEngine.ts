@@ -7,7 +7,7 @@ import type { Indicator } from '../lib/types/indicator-types';
 import type { TradePoint, PriceHistory, ViewBounds } from '../lib/types';
 import type { FootprintBar } from '../lib/types/footprint';
 import { themedSettings, type ChartColors, type ChartSettings } from '../lib/types/chart-settings';
-import type { Crosshair } from '../lib/renderers/renderer';
+import type { Crosshair, LiveEdge } from '../lib/renderers/renderer';
 import type { Drawing, DraftDrawing, DrawingAnchorId, ActiveDrawingTool } from '../lib/types/drawing-types';
 import type { TradeLine } from '../lib/types';
 import { LiveTransformer } from '../interfaces/ICoordinateTransformer';
@@ -206,6 +206,7 @@ export class RenderEngine {
     private rawDrawParams: DrawParams | null = null;
     private themeColors: Partial<ChartColors> | undefined;
     private view: ViewBounds | null = null;
+    private liveEdge: LiveEdge | null = null;
 
     // Eases the live price line / pills toward new values (opt-in, see drawUILayer).
     private readonly priceTransition = new PriceTransition();
@@ -363,6 +364,16 @@ export class RenderEngine {
         this.view = v;
     }
 
+    setLiveEdge(edge: LiveEdge | null): void {
+        this.liveEdge = edge;
+    }
+
+    // the bid/ask and trades this paints
+    paintedData(): { priceHistory: { ts: bigint }[]; trades: { ts: bigint }[] } | null {
+        const p = this.drawParams;
+        return p ? { priceHistory: p.priceHistory, trades: p.trades } : null;
+    }
+
     getView(): ViewBounds | null {
         return this.view;
     }
@@ -484,6 +495,7 @@ export class RenderEngine {
             p.hideTimeScale,
             p.symbolInfo,
             p.priceScaleWidth,
+            this.liveEdge,
         );
 
         if (p.isPluginChartType && p.chartPlugin) {
