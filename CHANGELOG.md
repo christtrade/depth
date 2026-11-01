@@ -44,6 +44,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   book instead of an empty one, `carry.snapAt` gives back a copy of the book at that ns as `bookAt`
 
 ## Changed
+- At None, following a live feed, the view moves with the clock every frame instead of jumping
+  per trade. `horizonScrollEasing` and `horizonScrollDuration` dont apply there. It does cost a repaint
+  every frame.
 - The matching engine reads the chart's bar store instead of keeping its own copy. A `BarStore`
   passed to `ingestOhlcvBars` or `swapOhlcvBars` is read in place now and not copied. Replay finds
   its place by time, so the store can grow at either end or get cut under it.

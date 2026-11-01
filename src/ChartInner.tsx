@@ -158,6 +158,7 @@ export type ChartProps = {
      */
     onOpenSettings?: () => void;
     onHorizonUpdate: (h: bigint) => void;
+    isRealtime?: () => boolean;
     /** Called every rAF tick with the current horizon (for cross-chart sync) */
     onHorizonTick?: (horizon: bigint) => void;
     /**
@@ -208,6 +209,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         hideSettingsDialog,
         onOpenSettings,
         onHorizonUpdate,
+        isRealtime,
         onHorizonTick,
         managed = false,
         onRequestMore,
@@ -930,6 +932,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         setPanes,
         onDataBoundsChange,
         onHorizonUpdate,
+        isRealtime,
         cellSymbol,
         cellId: _id,
         managed,

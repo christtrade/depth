@@ -214,6 +214,7 @@ export interface UseChartDataParams {
     setPanes: (updater: ((prev: ChartPane[]) => ChartPane[]) | ChartPane[]) => void;
     onDataBoundsChange?: (start: bigint, end: bigint) => void;
     onHorizonUpdate: (h: bigint) => void;
+    isRealtime?: () => boolean;
     cellSymbol: string;
     /** Which cell this is, for events that are this pane's own business. */
     cellId: number;
@@ -1668,16 +1669,84 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         [],
     );
 
+    const liveScrollRafRef = useRef<number | null>(null);
+    const liveScrollLastRef = useRef(0);
+
+    // move the view with the clock instead of per trade
+    const liveFollowing = (): boolean => {
+        const view = p.viewRef.current;
+        if (!view || !p.isRealtime?.() || isPlayingRef.current) return false;
+        if (p.activeTimeframeRef.current.barNs > 1_000_000n) return false;
+
+        const h = p.horizonRef.current;
+        if (h < datasetEndRef.current) return false;
+
+        const mode = p.dragMode.current;
+        if (p.isDragging.current && (mode === 'pan' || mode === 'scaleX')) return false;
+        if (mode === 'pinch' || mode === 'glide') return false;
+
+        const bar = ohlcvBucketRange(h, p.activeTimeframeRef.current.barNs, p.sessionMapperRef.current).start;
+        return view.tMin < bar && bar < view.tMax;
+    };
+
+    const driveLiveScroll = (t: number) => {
+        const view = p.viewRef.current;
+        if (!view || !liveFollowing()) {
+            liveScrollRafRef.current = null;
+            return;
+        }
+        const nowNs = (ms: number) => BigInt(Math.round((performance.timeOrigin + ms) * 1e6));
+        const from = nowNs(liveScrollLastRef.current);
+        const to = nowNs(t);
+        liveScrollLastRef.current = t;
+        if (to > from) {
+            const sm = p.sessionMapperRef.current;
+            if (sm.hasSession) {
+                const shift = sm.tsToMarket(to) - sm.tsToMarket(from);
+                view.tMin = sm.marketToTs(sm.tsToMarket(view.tMin) + shift);
+                view.tMax = sm.marketToTs(sm.tsToMarket(view.tMax) + shift);
+            } else {
+                view.tMin += to - from;
+                view.tMax += to - from;
+            }
+            p.transformer.update(view);
+            p.renderEngineRef.current?.setView(view);
+            p.renderEngineRef.current?.markDirty('base');
+            p.renderEngineRef.current?.markDirty('drawings');
+        }
+        liveScrollRafRef.current = requestAnimationFrame(driveLiveScroll);
+    };
+
+    const startLiveScroll = () => {
+        if (liveScrollRafRef.current !== null) return;
+        liveScrollLastRef.current = performance.now();
+        liveScrollRafRef.current = requestAnimationFrame(driveLiveScroll);
+    };
+
+    useEffect(
+        () => () => {
+            if (liveScrollRafRef.current !== null) cancelAnimationFrame(liveScrollRafRef.current);
+        },
+        [],
+    );
+
     // applyHorizon / seekHorizon
     const followHorizonBar = useCallback((horizon: bigint) => {
         const barNs = p.activeTimeframeRef.current.barNs;
         // Same bucketing as the bars themselves, so the follow-scroll steps at the
         // moment a new candle actually opens rather than at an epoch multiple.
         const newHorizonBar = ohlcvBucketRange(horizon, barNs, p.sessionMapperRef.current).start;
+        const live = liveFollowing();
+        if (live) startLiveScroll();
         if (newHorizonBar !== prevHorizonBarRef.current) {
             const oldHorizonBar = prevHorizonBarRef.current;
             const fwd = newHorizonBar > oldHorizonBar;
             prevHorizonBarRef.current = newHorizonBar;
+            if (fwd && live) {
+                horizonScrollAnimRef.current = null;
+                scheduleResample();
+                return;
+            }
             const inChart =
                 !!p.viewRef.current &&
                 p.viewRef.current.tMax > newHorizonBar &&

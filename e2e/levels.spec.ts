@@ -1,6 +1,6 @@
 // tick and l3, historical and live
 import { expect, test, type Page } from '@playwright/test';
-import { drag, drawsSomething, footprints, pickTimeframe, settled, watchErrors } from './helpers';
+import { chartBox, drag, drawsSomething, footprints, pickTimeframe, settled, watchErrors } from './helpers';
 
 const appends = (page: Page) => page.evaluate(() => (window as any).__appends as number);
 const rebuilding = (page: Page) => page.evaluate(() => (window as any).__rebuilding ?? false);
@@ -194,7 +194,99 @@ test('tick: no heatmap pill, it has no heatmap', async ({ page }) => {
     expect(await rebuilding(page)).toBe(false);
 });
 
+async function viewOverASecond(page: Page) {
+    return page.evaluate(async () => {
+        const tMax = () => (window as any).__chart.renderEngine.view.tMax as bigint;
+        const a = tMax();
+        const t0 = performance.now();
+        const seen = new Set<bigint>();
+        // frames that moved more or less than the frame took
+        let offClock = 0;
+        let prevT = await new Promise<number>((r) => requestAnimationFrame(r));
+        let prev = tMax();
+        while (performance.now() - t0 < 1000) {
+            const t = await new Promise<number>((r) => requestAnimationFrame(r));
+            const now = tMax();
+            seen.add(now);
+            if (Math.abs(Number(now - prev) / 1e6 - (t - prevT)) > 2) offClock++;
+            prev = now;
+            prevT = t;
+        }
+        return {
+            movedMs: Number((tMax() - a) / 1_000_000n),
+            wallMs: performance.now() - t0,
+            steps: seen.size,
+            offClock,
+        };
+    });
+}
+
+async function toLiveEdge(page: Page) {
+    const parked = await page.evaluate(() => {
+        const c = (window as any).__chart;
+        const v = c.renderEngine.view;
+        const span = (v.tMax as bigint) - (v.tMin as bigint);
+        v.tMax = BigInt(c.horizon()) * 1_000_000n + span / 4n;
+        v.tMin = v.tMax - span;
+        return String(v.tMax);
+    });
+    await expect.poll(() => page.evaluate(() => String((window as any).__chart.renderEngine.view.tMax))).not.toBe(parked);
+}
+
+// every trade is a bar at the none tf
+async function followsTheClock(page: Page, url: string) {
+    const errors = watchErrors(page);
+    await open(page, url);
+    await pickTimeframe(page, 'None');
+    await settled(page);
+    await toLiveEdge(page);
+    const s = await viewOverASecond(page);
+    expect(s.steps, 'a step most frames').toBeGreaterThan(20);
+    expect(s.offClock, 'each frame moves as far as the frame took').toBeLessThan(5);
+    expect(s.movedMs - s.wallMs, `as far as the clock went, moved ${s.movedMs}`).toBeLessThan(150);
+    expect(s.movedMs - s.wallMs).toBeGreaterThan(-150);
+
+    const box = await chartBox(page);
+    const y = box.y + box.height / 2;
+    await page.mouse.move(box.x + box.width / 2, y);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 5, y, { steps: 2 });
+    const held = await viewOverASecond(page);
+    await page.mouse.up();
+    expect(held.movedMs).toBe(0);
+    expect(errors).toEqual([]);
+}
+
+// a new bar is a minute off, so the view sits still for the whole second
+test('ohlcv live at 1m: the view steps per bar, not with the clock', async ({ page }) => {
+    await open(page, '/?live=1');
+    await pickTimeframe(page, '1m');
+    await settled(page);
+    const before = await appends(page);
+    await expect.poll(() => appends(page)).toBeGreaterThan(before);
+    expect((await viewOverASecond(page)).movedMs).toBe(0);
+});
+
+test('historical data: the view sits still at the last bar', async ({ page }) => {
+    await open(page, '/');
+    await pickTimeframe(page, '1s');
+    await settled(page);
+    // a step lands on the last bar through the same follow code a live chunk takes
+    await page.evaluate(() => {
+        const pb = (window as any).__chart.playback;
+        pb.stepBack();
+        pb.stepForward();
+    });
+    // the steps own scroll
+    await page.waitForTimeout(500);
+    expect((await viewOverASecond(page)).movedMs).toBe(0);
+});
+
 for (const level of ['tick', 'l3'] as const) {
+    test(`${level} live at None: the view moves with the clock, every frame`, async ({ page }) => {
+        await followsTheClock(page, `/?sim=1&level=${level}`);
+    });
+
     test(`${level}: loads, draws, pans back and switches timeframe`, async ({ page }) => {
         const errors = watchErrors(page);
         await open(page, `/?level=${level}`);

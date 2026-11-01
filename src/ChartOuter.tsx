@@ -297,6 +297,8 @@ export default function Depth({
         setChartSettings(_chart.getChart(focused).settings as ChartSettings);
     }, [_chart, focused]);
 
+    const isRealtime = useCallback(() => _chart.isRealtime(), [_chart]);
+
     const panningChartRef = useRef<number | null>(null);
 
     // Plugin defs
@@ -1491,6 +1493,7 @@ export default function Depth({
                                                 onHorizonUpdate={(h) => {
                                                     sharedHorizonRef.current = h;
                                                 }}
+                                                isRealtime={isRealtime}
                                                 onHorizonTick={isFocused ? () => {} : undefined}
                                                 onRequestMore={handleRequestMore}
                                                 tradeLines={cellBridges[i].trading.tradeLines}
