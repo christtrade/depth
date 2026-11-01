@@ -152,8 +152,8 @@ export function unsupportedReason(
     supported: readonly bigint[] | undefined,
     dataLevel?: string,
 ): string | null {
-    // a 1 ms candle off anything but the order book is a dot per trade
-    if (tf.barNs < SEC_NS && dataLevel !== 'l3') return `${tf.label} needs order book (l3) data`;
+    // sub second needs the trades one by one
+    if (tf.barNs < SEC_NS && dataLevel !== 'tick' && dataLevel !== 'l3') return `${tf.label} needs tick or l3 data`;
     if (servableBarNs(supported, tf.barNs) !== null) return null;
     const finest = supported?.length ? supported.reduce((a, b) => (b < a ? b : a)) : null;
     // a 90s chart off 1m data is unbuildable even tho its coarser

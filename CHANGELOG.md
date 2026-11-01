@@ -95,8 +95,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   replays the book reads it. Built when read now. 140 -> 30 ms to decode 250k events
 - None opens on 30s and not 100ms which was just an empty screen. sub second tfs zoom out as far
   as 1s does (~57 min). None stopped at 3.4s so the first scroll snapped it in from those 30s
-- None is in the timeframe list under Ticks at l3, and refused at every other level, where a 1 ms
-  bar is a dot per trade. It wasn't in the list at all.
+- None is in the timeframe list under ticks at tick and l3, and refused at ohlcv and l2, which have
+  no trades to show one by one. It wasnt in the list at all previously.
 
 ## Fixed
 - The context menu had no orders at tick. It only read a bid/ask at l3 and ohlcv.

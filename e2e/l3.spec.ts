@@ -140,11 +140,15 @@ test('l3: None opens on half a minute', async ({ page }) => {
     expect(errors).toEqual([]);
 });
 
-test('None is in the timeframe list at l3 only', async ({ page }) => {
+test('None is in the timeframe list at tick and l3 only', async ({ page }) => {
     const errors = watchErrors(page);
-    await page.goto('/?sim=1&level=l3');
-    await settled(page);
-    await pickTimeframe(page, 'None');
+    for (const level of ['tick', 'l3']) {
+        await page.goto(`/?sim=1&level=${level}`);
+        await settled(page);
+        await pickTimeframe(page, 'None');
+        await settled(page);
+        expect(await drawsSomething(page), level).toBe(true);
+    }
 
     await page.goto('/');
     await settled(page);

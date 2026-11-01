@@ -22,8 +22,7 @@ function App() {
     const { adapter, end } = useMemo(() => {
         const end = live ? Date.now() : Date.UTC(2026, 0, 1);
         if (sim) {
-            const dataLevel = level === 'l3' ? 'l3' : 'ohlcv';
-            return { adapter: createSimulatedAdapter({ seed: 7, realtime: true, dataLevel }), end };
+            return { adapter: createSimulatedAdapter({ seed: 7, realtime: true, dataLevel: level }), end };
         }
         const adapter = new HarnessAdapter(end - 400 * DAY_MS, () => (live ? Date.now() : end), live, {
             down: params.get('down') === '1',

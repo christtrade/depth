@@ -239,7 +239,7 @@ export function TimeframeSelector({
                 >
                         <div className="p-2.5 space-y-3 flex-1 min-h-0 overflow-y-auto">
                             {PRESET_GROUPS.filter(
-                                (g) => g.tfs.length > 0 && (g.label !== 'Ticks' || dataLevel === 'l3'),
+                                (g) => g.tfs.length > 0 && (g.label !== 'Ticks' || dataLevel === 'l3' || dataLevel === 'tick'),
                             ).map((group) => (
                                 <div key={group.label}>
                                     <SectionLabel>{group.label}</SectionLabel>
