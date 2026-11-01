@@ -37,7 +37,13 @@ const nsOf = (ms: number) => BigInt(ms) * 1_000_000n;
 // an adapter serving `level` from START up to a live edge the test moves
 function levelEngine(
     level: Level,
-    opts: { liveEdge?: number; barNs?: bigint; quietFrom?: number; preProcessed?: boolean } = {},
+    opts: {
+        liveEdge?: number;
+        barNs?: bigint;
+        quietFrom?: number;
+        preProcessed?: boolean;
+        maxBytes?: number;
+    } = {},
 ) {
     let edge = opts.liveEdge ?? T0;
     const fetches: { direction: string; fromMs: number; toMs: number }[] = [];
@@ -80,6 +86,7 @@ function levelEngine(
         },
         horizon: new Date(edge).toISOString(),
         timeframe: tf as never,
+        dataBudget: { maxBytes: opts.maxBytes ?? Infinity },
     });
     de.setAdapter(adapter);
 
@@ -226,20 +233,83 @@ for (const level of ['tick', 'l3'] as const) {
             assertFootprintsClean(p, MIN);
         });
 
-        if (level === 'l3') {
-            // bid/ask after chunks were joined on, against one pass over the whole span
-            const assertBboIsOnePass = (p: any, fromMs: number, toMs: number) => {
-                const want = processL3Chunk(simMboEvents(priceOf('NQ'), fromMs, toMs), 0n).priceHistory;
-                const got = p.priceHistory;
-                // the held buffer stores prices as scaled ints
-                const s = (h: any) => h && `${h.ts} ${h.bestBid.toFixed(6)}/${h.bestAsk.toFixed(6)}`;
-                for (let i = 0; i < Math.max(got.length, want.length); i++) {
-                    const g = s(got[i]);
-                    const w = s(want[i]);
-                    assert.ok(g === w, `bbo ${i} of ${want.length}: got ${g}, expected ${w}`);
-                }
-            };
+        // l3 only - bid/ask after chunks were joined on, against one pass over the whole span
+        const assertBboIsOnePass = (p: any, fromMs: number, toMs: number) => {
+            if (level !== 'l3') return;
+            const want = processL3Chunk(simMboEvents(priceOf('NQ'), fromMs, toMs), 0n).priceHistory;
+            const got = p.priceHistory;
+            // the held buffer stores prices as scaled ints
+            const s = (h: any) => h && `${h.ts} ${h.bestBid.toFixed(6)}/${h.bestAsk.toFixed(6)}`;
+            for (let i = 0; i < Math.max(got.length, want.length); i++) {
+                const g = s(got[i]);
+                const w = s(want[i]);
+                assert.ok(g === w, `bbo ${i} of ${want.length}: got ${g}, expected ${w}`);
+            }
+        };
 
+        const budget = level === 'l3' ? 8_000_000 : 4_000_000;
+
+        it('the budget drops history far from the view, and pages it back in', async () => {
+            const { bus, de, fetches, next, announce, settle } = levelEngine(level, { maxBytes: budget });
+            const loaded = next('data:load');
+            await de.load('NQ');
+            await loaded;
+            announce(MIN, T0 - 10 * MIN_MS, T0);
+            await settle();
+            const cut = next('data:load');
+            bus.emit('data:request-backward', { viewMin: nsOf(T0 - 2 * HOUR_MS), symbol: 'NQ' });
+            const p = await cut;
+            assert.equal(p.replaced, true);
+            const back = (T0 - firstMs(p)) / MIN_MS;
+            assert.ok(back < 60 && back >= 20, `kept ${back} min back`);
+            assertTradesAre(p, 'NQ', p.dataStart, T0);
+            assertEventsAre(p, 'NQ', p.dataStart, T0);
+            assertFootprintsClean(p, MIN);
+
+            const edge = Math.floor(p.dataStart / MIN_MS) * MIN_MS;
+            const prepended = next('data:prepend');
+            bus.emit('data:request-backward', { viewMin: nsOf(edge - 10 * MIN_MS), symbol: 'NQ' });
+            const q = await prepended;
+            assert.equal(fetches.at(-1)!.toMs, edge, 'from the new edge');
+            assertTradesAre(q, 'NQ', firstMs(q), T0);
+            assertEventsAre(q, 'NQ', q.dataStart, T0);
+            assertFootprintsClean(q, MIN);
+        });
+
+        it('the budget drops what is past the view, and pages it back in on the book left', async () => {
+            const { bus, de, fetches, next, announce } = levelEngine(level, { maxBytes: budget });
+            const loaded = next('data:load');
+            await de.load('NQ');
+            await loaded;
+            // the window reloads around the view, up to the old edge, and that's over the budget
+            const cut = new Promise<any>((resolve, reject) => {
+                const timer = setTimeout(() => reject(new Error('no cut')), 5000);
+                bus.on('data:load', (p: any) => {
+                    if (p.dataEnd >= T0 - HOUR_MS) return;
+                    clearTimeout(timer);
+                    resolve(p);
+                });
+            });
+            announce(MIN, T0 - 2 * HOUR_MS, T0 - 2 * HOUR_MS + 10 * MIN_MS);
+            const p = await cut;
+            assert.equal(p.replaced, true);
+            const end = Math.floor(p.dataEnd / MIN_MS) * MIN_MS + MIN_MS;
+            assert.ok(end < T0 - HOUR_MS, `kept up to ${(T0 - end) / MIN_MS} min back`);
+            assertTradesAre(p, 'NQ', p.dataStart, end);
+            assertEventsAre(p, 'NQ', p.dataStart, end);
+
+            const appended = next('data:append');
+            bus.emit('data:request-forward', { viewMax: nsOf(end + 10 * MIN_MS), symbol: 'NQ' });
+            const q = await appended;
+            const fetched = fetches.at(-1)!;
+            assert.equal(fetched.fromMs, end, 'from the new edge');
+            assertTradesAre(q, 'NQ', p.dataStart, fetched.toMs);
+            assertEventsAre(q, 'NQ', p.dataStart, fetched.toMs);
+            assertFootprintsClean(q, MIN);
+            assertBboIsOnePass(q, p.dataStart, fetched.toMs);
+        });
+
+        if (level === 'l3') {
             it('live chunks carry the book on, so bid/ask match one pass', async () => {
                 const { de, next, announce, push, settle } = levelEngine(level);
                 const loaded = next('data:load');

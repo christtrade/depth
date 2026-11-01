@@ -15,6 +15,7 @@ import {
     BYTES_PER_EVENT,
     createCompactBuffer,
     encodeAt,
+    findFloorIndex,
     getEvent,
     getTsNs,
     type CompactBuffer,
@@ -161,6 +162,13 @@ export function bookAfter(buf: ArrayBuffer): BookState {
     const book = createBook();
     for (let i = 0; i < cb.length; i++) applyEvent(book, getEvent(cb, i));
     return book;
+}
+
+export function eventsBetween(buf: ArrayBuffer, fromNs: bigint | null, toNs: bigint | null): ArrayBuffer {
+    const cb = wrap(buf);
+    const lo = fromNs === null ? 0 : findFloorIndex(cb, fromNs - 1n) + 1;
+    const hi = toNs === null ? cb.length : findFloorIndex(cb, toNs - 1n) + 1;
+    return buf.slice(lo * BYTES_PER_EVENT, hi * BYTES_PER_EVENT);
 }
 
 // bid/ask of `buf` again with `book` carried in

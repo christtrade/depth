@@ -24,14 +24,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Every timeframe is open at l3, down to None.
 - `features.timeframe.lockedReason`: the message for a timeframe `features.timeframe.timeframes`
   leaves out, for when your plan isn't called Pro.
-- `dataBudget: { maxBytes }`, a cap on the ohlcv bars the chart holds across every symbol. Uses 256 MB
+- `dataBudget: { maxBytes }`, a cap on the data the chart holds across every symbol. Uses 256 MB
   as default and `Infinity` for none. Past it, drops unused symbols, then bars far from
   every panes view, and those page back in when panning to them. Panning back a year at 1s
-  used to grow the store until the tab died.
+  used to grow the store until the tab died. Counts tick and l3 too (events, trades, bid/ask,
+  footprints), an hour of simulated l3 is ~7.5 MB. (not l2 yet)
 - `BarStore.slice(from, to, slack)`.
 - `onEvict(evicted)` on adapters and plugin data sources. Passes the closed bars the chart is about to
   drop, for any reason (the budget, a timeframe switch, a reload, destroy). Cache them and answer
-  `fetchBars` from that cache, so panning back costs no network. Not awaited.
+  `fetchBars` from that cache, so panning back costs no network. Not awaited. ohlcv only.
 - `BarStore.view(from, to)`, a no-copy read-only view.
 - `withOpfsCache(adapter, { maxBytes, dir })` writes evicted bars to the origin private file system
   and answers `fetchBars` from it when it covers the whole range, so panning back over dropped

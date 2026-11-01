@@ -25,7 +25,7 @@ import { footprintFromTrades, type FootprintOptions } from '../lib/types/footpri
 import type { SerialTrade } from '../lib/types';
 import type { PriceHistory } from '../lib/types';
 import type { FootprintBar } from '../lib/types/footprint';
-import { bookAfter, carryBookInto, processL3Chunk } from './processing/l3-processor';
+import { bookAfter, carryBookInto, eventsBetween, processL3Chunk } from './processing/l3-processor';
 import type { L3DataChunk } from './processing/l3-processor';
 import {
     processOhlcvChunk,
@@ -250,6 +250,15 @@ const SWITCH_FALLBACK_BARS = 1000n;
 const DEFAULT_MAX_BYTES = 256 * 2 ** 20;
 /** A BarStore row without bid/ask. */
 const BAR_BYTES = 48;
+// l2 has its own track
+const BUDGETED = new Set<DataLevel>(['ohlcv', 'tick', 'l3']);
+
+// measured in node: a trade object ~96 B, a bid/ask point ~88 B, a footprint level ~70 B
+function heldBytes(m: MasterBuffer): number {
+    let fp = 0;
+    for (const b of m.footprintBars) fp += 160 + 72 * b.levels.length;
+    return m.ohlcvBars.bytes + m.compactBuf.byteLength + 96 * m.trades.length + 88 * m.priceHistory.length + fp;
+}
 
 function _gcd(a: bigint, b: bigint): bigint {
     while (b > 0n) [a, b] = [b, a % b];
@@ -1988,9 +1997,10 @@ export class DataEngine {
     // evicts down to half the budget so the next few pages dont set it off again
     private _enforceBudget(): void {
         if (this.destroyed) return;
-        const held = [...this._states].filter(([, st]) => st.master?.dataLevel === 'ohlcv');
+        const held = [...this._states].filter(([, st]) => BUDGETED.has(st.master?.dataLevel as DataLevel));
+        const bytes = new Map(held.map(([, st]) => [st, heldBytes(st.master!)]));
         let total = 0;
-        for (const [, st] of held) total += st.master!.ohlcvBars.bytes;
+        for (const n of bytes.values()) total += n;
         if (total <= this.maxBytes) {
             this.budgetWarned = false;
             return;
@@ -2000,12 +2010,19 @@ export class DataEngine {
         for (const [symbol, st] of held) {
             if (excess <= 0) return;
             if (symbol === this.activeSymbol || this._onScreen(symbol)) continue;
-            excess -= st.master!.ohlcvBars.bytes;
+            excess -= bytes.get(st)!;
             this._dropMaster(st);
             this._states.delete(symbol);
         }
 
-        type Seg = { symbol: string; st: SymbolState; front: boolean; bars: number; rowBytes: number };
+        type Seg = {
+            symbol: string;
+            st: SymbolState;
+            front: boolean;
+            bars: number;
+            rowBytes: number;
+            freed: number;
+        };
         const segs: Seg[] = [];
         const bounds = new Map<SymbolState, { lo: number; hi: number }>();
         for (const [symbol, st] of held) {
@@ -2021,19 +2038,21 @@ export class DataEngine {
             if (hi <= lo) continue;
 
             bounds.set(st, { lo, hi });
-            const rowBytes = (bars.bid ? 8 : 6) * 8;
-            if (lo > 0) segs.push({ symbol, st, front: true, bars: lo, rowBytes });
-            if (hi < bars.length) segs.push({ symbol, st, front: false, bars: bars.length - hi, rowBytes });
+            const ohlcv = st.master!.dataLevel === 'ohlcv';
+            const rowBytes = ohlcv ? (bars.bid ? 8 : 6) * 8 : bytes.get(st)! / bars.length;
+            // ohlcv keeps a quarter of slack on every cut, so a dropped bar frees 1.25 rows
+            const freed = ohlcv ? rowBytes * 1.25 : rowBytes;
+            if (lo > 0) segs.push({ symbol, st, front: true, bars: lo, rowBytes, freed });
+            if (hi < bars.length) segs.push({ symbol, st, front: false, bars: bars.length - hi, rowBytes, freed });
         }
 
-        // a quarter of slack on every cut, so count a dropped bar at 1.25 rows
         const drops = new Map<SymbolState, { front: number; back: number; symbol: string }>();
         segs.sort((a, b) => b.bars * b.rowBytes - a.bars * a.rowBytes);
         for (const seg of segs) {
             if (excess <= 0) break;
-            const n = Math.min(seg.bars, Math.ceil(excess / (seg.rowBytes * 1.25)));
-            excess -= n * seg.rowBytes * 1.25;
-            
+            const n = Math.min(seg.bars, Math.ceil(excess / seg.freed));
+            excess -= n * seg.freed;
+
             const d = drops.get(seg.st) ?? { front: 0, back: 0, symbol: seg.symbol };
             if (seg.front) d.front = n;
             else d.back = n;
@@ -2095,18 +2114,21 @@ export class DataEngine {
         const old = master.ohlcvBars;
         this._evict(st, old, 0, lo);
         this._evict(st, old, hi, old.length);
-        const kept = old.slice(lo, hi, Math.ceil((hi - lo) / 4));
+        const ohlcv = master.dataLevel === 'ohlcv';
+        const kept = old.slice(lo, hi, ohlcv ? Math.ceil((hi - lo) / 4) : 0);
         master.ohlcvBars = kept;
         const first = kept.time[0];
         const last = kept.time[kept.length - 1];
+        if (!ohlcv) this._cutRaw(st, lo > 0 ? first : null, hi < old.length ? old.time[hi] : null);
         if (lo > 0) {
-            master.dataStart = first;
+            if (ohlcv) master.dataStart = first;
             st.loadedFrom = BigInt(Math.round(first)) * 1_000_000n;
             st.hasMoreHistory = true;
         }
         if (hi < old.length) {
-            master.dataEnd = last;
-            st.loadedTo = BigInt(Math.round(last)) * 1_000_000n;
+            if (ohlcv) master.dataEnd = last;
+            // raw data ends before the first dropped bar, so the next page starts there
+            st.loadedTo = BigInt(Math.round(ohlcv ? last : old.time[hi])) * 1_000_000n;
             st.hasMoreForward = true;
             st.reachesLive = false;
         }
@@ -2121,6 +2143,36 @@ export class DataEngine {
         void this._emitLoad(st, /* rehydrate */ false, /* replaced */ true).catch((err) =>
             console.error('[DataEngine] eviction _emitLoad failed', err),
         );
+    }
+
+    // tick/l3 keep what's at or after fromMs and before toMs
+    private _cutRaw(st: SymbolState, fromMs: number | null, toMs: number | null): void {
+        const m = st.master!;
+        const fromNs = fromMs === null ? null : BigInt(Math.round(fromMs)) * 1_000_000n;
+        const toNs = toMs === null ? null : BigInt(Math.round(toMs)) * 1_000_000n;
+        const cut = <T extends { ts: bigint }>(a: T[]) =>
+            a.slice(
+                fromNs === null ? 0 : firstTsAtOrAfter(a, fromNs),
+                toNs === null ? a.length : firstTsAtOrAfter(a, toNs),
+            );
+        m.trades = cut(m.trades);
+        m.priceHistory = cut(m.priceHistory);
+        m.footprintBars = cut(m.footprintBars);
+        if (m.dataLevel === 'l3') m.compactBuf = eventsBetween(m.compactBuf, fromNs, toNs);
+
+        const ts = (i: number) =>
+            m.dataLevel === 'l3' && m.compactBuf.byteLength > 0
+                ? Number(new DataView(m.compactBuf).getBigInt64(i * BYTES_PER_EVENT, true) / 1_000_000n)
+                : Number(m.trades.at(i)!.ts / 1_000_000n);
+        if (toNs !== null) {
+            // the next page starts a fresh bucket on the book thats left
+            st.forming = null;
+            st.formingBook = m.dataLevel === 'l3' ? bookAfter(m.compactBuf) : null;
+        }
+        const n = m.dataLevel === 'l3' ? m.compactBuf.byteLength / BYTES_PER_EVENT : m.trades.length;
+        if (n === 0) return;
+        if (fromNs !== null) m.dataStart = ts(0);
+        if (toNs !== null) m.dataEnd = ts(n - 1);
     }
 
     private _streaming(symbol: string): boolean {
