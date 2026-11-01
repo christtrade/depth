@@ -125,6 +125,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   candles ran off the top. Fits to the trades on screen now.
 - Line, area, baseline and step drew nothing at tick. They run through the candle closes now, like ohlcv.
   The line also threw with no forming bar, at any level.
+- Line, area, baseline and step at tick ended a bar short, the newest trades only showed once the
+  next bar opened. Baseline did that at every level.
 - Tick had no price line or pill.
 - Tick candles ignored playback. A step back left every bar after the playhead on screen, and the bar
   at the playhead showed its final close. Footprints too.

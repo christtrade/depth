@@ -260,6 +260,42 @@ async function toLiveEdge(page: Page) {
     await expect.poll(() => page.evaluate(() => String((window as any).__chart.renderEngine.view.tMax))).not.toBe(parked);
 }
 
+test('tick live at 1s: the lines reach the forming bar', async ({ page }) => {
+    const errors = watchErrors(page);
+    await open(page, '/?sim=1&level=tick');
+    await pickTimeframe(page, '1s');
+    await settled(page);
+    for (const t of ['step', 'line', 'area', 'baseline']) {
+        await page.evaluate((t) => (window as any).__chart.setChartSettings({ chartType: t }), t);
+        await toLiveEdge(page);
+        await page.waitForTimeout(300);
+
+        const r = await page.evaluate(() => {
+            const re = (window as any).__chart.renderEngine;
+            re.flushSync();
+            const dp = re.drawParams;
+            const c = re.baseCanvas as HTMLCanvasElement;
+            const dpr = devicePixelRatio;
+            const rect = dp.layouts[dp.panes.find((p: any) => p.isMain).id];
+            const chartW = c.width / dpr - dp.priceScaleWidth;
+            const img = c.getContext('2d')!.getImageData(0, Math.round(rect.y * dpr), Math.floor(chartW * dpr), Math.floor(rect.h * dpr));
+            let right = -1;
+            for (let i = 0; i < img.data.length; i += 4) {
+                const [r, g, b, a] = [img.data[i], img.data[i + 1], img.data[i + 2], img.data[i + 3]];
+                // baseline's fill fades to alpha 2 on the base line, past the stroke
+                if (a > 127 && Math.max(r, g, b) - Math.min(r, g, b) > 60) right = Math.max(right, ((i / 4) % img.width) / dpr);
+            }
+            const toX = dp.transformer.makeTsToXFn(chartW);
+            const barNs = dp.barNs as bigint;
+            const forming = ((dp.horizon as bigint) / barNs) * barNs;
+            return { right, forming: toX(forming), prev: toX(forming - barNs), chartW };
+        });
+        expect(r.forming, `${t} on screen`).toBeLessThan(r.chartW - 10);
+        expect(r.right, `${t} ${JSON.stringify(r)}`).toBeGreaterThan(r.forming - 2);
+    }
+    expect(errors).toEqual([]);
+});
+
 // every trade is a bar at the none tf
 async function followsTheClock(page: Page, url: string) {
     const errors = watchErrors(page);

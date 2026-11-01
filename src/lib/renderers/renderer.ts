@@ -3437,8 +3437,12 @@ function drawPriceChart(
     const hasBidAsk = dataLevel === 'ohlcv' && !!ohlcvBars?.bid?.[0];
     // tick has no bars, and its bid/ask is just the last trade each side, so lines run through its
     // own candles' closes
-    const priceSeries = (): BarStore => {
-        if (dataLevel !== 'tick') return ohlcvBars;
+    // the lines stop short of the horizon's bar and take it from the open bar, which tick doesnt
+    // have, so its last candle stands in
+    let series: { bars: BarStore; open: typeof openBar } | null = null;
+    const priceSeries = () => (series ??= buildSeries());
+    const buildSeries = (): { bars: BarStore; open: typeof openBar } => {
+        if (dataLevel !== 'tick') return { bars: ohlcvBars, open: openBar };
         const candles = aggregateCandles(trades, bounds, barNs, horizon, candleCache, openBar, ohlcvBars, transformer);
         const bars = candles.map((c) => ({
             time: Number(c.ts / 1_000_000n),
@@ -3448,7 +3452,9 @@ function drawPriceChart(
             close: c.close,
             volume: 0,
         }));
-        return BarStore.from(bars);
+        const last = candles[candles.length - 1];
+        const forming = horizon > 0n && last && last.ts >= (horizon / barNs) * barNs ? last : null;
+        return { bars: BarStore.from(bars), open: openBar ?? forming };
     };
     const priceLevel = dataLevel === 'ohlcv' || dataLevel === 'tick';
     if (chartType === 'footprint') {
@@ -3534,8 +3540,8 @@ function drawPriceChart(
                 horizon,
                 barNs,
                 transformer,
-                priceSeries(),
-                openBar,
+                priceSeries().bars,
+                priceSeries().open,
             );
         }
         if (showMid)
@@ -3587,8 +3593,8 @@ function drawPriceChart(
                 horizon,
                 barNs,
                 transformer,
-                priceSeries(),
-                openBar,
+                priceSeries().bars,
+                priceSeries().open,
             );
         }
         if (showMid)
@@ -3690,8 +3696,8 @@ function drawPriceChart(
                 horizon,
                 barNs,
                 transformer,
-                priceSeries(),
-                openBar,
+                priceSeries().bars,
+                priceSeries().open,
             );
         }
         if (showMid)
@@ -3776,8 +3782,8 @@ function drawPriceChart(
             horizon,
             barNs,
             transformer,
-            priceSeries(),
-            openBar,
+            priceSeries().bars,
+            priceSeries().open,
             cut,
         );
     }
@@ -4735,7 +4741,7 @@ function drawBaselineChart(
             pts.push({ x: tsToXFn(BigInt(time[i] * 1_000_000)), price: val });
             if (pts[pts.length - 1].x > w + 100) break;
         }
-        if (openBar && Number(openBar.ts / 1_000_000n) < cutTs) {
+        if (openBar && Number(openBar.ts / 1_000_000n) <= cutTs) {
             pts.push({ x: tsToXFn(openBar.ts), price: openBar.close });
         }
     } else {
