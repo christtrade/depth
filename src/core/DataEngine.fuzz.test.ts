@@ -378,6 +378,13 @@ async function run(level: Level, seed: number) {
                         f.bus.emit('data:prefetch', { spanNs: gap + gap / 8n });
                         log.push('prefetch');
                     }
+                    if (r() < 0.2) {
+                        view.periodMs = pick(r, TIMEFRAMES_MS);
+                        clampSpan();
+                        announce();
+                        f.state.set('timeframe', tfOf(view.periodMs) as never, f.bus);
+                        log.push(`tf ${view.periodMs / 1000}s`);
+                    }
                     if (r() < 0.5) await f.settle();
                 }
                 return `replay ${n} steps to ${Math.round((playhead - T0) / 1000)}s from T0 ${log.join(' ')}`;
