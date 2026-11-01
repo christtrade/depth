@@ -32,7 +32,12 @@ jobs:
       # bundle
       - run: npm run dist
 
+      # new fuzz seeds every run
       - run: npm test
+        env:
+          FUZZ_BASE: ${{ github.run_number }}000
+          FUZZ_SEEDS: 8
+          FUZZ_STEPS: 40
 
       # per frame work has to stay flat as the history grows as it fails on a ratio
       # and not a time. so a slow runner cant trip it
