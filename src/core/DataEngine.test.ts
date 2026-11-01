@@ -697,6 +697,16 @@ describe('a switch over the budget', () => {
         assert.equal(de.isRealtime(), true);
     });
 
+    it('a jump back keeps holding the feed', async () => {
+        const { bus, de, subs, settle } = await capped();
+        const target = T2026 - 25 * DAY_MS;
+        bus.emit('playback:seek', { tNs: nsOf(target) });
+        await de.seekLoad(nsOf(target), nsOf(viewFrom));
+        await settle();
+        assert.ok(de.getSnapshot().bars.time.at(-1)! < T2026 - DAY_MS, 'a window far from the edge');
+        assert.ok(subs.every((s) => !s.open));
+    });
+
     it('pages forward on pan and picks the feed up at the live edge', async () => {
         const t = await capped();
         const opened = t.subs.length;
@@ -750,6 +760,35 @@ describe('a switch over the budget', () => {
         bus.emit('data:request-forward', { viewMax: nsOf(T2026 + 60 * 60_000), symbol: 'NQ' });
         await settle();
         assert.equal(fetches.length, before);
+    });
+
+    it('a jump back while live holds the feed until playback pages back to the edge', async () => {
+        const { bus, de, subs, announce, settle } = tfEngine({
+            timeframe: MIN,
+            loadFrom: T2026 - 1000 * 60_000,
+            loadTo: T2026,
+        });
+        await de.load('NQ');
+        announce(0, MIN, T2026 - 100 * 60_000, T2026);
+        await settle();
+        const feed = subs.at(-1)!;
+        assert.equal(feed.open, true);
+
+        const target = T2026 - 2 * DAY_MS;
+        bus.emit('playback:seek', { tNs: nsOf(target) });
+        await de.seekLoad(nsOf(target), nsOf(T2026));
+        await settle();
+        assert.equal(feed.open, false, 'live bars would land past a hole');
+        assert.ok(subs.every((s) => !s.open));
+        assert.equal(de.isRealtime(), true);
+
+        const opened = subs.length;
+        for (let i = 0; i < 80 && subs.length === opened; i++) {
+            bus.emit('data:prefetch', { spanNs: DAY });
+            await settle();
+        }
+        assert.equal(subs.length, opened + 1, 'subscribed again');
+        assert.equal(subs.at(-1)!.req.since, nsOf(de.getSnapshot().bars.time.at(-1)!), 'from where the data ends');
     });
 
     it('evicting the live edge holds the feed too', async () => {

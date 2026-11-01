@@ -666,6 +666,10 @@ export class DataEngine {
         const adapter = this._adapterFor(st.symbolInfo.symbol);
         if (!adapter) return;
 
+        // a jump back from the live edge leaves a hole
+        // so wait for feed to page across
+        const liveTo = !st.master ? null : st.reachesLive ? st.loadedTo : undefined;
+
         // fresh window, so drop the loaded range - pagination restarts relative
         // to this one, and a staged switch still in flight no longer applies
         st.loadedFrom = null;
@@ -742,6 +746,7 @@ export class DataEngine {
         st.loadedFrom = loadedEdge(processed.dataStart, toNs);
         st.loadedTo = loadedEdge(processed.dataEnd, toNs);
         st.hasMoreHistory = response.hasMore;
+        st.reachesLive = liveTo === null || (liveTo !== undefined && toNs >= liveTo);
         st.fetchBarNs = fetchBarNs;
         st.master = this._buildMaster(st, processed, fetchBarNs);
         st.forming = forming;
