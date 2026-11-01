@@ -3,7 +3,7 @@ import { isoToNs } from '../lib/sampler';
 import { type PriceHistory, type TradePoint, type ViewBounds, type OhlcvBarMs } from '../lib/types';
 import { footprintFromTrades, type FootprintBar } from '../lib/types/footprint';
 import { openBarFrom } from '../lib/open-bar';
-import { extendBucketedPh, extendCandles, extendFootprints } from '../lib/bucket-tail';
+import { extendBucketedPh, extendCandles, extendFootprints, foldTrades } from '../lib/bucket-tail';
 import {
     BYTES_PER_EVENT,
     type CompactBuffer,
@@ -1905,52 +1905,8 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             if (tick && barNs > 0n && candleCacheRef.current) {
                 extendCandles(candleCacheRef.current, allTradesRef.current, barNs, horizon);
             } else if (barNs > 0n && candleCacheRef.current && newIdx > prevIdx) {
-                const all = allTradesRef.current;
                 const prevTs = prevIdx >= 0 ? getTsNs(cb, prevIdx) : 0n;
-                let tradeStart = 0,
-                    lo2 = 0,
-                    hi2 = all.length - 1;
-                while (lo2 <= hi2) {
-                    const m2 = (lo2 + hi2) >>> 1;
-                    if (all[m2].ts <= prevTs) {
-                        tradeStart = m2 + 1;
-                        lo2 = m2 + 1;
-                    } else hi2 = m2 - 1;
-                }
-                let tradeEnd = tradeStart,
-                    lo3 = tradeStart,
-                    hi3 = all.length - 1;
-                while (lo3 <= hi3) {
-                    const m3 = (lo3 + hi3) >>> 1;
-                    if (all[m3].ts <= horizon) {
-                        tradeEnd = m3;
-                        lo3 = m3 + 1;
-                    } else hi3 = m3 - 1;
-                }
-                if (tradeEnd >= tradeStart) {
-                    const map = candleCacheRef.current;
-                    for (let ti = tradeStart; ti <= tradeEnd; ti++) {
-                        const t = all[ti];
-                        const k = (t.ts / barNs) * barNs;
-                        const b = map.get(k);
-                        if (!b) {
-                            map.set(k, {
-                                open: t.price,
-                                high: t.price,
-                                low: t.price,
-                                close: t.price,
-                                volume: t.size,
-                                delta: t.side === 'B' ? t.size : -t.size,
-                            });
-                        } else {
-                            if (t.price > b.high) b.high = t.price;
-                            if (t.price < b.low) b.low = t.price;
-                            b.close = t.price;
-                            b.volume += t.size;
-                            b.delta += t.side === 'B' ? t.size : -t.size;
-                        }
-                    }
-                }
+                foldTrades(candleCacheRef.current, allTradesRef.current, barNs, prevTs, horizon);
             }
             runHorizonAdvance(horizon);
             p.pushDrawParamsRef.current();

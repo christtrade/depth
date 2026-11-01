@@ -26,20 +26,35 @@ export function extendCandles(
     for (const k of map.keys()) last = k;
     if (last !== null) map.delete(last);
     for (let i = last === null ? 0 : firstTsAtOrAfter(trades, last); i < trades.length; i++) {
-        const t = trades[i];
-        if (t.ts > horizon) break;
-        const k = (t.ts / barNs) * barNs;
-        const delta = t.side === 'B' ? t.size : -t.size;
-        const b = map.get(k);
-        if (!b) {
-            map.set(k, { open: t.price, high: t.price, low: t.price, close: t.price, volume: t.size, delta });
-        } else {
-            if (t.price > b.high) b.high = t.price;
-            if (t.price < b.low) b.low = t.price;
-            b.close = t.price;
-            b.volume += t.size;
-            b.delta += delta;
-        }
+        if (trades[i].ts > horizon) break;
+        addTrade(map, trades[i], barNs);
+    }
+}
+
+// trades in after, horizon
+export function foldTrades(
+    map: Map<bigint, Candle>,
+    trades: readonly TradePoint[],
+    barNs: bigint,
+    after: bigint,
+    horizon: bigint,
+): void {
+    const end = firstTsAtOrAfter(trades, horizon + 1n);
+    for (let i = firstTsAtOrAfter(trades, after + 1n); i < end; i++) addTrade(map, trades[i], barNs);
+}
+
+function addTrade(map: Map<bigint, Candle>, t: TradePoint, barNs: bigint): void {
+    const k = (t.ts / barNs) * barNs;
+    const delta = t.side === 'B' ? t.size : -t.size;
+    const b = map.get(k);
+    if (!b) {
+        map.set(k, { open: t.price, high: t.price, low: t.price, close: t.price, volume: t.size, delta });
+    } else {
+        if (t.price > b.high) b.high = t.price;
+        if (t.price < b.low) b.low = t.price;
+        b.close = t.price;
+        b.volume += t.size;
+        b.delta += delta;
     }
 }
 

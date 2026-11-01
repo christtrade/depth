@@ -98,6 +98,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   bar is a dot per trade. It wasn't in the list at all.
 
 ## Fixed
+- L3 playback could throw once the playhead passed the last loaded trade, and a step with no new trade
+  folded the next, future one into the candle early.
 - Tick and l3: a page back onto history that starts mid-bar (after a switch to a coarser timeframe,
   or a first window not on a bar edge) drew that bar twice, half its trades each.
 - A playback jump back while live kept the feed open, so live bars landed right after the old window

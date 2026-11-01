@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { extendBucketedPh, extendCandles, extendFootprints, type Candle } from './bucket-tail';
+import { extendBucketedPh, extendCandles, extendFootprints, foldTrades, type Candle } from './bucket-tail';
 import { footprintFromTrades, type FootprintBar } from './types/footprint';
 import type { PriceHistory, TradePoint } from './types';
 
@@ -38,6 +38,14 @@ describe('extending the buckets a chunk at a time', () => {
             cursor = extendBucketedPh(ph, q, MIN, edge);
         }
         assert.deepEqual({ candles: [...candles], ph, cursor }, whole(trades, quotes, 600n * SEC));
+    });
+
+    it('folds a playhead step by step, past the last trade too', () => {
+        const candles = new Map<bigint, Candle>();
+        for (let edge = 0n; edge <= 700n * SEC; edge += 5n * SEC) {
+            foldTrades(candles, trades, MIN, edge - 5n * SEC, edge);
+            assert.deepEqual([...candles], whole(trades, quotes, edge).candles);
+        }
     });
 
     it('takes the last bucket as sent, not as held', () => {
