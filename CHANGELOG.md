@@ -98,6 +98,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   bar is a dot per trade. It wasn't in the list at all.
 
 ## Fixed
+- A live chunk or a switch's reload that landed before the toolbar's tf caught up got bucketed at the
+  old one, so like a 5s bar could end up behind the 1s bars or the whole store was off. (tick/l3)
 - L3 playback could throw once the playhead passed the last loaded trade, and a step with no new trade
   folded the next, future one into the candle early.
 - Tick and l3: a page back onto history that starts mid-bar (after a switch to a coarser timeframe,

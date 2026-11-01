@@ -433,7 +433,8 @@ for (const level of ['tick', 'l3'] as const) {
             assertFootprintsClean(p, MIN);
         });
 
-        it('a timeframe switch rebuckets the same trades', async () => {
+        for (const paneFirst of [false, true])
+        it(`a timeframe switch rebuckets the same trades${paneFirst ? ', pane first' : ''}`, async () => {
             const { de, state, bus, announce, next } = levelEngine(level);
             const loaded = next('data:load');
             await de.load('NQ');
@@ -441,9 +442,10 @@ for (const level of ['tick', 'l3'] as const) {
             const FIVE = 5n * MIN;
             const replaced = next('data:load');
             announce(FIVE, T0 - 30 * MIN_MS, T0);
-            state.set('timeframe', tfOf(FIVE) as never, bus);
+            if (!paneFirst) state.set('timeframe', tfOf(FIVE) as never, bus);
             const p = await replaced;
             assert.equal(p.replaced, true);
+            assert.equal(p.barNs, FIVE);
             assertTradesAre(p, 'NQ', firstMs(p), T0);
             assertFootprintsClean(p, FIVE);
         });
@@ -462,9 +464,8 @@ for (const level of ['tick', 'l3'] as const) {
             assert.equal(fetches.length, fetched, `fetched ${JSON.stringify(fetches.slice(fetched))}`);
         });
 
-        // the chart's pane announces first, the shared timeframe follows
-        for (const paneFirst of [false, true])
-        it(`a switch to a finer timeframe rebuckets what is held, no fetch${paneFirst ? ', pane first' : ''}`, async () => {
+        for (const shared of ['first', 'after', 'after a chunk'] as const)
+        it(`a switch to a finer timeframe rebuckets what is held, no fetch, shared timeframe ${shared}`, async () => {
             const { de, state, bus, fetches, announce, push, next, settle } = levelEngine(level);
             const loaded = next('data:load');
             await de.load('NQ');
@@ -478,10 +479,10 @@ for (const level of ['tick', 'l3'] as const) {
             const SEC = 1_000_000_000n;
             const fetched = fetches.length;
             const replaced = next('data:load');
-            if (!paneFirst) state.set('timeframe', tfOf(SEC) as never, bus);
+            if (shared === 'first') state.set('timeframe', tfOf(SEC) as never, bus);
             announce(SEC, T0 - 10_000, T0 + 20_500);
             const p = await replaced;
-            if (paneFirst) state.set('timeframe', tfOf(SEC) as never, bus);
+            if (shared === 'after') state.set('timeframe', tfOf(SEC) as never, bus);
             assert.equal(p.replaced, true);
             assert.equal(p.barNs, SEC);
             assert.equal(fetches.length, fetched, 'nothing fetched');
@@ -495,6 +496,7 @@ for (const level of ['tick', 'l3'] as const) {
             appended = next('data:append');
             push(T0 + 20_500, T0 + 22_500);
             const a = await appended;
+            assert.equal(de.sharedData.barNs, SEC);
             assertTradesAre(a, 'NQ', T0 - 30 * MIN_MS, T0 + 22_500);
             assertEventsAre(a, 'NQ', T0 - 30 * MIN_MS, T0 + 22_500);
             assert.equal(json(a.footprintBars), fresh(a));

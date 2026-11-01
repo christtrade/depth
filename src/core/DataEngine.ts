@@ -734,7 +734,7 @@ export class DataEngine {
             return;
         }
 
-        const { processed, forming, book } = this._processWindow(response, st);
+        const { processed, forming, book } = this._processWindow(response, st, fetchBarNs);
         if (!processed) {
             this.eventBus.emit('data:status', {
                 status: 'ready',
@@ -773,7 +773,7 @@ export class DataEngine {
             // the bars' own period, not the view timeframe. consumers tell a
             // completed bar from the forming one with it, and with panes at mixed
             // timeframes the two arent the same number anymore
-            barNs: processed.kind === 'ohlcv' ? fetchBarNs : this.state.get('timeframe').barNs,
+            barNs: processed.kind === 'ohlcv' ? fetchBarNs : this._chunkBarNs(st, fetchBarNs),
             playFromNs: BigInt(processed.dataStart) * 1_000_000n,
             symbolInfo: st.symbolInfo!,
         };
@@ -1564,7 +1564,7 @@ export class DataEngine {
     private _process(
         response: BarResponse,
         st: SymbolState,
-        carry: { book?: BookState; snapAt?: bigint } = {},
+        carry: { book?: BookState; snapAt?: bigint; barNs?: bigint } = {},
     ): DataChunk | null {
         if (response._preProcessed) {
             const pre = response._preProcessed as any;
@@ -1573,7 +1573,7 @@ export class DataEngine {
             return pre as DataChunk;
         }
 
-        const barNs = this.state.get('timeframe').barNs;
+        const barNs = carry.barNs ?? this._chunkBarNs(st);
 
         switch (st.symbolInfo?.dataLevel ?? 'l3') {
             case 'ohlcv':
@@ -1595,9 +1595,10 @@ export class DataEngine {
     }
 
     // process a whole new window with its forming buckete and the book where that starts
-    private _processWindow(response: BarResponse, st: SymbolState) {
-        const forming = formingOf(st.symbolInfo?.dataLevel ?? 'l3', response, this._chunkBarNs());
-        const processed = this._process(response, st, { snapAt: forming?.bucket });
+    private _processWindow(response: BarResponse, st: SymbolState, fetchBarNs: bigint) {
+        const barNs = this._chunkBarNs(st, fetchBarNs);
+        const forming = formingOf(st.symbolInfo?.dataLevel ?? 'l3', response, barNs);
+        const processed = this._process(response, st, { snapAt: forming?.bucket, barNs });
         const book = (processed as L3DataChunk | null)?.bookAt ?? null;
         return { processed, forming, book };
     }
@@ -1621,8 +1622,10 @@ export class DataEngine {
         if (this._appendResponse(st, bar, 'realtime')) st.hasMoreForward = true;
     }
 
-    // the bucket size _process builds footprints at
-    private _chunkBarNs(): bigint {
+    // tick/l3 bucket at what the store is at, the shared timeframe only moves after the pane announces
+    private _chunkBarNs(st: SymbolState, fetchBarNs = st.fetchBarNs): bigint {
+        const level = st.symbolInfo?.dataLevel;
+        if ((level === 'tick' || level === 'l3') && fetchBarNs > 0n) return fetchBarNs;
         return this.state.get('timeframe').barNs;
     }
 
@@ -1630,7 +1633,7 @@ export class DataEngine {
     private _appendResponse(st: SymbolState, response: BarResponse, from: string): boolean {
         if (!st.master) return false;
         const level = st.master.dataLevel;
-        const barNs = this._chunkBarNs();
+        const barNs = this._chunkBarNs(st);
         // the seam comes back on every page and chunk, and the forming bucket gets rebuilt whole
         const joined = joinForming(level, st.forming, response, barNs);
         if (!joined) return false;
@@ -1807,9 +1810,8 @@ export class DataEngine {
     // bars were actually fetched at, for everything else the view timeframe the
     // events are bucketed into
     private _masterBarNs(st: SymbolState): bigint {
-        const viewBarNs = this.state.get('timeframe').barNs;
-        if (st.master?.dataLevel !== 'ohlcv') return viewBarNs;
-        return st.fetchBarNs > 0n ? st.fetchBarNs : viewBarNs;
+        if (st.master?.dataLevel !== 'ohlcv') return this._chunkBarNs(st);
+        return st.fetchBarNs > 0n ? st.fetchBarNs : this.state.get('timeframe').barNs;
     }
 
     // mirror the focused symbol's master into the public sharedData snapshot
@@ -2312,7 +2314,6 @@ export class DataEngine {
         st.fetchBarNs = barNs;
         st.forming = narrowed.forming;
         st.formingBook = book;
-        // the pane announces before the shared timeframe moves, so not _chunkBarNs()
         master.footprintBars = footprintFromTrades(master.trades, barNs, this.fpOptions);
         master.ohlcvBars = _deriveOhlcvFromFootprint(master.footprintBars);
         master.barNs = barNs;
@@ -2402,7 +2403,7 @@ export class DataEngine {
         if (this.destroyed || token !== st.stageToken) return;
         st.staging = null;
 
-        const { processed, forming, book } = this._processWindow(response, st);
+        const { processed, forming, book } = this._processWindow(response, st, fetchBarNs);
         if (!processed || isEmptyChunk(processed)) {
             // keep what we have rather than swapping in an empty window, and say
             // so - a pane waiting on this resolution is dimmed until it hears
