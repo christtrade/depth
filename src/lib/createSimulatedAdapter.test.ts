@@ -114,21 +114,22 @@ describe('SimulatedMarketAdapter realtime', () => {
         for (let i = 1; i < h.length; i++) assert.equal(h[i].open, h[i - 1].close);
     });
 
-    it('l3: pages, live chunks and refetches all read the same events', async () => {
+    for (const level of ['tick', 'l3'] as const)
+    it(`${level}: pages, live chunks and refetches all read the same events`, async () => {
         const t0 = Date.UTC(2026, 9, 29, 12, 0, 30);
         mock.timers.enable({ apis: ['setInterval', 'Date'], now: t0 });
         try {
-            const sim = new SimulatedMarketAdapter({ seed: 7, realtime: true, historyBars: 200, dataLevel: 'l3' });
-            assert.equal(sim.resolveSymbol().dataLevel, 'l3');
+            const sim = new SimulatedMarketAdapter({ seed: 7, realtime: true, historyBars: 200, dataLevel: level });
+            assert.equal(sim.resolveSymbol().dataLevel, level);
+            const items = (r: any): any[] => (level === 'tick' ? r.ticks : r.events);
             const events = async (fromMs: number, toMs: number) =>
-                (await sim.fetchBars({ ...range(fromMs, toMs), direction: 'initial' })).events;
+                items(await sim.fetchBars({ ...range(fromMs, toMs), direction: 'initial' }));
             // thousands of events, a deepEqual diff of them runs out of memory
             const same = (a: unknown[], b: unknown[], msg: string) =>
                 assert.ok(JSON.stringify(a) === JSON.stringify(b), msg);
 
             const whole = await events(t0 - 20 * MIN, t0);
             assert.ok(whole.length > 1000);
-            assert.ok(whole.some((e) => e.action === 'T'));
             same(
                 [...(await events(t0 - 20 * MIN, t0 - 7 * MIN)), ...(await events(t0 - 7 * MIN, t0))],
                 whole,
@@ -136,13 +137,33 @@ describe('SimulatedMarketAdapter realtime', () => {
             );
 
             const live: any[] = [];
-            const unsub = sim.subscribeRealtime!(since(t0), (r) => live.push(...r.events));
+            const unsub = sim.subscribeRealtime!(since(t0), (r) => live.push(...items(r)));
             mock.timers.tick(3000);
             unsub();
             assert.ok(live.length > 0);
             same(live, await events(t0, t0 + 3000), 'live chunks are what a fetch reads');
 
             same(await events(t0 - 20 * MIN, t0), whole, 'the path moved on and nothing before it changed');
+        } finally {
+            mock.timers.reset();
+        }
+    });
+
+    it('tick prints the trades l3 does', async () => {
+        const t0 = Date.UTC(2026, 9, 29, 12, 0, 30);
+        mock.timers.enable({ apis: ['Date'], now: t0 });
+        try {
+            const fetch = (dataLevel: 'tick' | 'l3') =>
+                new SimulatedMarketAdapter({ seed: 7, realtime: true, historyBars: 60, dataLevel }).fetchBars({
+                    ...range(t0 - 10 * MIN, t0),
+                    direction: 'initial',
+                });
+            const ticks = (await fetch('tick')).ticks!.map((t) => [t.time, t.price, t.size, t.side]);
+            const trades = (await fetch('l3')).events
+                .filter((e) => e.action === 'T')
+                .map((e) => [Date.parse(e.ts_event), e.price, e.size, e.side]);
+            assert.ok(ticks.length > 100);
+            assert.equal(JSON.stringify(ticks), JSON.stringify(trades));
         } finally {
             mock.timers.reset();
         }
