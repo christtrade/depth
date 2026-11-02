@@ -1,25 +1,23 @@
 /**
  * A flat typed-array store for MBO events, in place of an MboEvent[]. Rather
- * than a heap object per event at 150-200 bytes each, every event packs into 24
+ * than a heap object per event at 150-200 bytes each, every event packs into 32
  * bytes:
  *
  *   [0..7]   ts_ns        BigInt64, absolute nanoseconds
- *   [8..11]  pricex100    Int32, null becomes the INT32_MIN sentinel
- *   [12..15] size         Uint32
- *   [16..22] order_id     low 56 bits, little-endian. 24 bits had live orders sharing an id
- *   [23]     packed       bits 7-4 action, bits 3-2 side, bits 1-0 spare
+ *   [8..15]  price        Float64, null is NaN. fx and crypto need more than 2 decimals
+ *   [16..23] size         Float64, crypto sizes are fractional
+ *   [24..30] order_id     low 56 bits, little-endian. 24 bits had live orders sharing an id
+ *   [31]     packed       bits 7-4 action, bits 3-2 side, bits 1-0 spare
  *
- * At 30M events that's about 720MB instead of ~5GB.
+ * At 30M events that's about 960MB instead of ~5GB.
  *   findFloorIndex()       - binary search by nanosecond timestamp
  */
 
 import type { MboEvent } from './types';
 
 // Constants
-export const BYTES_PER_EVENT = 24;
+export const BYTES_PER_EVENT = 32;
 const TWO_32 = 2 ** 32;
-const INT32_MIN = -2_147_483_648; // sentinel for null price
-export const PRICE_SCALE = 100; // store price x 100 as int32
 
 // Maps must stay in the same order as buffer.ts ACTION_NAMES / SIDE_NAMES.
 const ACTION_ENCODE: Record<string, number> = { A: 0, C: 1, M: 2, T: 3, F: 4, R: 5 };
@@ -44,7 +42,7 @@ export interface CompactBuffer {
 }
 
 // Factory
-const INITIAL_CAPACITY = 1_000_000; // 1 M events = 20 MB upfront
+const INITIAL_CAPACITY = 1_000_000; // 1 M events = 32 MB upfront
 
 export function createCompactBuffer(initialCapacity = INITIAL_CAPACITY): CompactBuffer {
     const buf = new ArrayBuffer(initialCapacity * BYTES_PER_EVENT);
@@ -71,9 +69,8 @@ function grow(cb: CompactBuffer, needed: number): void {
 export function encodeAt(view: DataView, idx: number, tsNs: bigint, event: MboEvent): void {
     const base = idx * BYTES_PER_EVENT;
     view.setBigInt64(base, tsNs, true);
-    const priceInt = event.price === null ? INT32_MIN : Math.round(event.price * PRICE_SCALE);
-    view.setInt32(base + 8, priceInt, true);
-    view.setUint32(base + 12, event.size >>> 0, true);
+    view.setFloat64(base + 8, event.price === null ? NaN : event.price, true);
+    view.setFloat64(base + 16, event.size, true);
 
     let lo: number;
     let hi: number;
@@ -87,13 +84,13 @@ export function encodeAt(view: DataView, idx: number, tsNs: bigint, event: MboEv
         lo = Number(n & 0xffff_ffffn);
         hi = Number((n >> 32n) & 0xff_ffffn);
     }
-    view.setUint32(base + 16, lo, true);
-    view.setUint16(base + 20, hi & 0xffff, true);
-    view.setUint8(base + 22, (hi >>> 16) & 0xff);
+    view.setUint32(base + 24, lo, true);
+    view.setUint16(base + 28, hi & 0xffff, true);
+    view.setUint8(base + 30, (hi >>> 16) & 0xff);
 
     const actionIdx = ACTION_ENCODE[event.action] ?? 0;
     const sideIdx = SIDE_ENCODE[event.side] ?? 2;
-    view.setUint8(base + 23, ((actionIdx & 0xf) << 4) | ((sideIdx & 0x3) << 2));
+    view.setUint8(base + 31, ((actionIdx & 0xf) << 4) | ((sideIdx & 0x3) << 2));
 }
 
 // Append a batch of MboEvents
@@ -160,15 +157,15 @@ export function getEvent(cb: CompactBuffer, idx: number): Readonly<MboEvent> {
     const view = cb._view;
 
     const tsNs = view.getBigInt64(base, true);
-    const priceI = view.getInt32(base + 8, true);
-    const size = view.getUint32(base + 12, true);
-    const oidLo = view.getUint32(base + 16, true);
-    const oidHi = view.getUint16(base + 20, true) | (view.getUint8(base + 22) << 16);
-    const packed = view.getUint8(base + 23);
+    const price = view.getFloat64(base + 8, true);
+    const size = view.getFloat64(base + 16, true);
+    const oidLo = view.getUint32(base + 24, true);
+    const oidHi = view.getUint16(base + 28, true) | (view.getUint8(base + 30) << 16);
+    const packed = view.getUint8(base + 31);
 
     SCRATCH.action = ACTION_DECODE[(packed >> 4) & 0xf] ?? 'A';
     SCRATCH.side = SIDE_DECODE[(packed >> 2) & 0x3] ?? 'N';
-    SCRATCH.price = priceI === INT32_MIN ? null : priceI / PRICE_SCALE;
+    SCRATCH.price = Number.isNaN(price) ? null : price;
     SCRATCH.size = size;
     SCRATCH.order_id =
         oidHi < 2 ** 21

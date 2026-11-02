@@ -27,6 +27,29 @@ function bookFromBuf(buf: ArrayBuffer, count: number) {
     return { book, cb };
 }
 
+describe('compact buffer prices and sizes', () => {
+    for (const [price, size] of [
+        [1.23456, 1],
+        [0.00001234, 1],
+        [25_000_000.5, 1],
+        [97_123.45, 0.0153],
+    ]) {
+        it(`keeps ${price} x ${size} as is`, () => {
+            const e = { ...ev(0, 'A', price, '1'), size };
+            const { cb } = bookFromBuf(processL3Chunk([e], 60_000_000_000n).compactBuf, 1);
+            const got = getEvent(cb, 0);
+            assert.equal(got.price, price);
+            assert.equal(got.size, size);
+        });
+    }
+
+    it('keeps a null price null', () => {
+        const e = { ...ev(0, 'R', 0, '0'), price: null, side: 'N' as const };
+        const { cb } = bookFromBuf(processL3Chunk([e], 60_000_000_000n).compactBuf, 1);
+        assert.equal(getEvent(cb, 0).price, null);
+    });
+});
+
 describe('compact buffer order ids', () => {
     // cme ids are ab 13 digits, these 2 share their low 24 bits
     for (const [a, b] of [

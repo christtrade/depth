@@ -111,12 +111,10 @@ function snapshotToArrays(book: BookState, ts: bigint): Snapshot {
     _askScratch.clear();
 
     for (const o of (book.bids as Map<string, { price: number; size: number }>).values()) {
-        const r = Math.round(o.price * 100) / 100;
-        _bidScratch.set(r, (_bidScratch.get(r) ?? 0) + o.size);
+        _bidScratch.set(o.price, (_bidScratch.get(o.price) ?? 0) + o.size);
     }
     for (const o of (book.asks as Map<string, { price: number; size: number }>).values()) {
-        const r = Math.round(o.price * 100) / 100;
-        _askScratch.set(r, (_askScratch.get(r) ?? 0) + o.size);
+        _askScratch.set(o.price, (_askScratch.get(o.price) ?? 0) + o.size);
     }
 
     const bids = new Float64Array(_bidScratch.size * 2);

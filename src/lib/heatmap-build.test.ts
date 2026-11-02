@@ -29,6 +29,19 @@ describe('the heatmap build', () => {
         assert.deepEqual(parts.snaps, whole.snaps);
     });
 
+    it('keeps fx levels a pip apart as their own levels', async () => {
+        const at = (i: number) => new Date(T0 + i).toISOString();
+        const b = newBuild();
+        await feed(b, [
+            { ts_event: at(0), action: 'A', side: 'B', price: 1.23451, size: 3, order_id: '1', sequence: 0, flags: 0 },
+            { ts_event: at(1), action: 'A', side: 'B', price: 1.23454, size: 5, order_id: '2', sequence: 1, flags: 0 },
+        ]);
+        seal(b);
+        const bids = [...b.snaps[0].at(-1)!.bids];
+        assert.deepEqual(bids.length, 4, `2 levels, got ${bids}`);
+        assert.deepEqual(new Set([bids[0], bids[2]]), new Set([1.23451, 1.23454]));
+    });
+
     it('seals an empty build to nothing', () => {
         const b = newBuild();
         seal(b);

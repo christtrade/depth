@@ -7,7 +7,7 @@ import type { L2Snapshot, OhlcvBar, TickEvent } from '../../interfaces/IDataAdap
 import type { FootprintBar, FootprintOptions } from '../../lib/types/footprint';
 import type { BookState, MboEvent, PriceHistory, SerialTrade } from '../../lib/types';
 import { applyEvent, cloneBook, createBook, getBestAsk, getBestBid } from '../../lib/book';
-import { BYTES_PER_EVENT, PRICE_SCALE, createCompactBuffer, getEvent, getTsNs } from '../../lib/compact-buffer';
+import { BYTES_PER_EVENT, createCompactBuffer, getEvent, getTsNs } from '../../lib/compact-buffer';
 import { encodeEvents, processL3Chunk } from './l3-processor';
 
 export interface L2DataChunk {
@@ -159,20 +159,22 @@ export function midPrints(buf: ArrayBuffer, book: BookState = createBook()): Ser
         applyEvent(book, getEvent(cb, i));
         if (i + 1 < cb.length && getTsNs(cb, i + 1) === ts) continue;
         const mid = midOf(book);
-        if (mid === last) continue;
+        if (sameMid(mid, last)) continue;
         last = mid;
         if (mid !== null) out.push({ ts, price: mid, size: 0, side: 'B' });
     }
     return out;
 }
 
-// in the buffers own units, so the same mid off different bid/ask pairs is the same float
 export function midOf(book: BookState): number | null {
     const bid = getBestBid(book);
     const ask = getBestAsk(book);
-    if (bid === null || ask === null) return null;
-    return (Math.round(bid * PRICE_SCALE) + Math.round(ask * PRICE_SCALE)) / (2 * PRICE_SCALE);
+    return bid === null || ask === null ? null : (bid + ask) / 2;
 }
+
+// the same mid off another bid/ask pair can be off in the last bits
+export const sameMid = (a: number | null, b: number | null) =>
+    a === b || (a !== null && b !== null && Math.abs(a - b) <= 1e-9 * Math.abs(a));
 
 // candles off midPrints, from index `from` on
 export function midBars(prints: readonly SerialTrade[], barNs: bigint, from = 0): OhlcvBar[] {

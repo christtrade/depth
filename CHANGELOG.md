@@ -37,6 +37,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   now carry `fpOptions`, what their footprintBars were built with.
 - **Breaking:** `DataEngine.rebuildFootprint(fpOptions)` drops the unused `barNs`. It looped until the
   stack blew, now it rebuilds the held footprints and sends them as a rehydrate load
+- l2/l3 prices were rounded to 2 decimals and sizes to whole numbers, so like fx at 5 decimals or crypto
+  alts and fractional crypto sizes came out wrong, and prices past ~21.4M overflowed. the heatmap rounded
+  its levels to 0.01 on top of that. **Breaking:** `compactBuf` events are 32 bytes, price and size
+  are float64 at bytes 8 and 16, ids at 24-30. 33% more memory at l2/l3, decode speed the same
+  (331k events in ~43 ms either way)
 
 ## [0.22.1] - 2026-11-02
 
