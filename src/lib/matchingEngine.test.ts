@@ -392,6 +392,16 @@ describe('l3 events handed over again', () => {
         }
     });
 
+    it('leaves a stop alone that only the book halfway through one update crossed', () => {
+        const { engine, positions } = placedAfterReplay();
+        engine.placeOrder({ side: 'long', type: 'stop', qty: 1, stopPrice: 102, symbol: 'TEST' });
+        engine.appendCompactBuf!(
+            bufOf([...held, ev(2n, 'A', 'A', 103, 3), ev(3n, 'C', 'A', 101, 2), ev(3n, 'A', 'A', 101.5, 4)]),
+        );
+        engine.seekTo(T0 + 4n * SEC);
+        assert.equal(positions.length, 0);
+    });
+
     it('fills a resting limit the ask comes down onto with no trade', () => {
         const { engine, positions } = placedAfterReplay();
         engine.appendCompactBuf!(bufOf([...held, ev(3n, 'C', 'B', 100, 1), ev(4n, 'A', 'A', 99, 3)]));

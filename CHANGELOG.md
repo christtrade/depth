@@ -45,6 +45,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - l3 resting limits and take profits never filled when the book moved onto them without a trade at
   their price, like when the queue ahead cancels and the ask drops onto your bid. they fill at their
   price now
+- l3 stops and resting limits went off the book halfway through an update, so when a feed sends a
+  timestamp's cancels before its adds a stop could fill on an ask that never showed. they check once
+  per timestamp now
 
 ## [0.22.1] - 2026-11-02
 

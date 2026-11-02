@@ -2721,14 +2721,18 @@ export function createL3MatchingEngine(
                         break;
                     }
                 }
+                let bid = bestBid;
+                let ask = bestAsk;
                 while (_processedUpToIdx < _cb.length) {
                     const ts = getTsNs(_cb, _processedUpToIdx);
                     if (ts > tNs) break;
-                    const bid = bestBid;
-                    const ask = bestAsk;
                     onMboEvent(getEvent(_cb, _processedUpToIdx), ts);
                     _processedUpToIdx++;
+                    // one timestamp is one book update, the book halfway through it never showed
+                    if (_processedUpToIdx < _cb.length && getTsNs(_cb, _processedUpToIdx) === ts) continue;
                     if (bestBid === bid && bestAsk === ask) continue;
+                    bid = bestBid;
+                    ask = bestAsk;
                     if (stops && bestBid !== null && bestAsk !== null) {
                         checkStopTriggers({ symbol, bid: bestBid, ask: bestAsk, ts: Number(ts) });
                     }
