@@ -9,8 +9,10 @@ export interface Forming {
     items: (TickEvent | MboEvent)[];
 }
 
-type Level = 'tick' | 'l3';
+type Level = 'tick' | 'l3' | 'l2';
 type Item = TickEvent | MboEvent;
+
+const raw = (level: string): level is Level => level === 'tick' || level === 'l3' || level === 'l2';
 
 const field = (level: Level) => (level === 'tick' ? 'ticks' : 'events');
 
@@ -34,7 +36,7 @@ function itemsOf(level: Level, response: BarResponse): Item[] | null {
 }
 
 export function formingOf(level: string, response: BarResponse, barNs: bigint): Forming | null {
-    if ((level !== 'tick' && level !== 'l3') || barNs <= 0n) return null;
+    if (!raw(level) || barNs <= 0n) return null;
     const items = itemsOf(level, response);
     if (!items?.length) return null;
     const last = tsOf(level, items[items.length - 1]);
@@ -50,7 +52,7 @@ export function narrowForming(
     forming: Forming | null,
     barNs: bigint,
 ): { forming: Forming; before: Item[] } | null {
-    if ((level !== 'tick' && level !== 'l3') || barNs <= 0n || !forming?.items.length) return null;
+    if (!raw(level) || barNs <= 0n || !forming?.items.length) return null;
     const items = forming.items;
     const last = tsOf(level, items[items.length - 1]);
     const bucket = last - (last % barNs);
@@ -69,7 +71,7 @@ export function joinForming(
     response: BarResponse,
     barNs: bigint,
 ): { response: BarResponse; trimFromNs: bigint | null } | null {
-    if (level !== 'tick' && level !== 'l3') return { response, trimFromNs: null };
+    if (!raw(level)) return { response, trimFromNs: null };
     const items = itemsOf(level, response);
     if (items === null) return { response, trimFromNs: null };
     if (!items.length) return null;

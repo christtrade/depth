@@ -11,6 +11,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - `SimulatedMarketAdapter` takes `dataLevel: 'l2'`: the l3 book as 10-level snapshots plus the same
   trades, `l2Trades: false` for the book alone.
+- l2 holds the whole book and not just the best bid/ask. bars, footprints, paging, live, timeframe
+  switches and the memory budget all work like l3 does. an l2 response can carry `ticks` next to
+  `l2Snapshots`, without them the bars are mid candles until the first trade
 
 ### Changed
 - **Breaking:** `processL2Chunk(snapshots, ticks, barNs, fpOptions?)` takes the trades and returns

@@ -5,10 +5,10 @@
 
 import type { L2Snapshot, OhlcvBar, TickEvent } from '../../interfaces/IDataAdapter';
 import type { FootprintBar, FootprintOptions } from '../../lib/types/footprint';
-import type { MboEvent, PriceHistory, SerialTrade } from '../../lib/types';
-import { applyEvent, createBook, getBestAsk, getBestBid } from '../../lib/book';
+import type { BookState, MboEvent, PriceHistory, SerialTrade } from '../../lib/types';
+import { applyEvent, cloneBook, createBook, getBestAsk, getBestBid } from '../../lib/book';
 import { BYTES_PER_EVENT, createCompactBuffer, getEvent, getTsNs } from '../../lib/compact-buffer';
-import { processL3Chunk } from './l3-processor';
+import { encodeEvents, processL3Chunk } from './l3-processor';
 
 export interface L2DataChunk {
     kind: 'l2';
@@ -23,6 +23,7 @@ export interface L2DataChunk {
     /** Unix ms */
     dataStart: number;
     dataEnd: number;
+    bookAt?: BookState;
 }
 
 /**
@@ -38,7 +39,15 @@ export function processL2Chunk(
     barNs: bigint,
     fpOptions: FootprintOptions = {},
 ): L2DataChunk {
-    const events = l2Events(snapshots, ticks);
+    return l2Chunk(l2Events(snapshots, ticks), barNs, fpOptions);
+}
+
+export function l2Chunk(
+    events: MboEvent[],
+    barNs: bigint,
+    fpOptions: FootprintOptions = {},
+    carry: { book?: BookState; snapAt?: bigint } = {},
+): L2DataChunk {
     if (events.length === 0)
         return {
             kind: 'l2',
@@ -50,20 +59,23 @@ export function processL2Chunk(
             dataStart: 0,
             dataEnd: 0,
         };
-    const c = processL3Chunk(events, barNs, fpOptions);
+    // processL3Chunk mutates the carried book
+    const before = carry.book && cloneBook(carry.book);
+    const c = processL3Chunk(events, barNs, fpOptions, carry);
     return {
         kind: 'l2',
         compactBuf: c.compactBuf,
         trades: c.trades,
         priceHistory: c.priceHistory,
         footprintBars: c.footprintBars,
-        midBars: barNs > 0n ? midBars(c.compactBuf, barNs) : [],
+        midBars: barNs > 0n ? midBars(c.compactBuf, barNs, before) : [],
         dataStart: c.dataStart,
         dataEnd: c.dataEnd,
+        ...(c.bookAt && { bookAt: c.bookAt }),
     };
 }
 
-function l2Events(snapshots: L2Snapshot[], ticks: TickEvent[]): MboEvent[] {
+export function l2Events(snapshots: L2Snapshot[], ticks: TickEvent[]): MboEvent[] {
     const out: MboEvent[] = [];
     const ids = new Map<string, number>();
     let nextId = 1;
@@ -74,7 +86,8 @@ function l2Events(snapshots: L2Snapshot[], ticks: TickEvent[]): MboEvent[] {
         return String(id);
     };
     const push = (ms: number, action: MboEvent['action'], side: MboEvent['side'], price: number | null, size: number, id: string) =>
-        out.push({ ts_event: new Date(ms).toISOString(), action, side, price, size, order_id: id, sequence: out.length, flags: 0 });
+        // seq 0, the seam dedupe keys on it and a re-sent chunk would number from 0 again
+        out.push({ ts_event: new Date(ms).toISOString(), action, side, price, size, order_id: id, sequence: 0, flags: 0 });
 
     const bids = new Map<number, number>();
     const asks = new Map<number, number>();
@@ -115,14 +128,25 @@ function l2Events(snapshots: L2Snapshot[], ticks: TickEvent[]): MboEvent[] {
     return out;
 }
 
+// R + the book as it stood, for a buffer cut at its head. reuses the books ids, since later
+// events in the same chunk still point at them
+export function anchorEvents(book: BookState, tsNs: bigint): ArrayBuffer {
+    const ts_event = new Date(Number(tsNs / 1_000_000n)).toISOString();
+    const ev = (action: MboEvent['action'], side: MboEvent['side'], price: number | null, size: number, order_id: string): MboEvent =>
+        ({ ts_event, action, side, price, size, order_id, sequence: 0, flags: 0 });
+    const out = [ev('R', 'N', null, 0, '0')];
+    for (const [id, o] of book.bids) out.push(ev('A', 'B', o.price, o.size, id));
+    for (const [id, o] of book.asks) out.push(ev('A', 'A', o.price, o.size, id));
+    return encodeEvents(out, new BigInt64Array(out.length).fill(tsNs));
+}
+
 // candles off the mid of the book `buf` replays to (vol 0)
 // a side left emtpy skips that moment
-export function midBars(buf: ArrayBuffer, barNs: bigint): OhlcvBar[] {
+export function midBars(buf: ArrayBuffer, barNs: bigint, book: BookState = createBook()): OhlcvBar[] {
     const cb = createCompactBuffer(0);
     cb._buf = buf;
     cb._view = new DataView(buf);
     cb.length = cb.capacity = buf.byteLength / BYTES_PER_EVENT;
-    const book = createBook();
     const out: OhlcvBar[] = [];
     for (let i = 0; i < cb.length; i++) {
         const ts = getTsNs(cb, i);

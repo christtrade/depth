@@ -382,9 +382,13 @@ export interface BarResponse {
      * of the synthetic interpolation fallback.
      */
     supplementalBars?: SupplementalBarSet[];
-    /** Tick events - populate for dataLevel === 'tick' */
+    /** Tick events - populate for data level 'tick', and at 'l2' for a feed with trades */
     ticks?: TickEvent[];
-    /** L2 depth snapshots - populate for dataLevel === 'l2' */
+    /**
+     * L2 depth snapshots - populate for data level 'l2'. Send one whenever the book changes,
+     * each the full depth you have. Without `ticks` the bars are candles off the mid, volume 0,
+     * until the first trade comes.
+     */
     l2Snapshots?: L2Snapshot[];
     /**
      * Whether there's data past this range in the request's direction: older for

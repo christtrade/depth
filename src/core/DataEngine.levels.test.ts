@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { describe, it as baseIt } from 'node:test';
+import { describe, it } from 'node:test';
 
 import { DataEngine } from './DataEngine';
 import { ChartState, type ChartStateShape } from './ChartState';
@@ -206,13 +206,9 @@ function assertBookIs(p: any, symbol: string, fromMs: number, toMs: number) {
 }
 
 const firstMs = (p: any) => Number(p.trades[0].ts / 1_000_000n);
-const L2_TODO = 'l2 plan steps 3-4';
 
 for (const level of ['tick', 'l3', 'l2'] as const) {
     describe(`${level} level`, () => {
-        // l2 is the spec until the engine catches up, so it reports without failing the run
-        const it = (name: string, fn: () => Promise<void>) =>
-            level === 'l2' ? baseIt(name, { todo: L2_TODO }, fn) : baseIt(name, fn);
         it('loads the initial window', async () => {
             const { de, next } = levelEngine(level);
             const loaded = next('data:load');
@@ -335,6 +331,7 @@ for (const level of ['tick', 'l3', 'l2'] as const) {
             assert.ok(back < 60 && back >= 20, `kept ${back} min back`);
             assertTradesAre(p, 'NQ', p.dataStart, T0);
             assertEventsAre(p, 'NQ', p.dataStart, T0);
+            assertBookIs(p, 'NQ', p.dataStart, T0);
             assertFootprintsClean(p, MIN);
 
             const edge = Math.floor(p.dataStart / MIN_MS) * MIN_MS;
@@ -344,6 +341,7 @@ for (const level of ['tick', 'l3', 'l2'] as const) {
             assert.equal(fetches.at(-1)!.toMs, edge, 'from the new edge');
             assertTradesAre(q, 'NQ', firstMs(q), T0);
             assertEventsAre(q, 'NQ', q.dataStart, T0);
+            assertBookIs(q, 'NQ', q.dataStart, T0);
             assertFootprintsClean(q, MIN);
         });
 
@@ -368,6 +366,7 @@ for (const level of ['tick', 'l3', 'l2'] as const) {
             assert.ok(end < T0 - HOUR_MS, `kept up to ${(T0 - end) / MIN_MS} min back`);
             assertTradesAre(p, 'NQ', p.dataStart, end);
             assertEventsAre(p, 'NQ', p.dataStart, end);
+            assertBookIs(p, 'NQ', p.dataStart, end);
 
             const appended = next('data:append');
             bus.emit('data:request-forward', { viewMax: nsOf(end + 10 * MIN_MS), symbol: 'NQ' });
@@ -376,6 +375,7 @@ for (const level of ['tick', 'l3', 'l2'] as const) {
             assert.equal(fetched.fromMs, end, 'from the new edge');
             assertTradesAre(q, 'NQ', p.dataStart, fetched.toMs);
             assertEventsAre(q, 'NQ', p.dataStart, fetched.toMs);
+            assertBookIs(q, 'NQ', p.dataStart, fetched.toMs);
             assertFootprintsClean(q, MIN);
             assertBboIsOnePass(q, p.dataStart, fetched.toMs);
         });
@@ -597,9 +597,25 @@ function assertMidBars(p: any, fromMs: number, toMs: number) {
     for (const b of bars) assert.equal(b.volume, 0);
 }
 
-describe('l2 level, book only', () => {
-    const it = (name: string, fn: () => Promise<void>) => baseIt(name, { todo: L2_TODO }, fn);
+describe('l2 level, bar source', () => {
+    it('a feed with trades keeps trade bars through a chunk with none', async () => {
+        const { de, next, announce, subs, settle } = levelEngine('l2');
+        const loaded = next('data:load');
+        await de.load('NQ');
+        await loaded;
+        announce(MIN, T0 - 20 * MIN_MS, T0);
+        await settle();
+        const appended = next('data:append');
+        const sub = subs.filter((s) => s.open).at(-1)!;
+        sub.onBar({ events: [], l2Snapshots: simL2Snapshots(priceOf('NQ'), T0, T0 + 30_000), hasMore: false } as BarResponse);
+        const p = await appended;
+        const bars = p.bars.toArray();
+        assert.equal(bars.length, 30);
+        assert.ok(bars.every((b: any) => b.volume > 0), 'still the trade bars, not mid candles');
+    });
+});
 
+describe('l2 level, book only', () => {
     it('loads mid candles and the book, no trades', async () => {
         const { de, next } = levelEngine('l2-book');
         const loaded = next('data:load');

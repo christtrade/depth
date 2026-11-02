@@ -7,6 +7,8 @@ import { BarStore } from './BarStore';
 import type {
     IDataAdapter,
     BarResponse,
+    FetchRequest,
+    RealtimeRequest,
     SymbolInfo,
     DataLevel,
     OhlcvBar,
@@ -33,7 +35,7 @@ import {
     type OhlcvDataChunk,
 } from './processing/ohlcv-processor';
 import { processTickChunk, type TickDataChunk } from './processing/tick-processor';
-import { processL2Chunk, type L2DataChunk } from './processing/l2-processor';
+import { anchorEvents, l2Chunk, l2Events, midBars, type L2DataChunk } from './processing/l2-processor';
 import { type DataChunk, isEmptyChunk } from './processing/data-chunk';
 import { type Forming, formingOf, joinForming, narrowForming } from './processing/forming';
 import { applyEvent, cloneBook } from '../lib/book';
@@ -245,15 +247,48 @@ function _chunkToMasterFields(
         case 'l2':
             return {
                 dataLevel: 'l2',
-                compactBuf: new ArrayBuffer(0),
-                trades: [],
+                compactBuf: chunk.compactBuf,
+                trades: chunk.trades,
                 priceHistory: chunk.priceHistory,
-                footprintBars: [],
-                ohlcvBars: new BarStore(),
+                footprintBars: chunk.footprintBars,
+                ohlcvBars: chunk.trades.length
+                    ? _deriveOhlcvFromFootprint(chunk.footprintBars)
+                    : BarStore.from(chunk.midBars),
                 dataStart: chunk.dataStart,
                 dataEnd: chunk.dataEnd,
             };
     }
+}
+
+// l2 takes the l3 paths as its held as l3 events
+const evented = (level: DataLevel | undefined) => level === 'l3' || level === 'l2';
+
+function l2ToEvents(r: BarResponse): BarResponse {
+    if (r._preProcessed || (!r.l2Snapshots && !r.ticks)) return r;
+    return { ...r, events: l2Events(r.l2Snapshots ?? [], r.ticks ?? []), l2Snapshots: undefined, ticks: undefined };
+}
+
+const asEvents = new WeakMap<IDataAdapter, IDataAdapter>();
+function l2AsEvents(a: IDataAdapter): IDataAdapter {
+    let w = asEvents.get(a);
+    if (w) return w;
+    w = new Proxy(a, {
+        get(t, k) {
+            const v = Reflect.get(t, k, t);
+            if (typeof v !== 'function') return v;
+            if (k === 'fetchBars')
+                return async (req: FetchRequest) => {
+                    const r: BarResponse = await v.call(t, req);
+                    return req.symbolInfo.dataLevel === 'l2' ? l2ToEvents(r) : r;
+                };
+            if (k === 'subscribeRealtime')
+                return (req: RealtimeRequest, onBar: (r: BarResponse) => void) =>
+                    v.call(t, req, req.symbolInfo.dataLevel === 'l2' ? (r: BarResponse) => onBar(l2ToEvents(r)) : onBar);
+            return v.bind(t);
+        },
+    });
+    asEvents.set(a, w);
+    return w;
 }
 
 /** Pan headroom either side of the pane window a switch loads, in bars. */
@@ -263,8 +298,7 @@ const SWITCH_FALLBACK_BARS = 1000n;
 const DEFAULT_MAX_BYTES = 256 * 2 ** 20;
 /** A BarStore row without bid/ask. */
 const BAR_BYTES = 48;
-// l2 has its own track
-const BUDGETED = new Set<DataLevel>(['ohlcv', 'tick', 'l3']);
+const BUDGETED = new Set<DataLevel>(['ohlcv', 'tick', 'l3', 'l2']);
 
 // measured in node: a trade object ~96 B, a bid/ask point ~88 B, a footprint level ~70 B
 function heldBytes(m: MasterBuffer): number {
@@ -312,6 +346,8 @@ interface SymbolState {
     forming: Forming | null;
     /** The book just before `forming`s first event so the next chunk doesnt start empty (l3)*/
     formingBook: BookState | null;
+    /** l2: the feed sent a trade. sticky, so a quiet minute doesnt flip the bars back to the mid */
+    hasTrades: boolean;
 }
 
 // a direction whose last fetch failed: no new one b4 `at` and one `timer` to try again
@@ -480,6 +516,7 @@ export class DataEngine {
                 retry: { backward: noRetry(), forward: noRetry() },
                 forming: null,
                 formingBook: null,
+                hasTrades: false,
             };
             this._states.set(symbol, st);
         }
@@ -513,7 +550,8 @@ export class DataEngine {
     // adapter. a claimed symbol never reaches the host adapter at all, so it
     // gets the same windowing, prefetch, refinement and playback as any other
     private _adapterFor(symbol: string): IDataAdapter | null {
-        return this.config.plugins?.adapterFor(symbol) ?? this.adapter;
+        const a = this.config.plugins?.adapterFor(symbol) ?? this.adapter;
+        return a && l2AsEvents(a);
     }
 
     // called via the chart:set-symbol subscription, not meant as a direct call
@@ -917,9 +955,9 @@ export class DataEngine {
         this.fpOptions = fpOptions;
         for (const st of this._states.values()) {
             const m = st.master;
-            if (!m || (m.dataLevel !== 'l3' && m.dataLevel !== 'tick')) continue;
+            if (!m || (!evented(m.dataLevel) && m.dataLevel !== 'tick')) continue;
             m.footprintBars = footprintFromTrades(m.trades, m.barNs, fpOptions);
-            m.ohlcvBars = _deriveOhlcvFromFootprint(m.footprintBars);
+            if (!this._midBars(st)) m.ohlcvBars = _deriveOhlcvFromFootprint(m.footprintBars);
             this._emitLoad(st, /* rehydrate */ true).catch((err) =>
                 console.error('[DataEngine] rebuildFootprint _emitLoad failed', err),
             );
@@ -993,7 +1031,7 @@ export class DataEngine {
         const { dataLevel, trades, footprintBars, priceHistory, ohlcvBars: bars } = master;
 
         const ticks: TickEvent[] =
-            dataLevel === 'l3' || dataLevel === 'tick' ? _deriveTicksFromTrades(trades) : [];
+            evented(dataLevel) || dataLevel === 'tick' ? _deriveTicksFromTrades(trades) : [];
 
         return {
             dataLevel,
@@ -1591,6 +1629,7 @@ export class DataEngine {
             const pre = response._preProcessed as any;
             // older pre-processed payloads dont carry a kind
             if (!pre.kind) return { kind: 'l3', ...pre } as L3DataChunk;
+            if (pre.kind === 'l2' && pre.trades?.length) st.hasTrades = true;
             return pre as DataChunk;
         }
 
@@ -1608,8 +1647,11 @@ export class DataEngine {
                 return processOhlcvChunk(response.ohlcvBars ?? [], barNs);
             case 'tick':
                 return processTickChunk(response.ticks ?? [], barNs, this.fpOptions);
-            case 'l2':
-                return processL2Chunk(response.l2Snapshots ?? [], response.ticks ?? [], barNs, this.fpOptions);
+            case 'l2': {
+                const c = l2Chunk(response.events ?? [], barNs, this.fpOptions, carry);
+                if (c.trades.length) st.hasTrades = true;
+                return c;
+            }
             default:
                 return processL3Chunk(response.events ?? [], barNs, this.fpOptions, carry);
         }
@@ -1646,7 +1688,7 @@ export class DataEngine {
     // tick/l3 bucket at what the store is at, the shared timeframe only moves after the pane announces
     private _chunkBarNs(st: SymbolState, fetchBarNs = st.fetchBarNs): bigint {
         const level = st.symbolInfo?.dataLevel;
-        if ((level === 'tick' || level === 'l3') && fetchBarNs > 0n) return fetchBarNs;
+        if ((level === 'tick' || evented(level)) && fetchBarNs > 0n) return fetchBarNs;
         return this.state.get('timeframe').barNs;
     }
 
@@ -1660,7 +1702,7 @@ export class DataEngine {
         if (!joined) return false;
         const next = formingOf(level, joined.response, barNs);
         const processed = this._process(joined.response, st, {
-            book: level === 'l3' ? this._bookBefore(st, joined.trimFromNs) : undefined,
+            book: evented(level) ? this._bookBefore(st, joined.trimFromNs) : undefined,
             snapAt: next?.bucket,
         });
         if (!processed || isEmptyChunk(processed)) return false;
@@ -1691,17 +1733,18 @@ export class DataEngine {
 
         switch (dl) {
             case 'l3':
+            case 'l2':
             case 'tick': {
                 // one copy each
                 // consumers hold the old ones so nothing is changed in place
-                const c = chunk as L3DataChunk | TickDataChunk;
+                const c = chunk as L3DataChunk | L2DataChunk | TickDataChunk;
                 const cut = <T extends { ts: bigint }>(a: T[]) => trimFromNs === null ? a.length : firstTsAtOrAfter(a, trimFromNs);
 
                 master.trades = _joined(master.trades, cut(master.trades), c.trades);
                 master.priceHistory = _joined(master.priceHistory, cut(master.priceHistory), c.priceHistory);
                 master.footprintBars = _joined(master.footprintBars, cut(master.footprintBars), c.footprintBars);
 
-                if (dl === 'l3') {
+                if (evented(dl)) {
                     const keep =
                         trimFromNs === null
                             ? master.compactBuf.byteLength
@@ -1712,7 +1755,16 @@ export class DataEngine {
                     merged.set(new Uint8Array(add), keep);
                     master.compactBuf = merged.buffer;
                 }
-                master.ohlcvBars = _deriveOhlcvFromFootprint(master.footprintBars);
+                if (this._midBars(st)) {
+                    // replaying the whole buffer every live chunk is o(n), the chunk rebuilt from its first bar on
+                    const mid = (c as L2DataChunk).midBars;
+                    if (mid.length) {
+                        const bars = master.ohlcvBars.clone();
+                        bars.replaceRange(mid[0].time, Infinity, []);
+                        bars.append(mid);
+                        master.ohlcvBars = bars;
+                    }
+                } else master.ohlcvBars = _deriveOhlcvFromFootprint(master.footprintBars);
                 master.dataEnd = c.dataEnd > 0 ? c.dataEnd : master.dataEnd;
                 break;
             }
@@ -1747,17 +1799,23 @@ export class DataEngine {
                 }
                 break;
             }
-            case 'l2': {
-                const c = chunk as L2DataChunk;
-                master.priceHistory = master.priceHistory.concat(c.priceHistory);
-                master.dataEnd = c.dataEnd > 0 ? c.dataEnd : master.dataEnd;
-                break;
-            }
         }
 
         master.barNs = this._masterBarNs(st);
         this._syncShared();
         this._scheduleBudget();
+    }
+
+    private _midBars(st: SymbolState): boolean {
+        return st.master?.dataLevel === 'l2' && !st.hasTrades;
+    }
+
+    // o(n), only where the whole master changes anyway
+    private _rebar(st: SymbolState, barNs: bigint): void {
+        const m = st.master!;
+        m.ohlcvBars = this._midBars(st)
+            ? BarStore.from(midBars(m.compactBuf, barNs))
+            : _deriveOhlcvFromFootprint(m.footprintBars);
     }
 
     private _prependMaster(st: SymbolState, chunk: DataChunk): void {
@@ -1766,8 +1824,9 @@ export class DataEngine {
         const dl = master.dataLevel;
 
         switch (dl) {
-            case 'l3': {
-                const c = chunk as L3DataChunk;
+            case 'l3':
+            case 'l2': {
+                const c = chunk as L3DataChunk | L2DataChunk;
                 // what was held started from an empty book
                 const held = carryBookInto(
                     c.bookAt ?? bookAfter(c.compactBuf),
@@ -1789,7 +1848,7 @@ export class DataEngine {
                     this._masterBarNs(st),
                     this.fpOptions,
                 );
-                master.ohlcvBars = _deriveOhlcvFromFootprint(master.footprintBars);
+                this._rebar(st, this._masterBarNs(st));
                 master.dataStart = c.dataStart > 0 ? c.dataStart : master.dataStart;
                 break;
             }
@@ -1811,12 +1870,6 @@ export class DataEngine {
             case 'ohlcv': {
                 const c = chunk as OhlcvDataChunk;
                 master.ohlcvBars.prepend(c.ohlcvBars);
-                master.dataStart = c.dataStart > 0 ? c.dataStart : master.dataStart;
-                break;
-            }
-            case 'l2': {
-                const c = chunk as L2DataChunk;
-                master.priceHistory = c.priceHistory.concat(master.priceHistory);
                 master.dataStart = c.dataStart > 0 ? c.dataStart : master.dataStart;
                 break;
             }
@@ -2214,18 +2267,29 @@ export class DataEngine {
         m.trades = cut(m.trades);
         m.priceHistory = cut(m.priceHistory);
         m.footprintBars = cut(m.footprintBars);
-        if (m.dataLevel === 'l3') m.compactBuf = eventsBetween(m.compactBuf, fromNs, toNs);
+        if (evented(m.dataLevel)) {
+            const kept = eventsBetween(m.compactBuf, fromNs, toNs);
+            // l2 has no R until the next chunk, so without the book in front nothing draws up to there
+            if (m.dataLevel === 'l2' && fromNs !== null && kept.byteLength > 0) {
+                const at = new DataView(kept).getBigInt64(0, true);
+                const anchor = anchorEvents(bookAfter(eventsBetween(m.compactBuf, null, fromNs)), at);
+                const joined = new Uint8Array(anchor.byteLength + kept.byteLength);
+                joined.set(new Uint8Array(anchor), 0);
+                joined.set(new Uint8Array(kept), anchor.byteLength);
+                m.compactBuf = joined.buffer;
+            } else m.compactBuf = kept;
+        }
 
         const ts = (i: number) =>
-            m.dataLevel === 'l3' && m.compactBuf.byteLength > 0
+            evented(m.dataLevel) && m.compactBuf.byteLength > 0
                 ? Number(new DataView(m.compactBuf).getBigInt64(i * BYTES_PER_EVENT, true) / 1_000_000n)
                 : Number(m.trades.at(i)!.ts / 1_000_000n);
         if (toNs !== null) {
             // the next page starts a fresh bucket on the book thats left
             st.forming = null;
-            st.formingBook = m.dataLevel === 'l3' ? bookAfter(m.compactBuf) : null;
+            st.formingBook = evented(m.dataLevel) ? bookAfter(m.compactBuf) : null;
         }
-        const n = m.dataLevel === 'l3' ? m.compactBuf.byteLength / BYTES_PER_EVENT : m.trades.length;
+        const n = evented(m.dataLevel) ? m.compactBuf.byteLength / BYTES_PER_EVENT : m.trades.length;
         if (n === 0) return;
         if (fromNs !== null) m.dataStart = ts(0);
         if (toNs !== null) m.dataEnd = ts(n - 1);
@@ -2323,7 +2387,7 @@ export class DataEngine {
         const narrowed = narrowForming(level, st.forming, barNs);
         if (!narrowed) return false;
         let book: BookState | null = null;
-        if (level === 'l3') {
+        if (evented(level)) {
             if (!st.formingBook) return false;
             book = cloneBook(st.formingBook);
             for (const e of narrowed.before) applyEvent(book, e as MboEvent);
@@ -2336,7 +2400,7 @@ export class DataEngine {
         st.forming = narrowed.forming;
         st.formingBook = book;
         master.footprintBars = footprintFromTrades(master.trades, barNs, this.fpOptions);
-        master.ohlcvBars = _deriveOhlcvFromFootprint(master.footprintBars);
+        this._rebar(st, barNs);
         master.barNs = barNs;
         this._syncShared();
         this._syncRealtime();
