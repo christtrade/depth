@@ -14,7 +14,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [20, 22]
+        # 20 cant glob test files and is eol
+        node: [22, 24]
 
     steps:
       - uses: actions/checkout@v4
