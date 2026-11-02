@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import { DataEngine } from './DataEngine';
 import { ChartState, type ChartStateShape } from './ChartState';
 import { TypedEventBus } from './TypedEventBus';
-import type { BarResponse, IDataAdapter } from '../interfaces/IDataAdapter';
+import type { FetchResponse, IDataAdapter } from '../interfaces/IDataAdapter';
 import { installInlineSliceWorker } from '../lib/inline-slice-worker';
 import { simL2Snapshots, simMboEvents, simTicks } from '../lib/sim-levels';
 import { applyEvent, createBook } from '../lib/book';
@@ -26,12 +26,12 @@ type Level = 'tick' | 'l3' | 'l2' | 'l2-book';
 const priceOf = (symbol: string) => (ms: number) =>
     (symbol === 'NQ' ? 100 : 50) + 3 * Math.sin(ms / 2.7e6) + 0.4 * Math.sin(ms / 7_000);
 
-function respond(level: Level, symbol: string, fromMs: number, toMs: number): Partial<BarResponse> {
+function respond(level: Level, symbol: string, fromMs: number, toMs: number): Partial<FetchResponse> {
     const price = priceOf(symbol);
-    if (level === 'tick') return { events: [], ticks: simTicks(price, fromMs, toMs) };
-    if (level === 'l2') return { events: [], l2Snapshots: simL2Snapshots(price, fromMs, toMs), ticks: simTicks(price, fromMs, toMs) };
-    if (level === 'l2-book') return { events: [], l2Snapshots: simL2Snapshots(price, fromMs, toMs) };
-    return { events: simMboEvents(price, fromMs, toMs) as never };
+    if (level === 'tick') return { ticks: simTicks(price, fromMs, toMs) };
+    if (level === 'l2') return { depth: simL2Snapshots(price, fromMs, toMs), ticks: simTicks(price, fromMs, toMs) };
+    if (level === 'l2-book') return { depth: simL2Snapshots(price, fromMs, toMs) };
+    return { mbo: simMboEvents(price, fromMs, toMs) as never };
 }
 
 const tfOf = (barNs: bigint) => ({ label: String(barNs), barNs, defaultBars: 100, isPreset: false });
@@ -50,7 +50,7 @@ function levelEngine(
 ) {
     let edge = opts.liveEdge ?? T0;
     const fetches: { direction: string; fromMs: number; toMs: number }[] = [];
-    const subs: { symbol: string; onBar: (r: BarResponse) => void; open: boolean }[] = [];
+    const subs: { symbol: string; onData: (r: FetchResponse) => void; open: boolean }[] = [];
     const bus = new TypedEventBus();
     const tf = tfOf(opts.barNs ?? MIN);
     const state = new ChartState({ symbol: 'NQ', timeframe: tf } as unknown as ChartStateShape);
@@ -72,11 +72,11 @@ function levelEngine(
             const printTo = Math.max(fromMs, Math.min(toMs, opts.quietFrom ?? toMs));
             const r = respond(level, req.symbolInfo.symbol, fromMs, printTo);
             if (opts.preProcessed && req.direction === 'backward')
-                return { events: [], _preProcessed: processL3Chunk(r.events as never, tf.barNs), hasMore };
+                return { _preProcessed: processL3Chunk(r.mbo as never, tf.barNs), hasMore };
             return { ...r, hasMore };
         },
-        subscribeRealtime: (req: any, onBar: any) => {
-            const sub = { symbol: req.symbolInfo.symbol, onBar, open: true };
+        subscribeRealtime: (req: any, onData: any) => {
+            const sub = { symbol: req.symbolInfo.symbol, onData, open: true };
             subs.push(sub);
             return () => (sub.open = false);
         },
@@ -107,7 +107,7 @@ function levelEngine(
         edge = toMs;
         const sub = subs.filter((s) => s.open && s.symbol === symbol).at(-1);
         assert.ok(sub, `a live feed for ${symbol}`);
-        sub.onBar({ ...respond(level, symbol, fromMs, toMs), hasMore: false } as BarResponse);
+        sub.onData({ ...respond(level, symbol, fromMs, toMs), hasMore: false } as FetchResponse);
     };
 
     const settle = () => new Promise((r) => setTimeout(r, 30));
@@ -607,7 +607,7 @@ describe('l2 level, bar source', () => {
         await settle();
         const appended = next('data:append');
         const sub = subs.filter((s) => s.open).at(-1)!;
-        sub.onBar({ events: [], l2Snapshots: simL2Snapshots(priceOf('NQ'), T0, T0 + 30_000), hasMore: false } as BarResponse);
+        sub.onData({ depth: simL2Snapshots(priceOf('NQ'), T0, T0 + 30_000), hasMore: false } as FetchResponse);
         const p = await appended;
         const bars = p.bars.toArray();
         assert.equal(bars.length, 30);

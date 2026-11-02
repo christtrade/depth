@@ -346,7 +346,7 @@ export { buildFootprint } from '../lib/types/footprint';
 export type { FootprintLevel, FootprintMode, PriceRange } from '../lib/types/footprint';
 export type {
     BarPreviewResponse,
-    BarResponse,
+    FetchResponse,
     DataAdapterErrorCode,
     EvictedBars,
     FetchRequest,

@@ -371,11 +371,9 @@ export interface SupplementalBarSet {
     bars: OhlcvBar[];
 }
 
-export interface BarResponse {
-    /** Raw MBO events (L3). Leave empty for other data levels or _preProcessed. */
-    events: import('../lib/types').MboEvent[];
+export interface FetchResponse {
     /** OHLCV bars - populate for dataLevel === 'ohlcv' */
-    ohlcvBars?: OhlcvBar[];
+    bars?: OhlcvBar[];
     /**
      * Optional finer-resolution bars for the same time range.
      * The engine uses these to produce smoother playback via real prices instead
@@ -389,7 +387,9 @@ export interface BarResponse {
      * each the full depth you have. Without `ticks` the bars are candles off the mid, volume 0,
      * until the first trade comes.
      */
-    l2Snapshots?: L2Snapshot[];
+    depth?: L2Snapshot[];
+    /** Raw MBO events - populate for data level 'l3' */
+    mbo?: import('../lib/types').MboEvent[];
     /**
      * Whether there's data past this range in the request's direction: older for
      * 'initial' and 'backward', newer for 'forward'. False stops paging that way
@@ -510,7 +510,7 @@ export interface IDataAdapter {
      * right set of data. Building your own caching system is recommended,
      * as this function might get called a lot.
     */
-    fetchBars(request: FetchRequest): Promise<BarResponse>;
+    fetchBars(request: FetchRequest): Promise<FetchResponse>;
     /**
      * The same as `fetchBars()` - if this function is defined, it'll get
      * called at the same time as fetchBars, but the returned data here will
@@ -521,13 +521,13 @@ export interface IDataAdapter {
     */
     fetchPreview?(request: FetchRequest): Promise<BarPreviewResponse>;
     /**
-     * Stream updates to the chart through `onBar` and return an unsubscribe.
+     * Stream updates to the chart through `onData` and return an unsubscribe.
      * The engine subscribes again when the symbol or the resolution in `request`
      * changes, making sure to unsubscribe the old one first.
      */
     subscribeRealtime?(
         request: RealtimeRequest,
-        onBar: (bar: BarResponse) => void,
+        onData: (data: FetchResponse) => void,
     ): () => void;
     //TODO: add descriptions for these 2 too
     connect?(): Promise<void>;

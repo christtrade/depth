@@ -1,6 +1,6 @@
 import {
     DataAdapterError,
-    type BarResponse,
+    type FetchResponse,
     type DataAdapterErrorCode,
     type FetchRequest,
     type IDataAdapter,
@@ -72,7 +72,7 @@ export class HarnessAdapter implements IDataAdapter {
         private readonly level: Level = 'ohlcv',
         private readonly l2Trades = true,
     ) {
-        if (live) this.subscribeRealtime = (req, onBar) => this.stream(req, onBar);
+        if (live) this.subscribeRealtime = (req, onData) => this.stream(req, onData);
     }
 
     private levelOf(symbol: string): Level {
@@ -80,17 +80,16 @@ export class HarnessAdapter implements IDataAdapter {
         return s === 'l3' || s === 'l2' || s === 'tick' || s === 'ohlcv' ? s : this.level;
     }
 
-    private events(level: string, from: number, to: number): BarResponse {
+    private events(level: string, from: number, to: number): FetchResponse {
         const o = { slotMs: 250 };
-        if (level === 'tick') return { events: [], ticks: simTicks(price, from, to, o), hasMore: false };
+        if (level === 'tick') return { ticks: simTicks(price, from, to, o), hasMore: false };
         if (level === 'l2')
             return {
-                events: [],
-                l2Snapshots: simL2Snapshots(price, from, to, o),
+                depth: simL2Snapshots(price, from, to, o),
                 ...(this.l2Trades && { ticks: simTicks(price, from, to, o) }),
                 hasMore: false,
             };
-        return { events: simMboEvents(price, from, to, o), hasMore: false };
+        return { mbo: simMboEvents(price, from, to, o), hasMore: false };
     }
 
     resolveSymbol(symbol = SYMBOL.symbol): SymbolInfo {
@@ -101,7 +100,7 @@ export class HarnessAdapter implements IDataAdapter {
         return [this.resolveSymbol()];
     }
 
-    async fetchBars({ symbolInfo, range, timeframe, direction }: FetchRequest): Promise<BarResponse> {
+    async fetchBars({ symbolInfo, range, timeframe, direction }: FetchRequest): Promise<FetchResponse> {
         const level = this.levelOf(symbolInfo.symbol);
         const f = this.faults;
         if (f.slowMs) await new Promise((r) => setTimeout(r, f.slowMs * (0.5 + Math.random())));
@@ -122,10 +121,10 @@ export class HarnessAdapter implements IDataAdapter {
         const bars: OhlcvBar[] = [];
         for (let t = from; t < to; t += durMs) bars.push(bar(t, durMs));
         const hasMore = direction === 'forward' ? range.toMs < end : range.fromMs > this.startMs;
-        return { events: [], ohlcvBars: bars, hasMore };
+        return { bars, hasMore };
     }
 
-    private stream(req: RealtimeRequest, onBar: (bar: BarResponse) => void): () => void {
+    private stream(req: RealtimeRequest, onData: (data: FetchResponse) => void): () => void {
         let next = Number(req.since / 1_000_000n);
         const level = this.levelOf(req.symbolInfo.symbol);
         if (level !== 'ohlcv') {
@@ -133,7 +132,7 @@ export class HarnessAdapter implements IDataAdapter {
                 const now = Date.now();
                 const chunk = this.events(level, next, now);
                 next = now;
-                if (chunk.events.length || chunk.ticks?.length || chunk.l2Snapshots?.length) onBar(chunk);
+                if (chunk.mbo?.length || chunk.ticks?.length || chunk.depth?.length) onData(chunk);
             }, 250);
             return () => clearInterval(id);
         }
@@ -143,7 +142,7 @@ export class HarnessAdapter implements IDataAdapter {
             const bars: OhlcvBar[] = [];
             for (let t = next; t <= now; t += durMs) bars.push(bar(t, durMs));
             if (bars.length > 1) next = bars[bars.length - 1].time;
-            if (bars.length) onBar({ events: [], ohlcvBars: bars, hasMore: false });
+            if (bars.length) onData({ bars, hasMore: false });
         }, 250);
         return () => clearInterval(id);
     }

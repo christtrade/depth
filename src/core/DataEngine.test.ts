@@ -37,7 +37,7 @@ function engine(source?: Partial<PluginDataSource>) {
     if (source) {
         plugins.register({
             prefix: 'X:',
-            fetchBars: async () => ({ events: [], hasMore: false }),
+            fetchBars: async () => ({ hasMore: false }),
             ...source,
         });
     }
@@ -106,7 +106,7 @@ function tfEngine(opts: {
     const fetches: Fetch[] = [];
     // copied out, since the view goes stale once the engine moves on
     const evicted: { symbol: string; barNs: bigint; fromNs: bigint; toNs: bigint; times: number[] }[] = [];
-    const subs: { req: any; onBar: (bar: any) => void; open: boolean }[] = [];
+    const subs: { req: any; onData: (bar: any) => void; open: boolean }[] = [];
     const bus = new TypedEventBus();
     const tf = tfOf(opts.timeframe);
     const state = new ChartState({ symbol: 'NQ', timeframe: tf } as unknown as ChartStateShape);
@@ -136,7 +136,7 @@ function tfEngine(opts: {
             }
 
             if (opts.barren?.includes(req.timeframe.barNs)) {
-                return { events: [], ohlcvBars: [], hasMore: false };
+                return { bars: [], hasMore: false };
             }
 
             const stepMs = Number(req.timeframe.barNs / 1_000_000n);
@@ -150,10 +150,10 @@ function tfEngine(opts: {
             }
             // loadTo is the live edge
             const hasMore = req.direction === 'forward' ? toMs < opts.loadTo : true;
-            return { events: [], ohlcvBars: bars, hasMore };
+            return { bars, hasMore };
         },
-        subscribeRealtime: (req: any, onBar: any) => {
-            const sub = { req, onBar, open: true };
+        subscribeRealtime: (req: any, onData: any) => {
+            const sub = { req, onData, open: true };
             subs.push(sub);
             return () => (sub.open = false);
         },
@@ -592,7 +592,7 @@ describe('realtime', () => {
 
         // an hourly bar still in flight from the old feed
         const before = de.getSnapshot().bars.length;
-        subs[0].onBar({ events: [], ohlcvBars: [{ time: T2026, open: 9, high: 9, low: 9, close: 9, volume: 1 }], hasMore: false });
+        subs[0].onData({ bars: [{ time: T2026, open: 9, high: 9, low: 9, close: 9, volume: 1 }], hasMore: false });
         assert.equal(de.getSnapshot().bars.length, before, 'stale bar ignored');
     });
 });
@@ -670,7 +670,7 @@ describe('data budget', () => {
         const feed = subs.at(-1)!;
         for (let i = 0; i < 20; i++) {
             const time = T2026 + i * 60_000;
-            feed.onBar({ events: [], ohlcvBars: [{ time, open: 1, high: 2, low: 0.5, close: 1.5, volume: 1 }], hasMore: false });
+            feed.onData({ bars: [{ time, open: 1, high: 2, low: 0.5, close: 1.5, volume: 1 }], hasMore: false });
         }
         await settle();
         assert.equal(replaced.n, 1);
@@ -1091,7 +1091,7 @@ describe('routing a claimed symbol', () => {
             resolveSymbol: () => info('X:ONE'),
             fetchBars: async (req) => {
                 seen.push(req.direction);
-                return { events: [], ohlcvBars: [], hasMore: true };
+                return { bars: [], hasMore: true };
             },
         });
 
@@ -1111,8 +1111,7 @@ describe('routing a claimed symbol', () => {
                 directions.push(req.direction);
                 const fromMs = Number(req.range.fromNs / 1_000_000n);
                 return {
-                    events: [],
-                    ohlcvBars: [
+                    bars: [
                         { time: fromMs, open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 },
                     ],
                     hasMore: true,
@@ -1144,8 +1143,7 @@ describe('routing a claimed symbol', () => {
             fetchBars: async (req) => {
                 const fromMs = Number(req.range.fromNs / 1_000_000n);
                 return {
-                    events: [],
-                    ohlcvBars: [
+                    bars: [
                         { time: fromMs, open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 },
                         { time: fromMs + 60_000, open: 1.5, high: 3, low: 1, close: 2.5, volume: 4 },
                     ],
@@ -1175,7 +1173,7 @@ describe('routing a claimed symbol', () => {
         plugins.register({
             prefix: 'X:',
             resolveSymbol: () => ({ ...info('X:ONE'), priceFormat: { minTick: 0.25, precision: 2 } }),
-            fetchBars: async () => ({ events: [], ohlcvBars: [], hasMore: true }),
+            fetchBars: async () => ({ bars: [], hasMore: true }),
         });
 
         bus.on('data:symbol-resolved', ({ symbolInfo }) =>

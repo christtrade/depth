@@ -85,7 +85,7 @@ function source() {
         searchSymbols: async () => [info],
         fetchBars: async (req: FetchRequest) => {
             fetches.push(req);
-            return { events: [], ohlcvBars: bars(req.range.fromMs, 3), hasMore: false };
+            return { bars: bars(req.range.fromMs, 3), hasMore: false };
         },
         onEvict: (e: EvictedBars) => void evictions.push(e),
     } as unknown as IDataAdapter;
@@ -104,7 +104,7 @@ describe('withOpfsCache', () => {
         const res = await cached.fetchBars(request(T + 10 * MIN_MS, T + 100 * MIN_MS));
         assert.equal(fetches.length, 0);
         assert.equal(res.hasMore, true, 'whether there is more is the source to say');
-        assert.deepEqual(res.ohlcvBars, bars(T, 100).slice(10));
+        assert.deepEqual(res.bars, bars(T, 100).slice(10));
     });
 
     it('asks the source when the cache only covers part of it', async () => {
@@ -125,7 +125,7 @@ describe('withOpfsCache', () => {
 
         const res = await cached.fetchBars(request(T - MIN_MS, T + 100 * MIN_MS, 'forward'));
         assert.equal(fetches.length, 0);
-        assert.equal(res.ohlcvBars!.length, 100);
+        assert.equal(res.bars!.length, 100);
     });
 
     it('answers from memory while the write is still out', async () => {
@@ -136,7 +136,7 @@ describe('withOpfsCache', () => {
 
         const res = await cached.fetchBars(request(T, T + 100 * MIN_MS));
         assert.equal(fetches.length, 0);
-        assert.equal(res.ohlcvBars!.length, 100);
+        assert.equal(res.bars!.length, 100);
         assert.equal(mem.files.size, 0, 'not on disk yet');
         mem.land();
     });
@@ -149,7 +149,7 @@ describe('withOpfsCache', () => {
         const { adapter, fetches } = source();
         const res = await withBarCache(adapter, mem.store, Infinity).fetchBars(request(T, T + 100 * MIN_MS));
         assert.equal(fetches.length, 0);
-        assert.deepEqual(res.ohlcvBars, bars(T, 100));
+        assert.deepEqual(res.bars, bars(T, 100));
     });
 
     it('drops the oldest chunk past maxBytes', async () => {

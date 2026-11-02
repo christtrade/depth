@@ -11,7 +11,7 @@ import type { SerialTrade } from '../lib/types';
 import type {
     AdapterCapabilities,
     BarPreviewResponse,
-    BarResponse,
+    FetchResponse,
     EvictedBars,
     FetchRequest,
     IDataAdapter,
@@ -65,7 +65,7 @@ export interface PluginDataSource {
      * for backward pans, for forward prefetch during playback, and again at a
      * finer resolution when a pane needs one - `request.direction` says which.
      */
-    fetchBars(request: FetchRequest): Promise<BarResponse>;
+    fetchBars(request: FetchRequest): Promise<FetchResponse>;
 
     /**
      * Cheap bars for the loading skeleton, drawn before `fetchBars` resolves.
@@ -79,7 +79,7 @@ export interface PluginDataSource {
      */
     subscribeRealtime?(
         request: RealtimeRequest,
-        onBar: (bar: BarResponse) => void,
+        onData: (data: FetchResponse) => void,
     ): () => void;
 
     /**
@@ -87,7 +87,7 @@ export interface PluginDataSource {
      * null to ignore it. This is the hook for a derived instrument, which has
      * no feed of its own to subscribe to.
      */
-    onTick?(params: { symbol: string; trade: SerialTrade; barNs: bigint }): BarResponse | null;
+    onTick?(params: { symbol: string; trade: SerialTrade; barNs: bigint }): FetchResponse | null;
 
     /** Bars leaving memory. Same contract as {@link IDataAdapter.onEvict}. */
     onEvict?(evicted: EvictedBars): void | Promise<void>;
@@ -135,7 +135,7 @@ export class DataSourceRegistry {
     private readonly adapters = new Map<PluginDataSource, IDataAdapter>();
     private readonly realtimeSinks = new Map<
         PluginDataSource,
-        { request: RealtimeRequest; onBar: (bar: BarResponse) => void }
+        { request: RealtimeRequest; onData: (data: FetchResponse) => void }
     >();
 
     register(source: PluginDataSource): () => void {
@@ -247,10 +247,10 @@ export class DataSourceRegistry {
      */
     handleTick(trade: SerialTrade): boolean {
         let handled = false;
-        for (const [source, { request, onBar }] of this.realtimeSinks) {
+        for (const [source, { request, onData }] of this.realtimeSinks) {
             if (!source.onTick) continue;
 
-            let bar: BarResponse | null;
+            let bar: FetchResponse | null;
             try {
                 bar = source.onTick({
                     symbol: request.symbolInfo.symbol,
@@ -262,7 +262,7 @@ export class DataSourceRegistry {
                 continue;
             }
             if (!bar) continue;
-            onBar(bar);
+            onData(bar);
             handled = true;
         }
         return handled;
@@ -348,10 +348,10 @@ export class DataSourceRegistry {
         // one sink per source covers both feeds: its own subscription and the
         // onTick bridge, which has no socket to unsubscribe from
         if (source.subscribeRealtime || source.onTick) {
-            adapter.subscribeRealtime = (request, onBar) => {
-                const sink = { request, onBar };
+            adapter.subscribeRealtime = (request, onData) => {
+                const sink = { request, onData };
                 this.realtimeSinks.set(source, sink);
-                const unsub = source.subscribeRealtime?.(request, onBar);
+                const unsub = source.subscribeRealtime?.(request, onData);
                 return () => {
                     if (this.realtimeSinks.get(source) === sink) {
                         this.realtimeSinks.delete(source);

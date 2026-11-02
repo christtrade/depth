@@ -6,7 +6,7 @@ import { TypedEventBus } from './TypedEventBus';
 import { BarStore } from './BarStore';
 import type {
     IDataAdapter,
-    BarResponse,
+    FetchResponse,
     FetchRequest,
     RealtimeRequest,
     SymbolInfo,
@@ -263,9 +263,9 @@ function _chunkToMasterFields(
 // l2 takes the l3 paths as its held as l3 events
 const evented = (level: DataLevel | undefined) => level === 'l3' || level === 'l2';
 
-function l2ToEvents(r: BarResponse): BarResponse {
-    if (r._preProcessed || (!r.l2Snapshots && !r.ticks)) return r;
-    return { ...r, events: l2Events(r.l2Snapshots ?? [], r.ticks ?? []), l2Snapshots: undefined, ticks: undefined };
+function l2ToEvents(r: FetchResponse): FetchResponse {
+    if (r._preProcessed || (!r.depth && !r.ticks)) return r;
+    return { ...r, mbo: l2Events(r.depth ?? [], r.ticks ?? []), depth: undefined, ticks: undefined };
 }
 
 const asEvents = new WeakMap<IDataAdapter, IDataAdapter>();
@@ -278,12 +278,12 @@ function l2AsEvents(a: IDataAdapter): IDataAdapter {
             if (typeof v !== 'function') return v;
             if (k === 'fetchBars')
                 return async (req: FetchRequest) => {
-                    const r: BarResponse = await v.call(t, req);
+                    const r: FetchResponse = await v.call(t, req);
                     return req.symbolInfo.dataLevel === 'l2' ? l2ToEvents(r) : r;
                 };
             if (k === 'subscribeRealtime')
-                return (req: RealtimeRequest, onBar: (r: BarResponse) => void) =>
-                    v.call(t, req, req.symbolInfo.dataLevel === 'l2' ? (r: BarResponse) => onBar(l2ToEvents(r)) : onBar);
+                return (req: RealtimeRequest, onData: (r: FetchResponse) => void) =>
+                    v.call(t, req, req.symbolInfo.dataLevel === 'l2' ? (r: FetchResponse) => onData(l2ToEvents(r)) : onData);
             return v.bind(t);
         },
     });
@@ -770,7 +770,7 @@ export class DataEngine {
                 });
         }
 
-        let response: BarResponse;
+        let response: FetchResponse;
         try {
             response = await adapter.fetchBars({
                 symbolInfo: st.symbolInfo,
@@ -907,7 +907,7 @@ export class DataEngine {
 
         const span = toNs - fromNs;
 
-        let resp: BarResponse;
+        let resp: FetchResponse;
         try {
             resp = await adapter.fetchBars({
                 symbolInfo: st.symbolInfo,
@@ -923,7 +923,7 @@ export class DataEngine {
             return;
         }
 
-        const bars = (resp.ohlcvBars ?? [])
+        const bars = (resp.bars ?? [])
             .map((b) => ({
                 tsNs: BigInt(Math.round(b.time)) * 1_000_000n,
                 open: b.open,
@@ -1005,7 +1005,7 @@ export class DataEngine {
         });
 
         return {
-            bars: response.ohlcvBars ?? [],
+            bars: response.bars ?? [],
             hasMore: !!response.hasMore,
             coveredTo: response.coveredTo ?? null,
         };
@@ -1621,7 +1621,7 @@ export class DataEngine {
     // Response processing
 
     private _process(
-        response: BarResponse,
+        response: FetchResponse,
         st: SymbolState,
         carry: { book?: BookState; snapAt?: bigint; barNs?: bigint } = {},
     ): DataChunk | null {
@@ -1639,26 +1639,26 @@ export class DataEngine {
             case 'ohlcv':
                 if (response.supplementalBars?.length) {
                     return processOhlcvWithSupplemental(
-                        response.ohlcvBars ?? [],
+                        response.bars ?? [],
                         response.supplementalBars,
                         barNs,
                     );
                 }
-                return processOhlcvChunk(response.ohlcvBars ?? [], barNs);
+                return processOhlcvChunk(response.bars ?? [], barNs);
             case 'tick':
                 return processTickChunk(response.ticks ?? [], barNs, this.fpOptions);
             case 'l2': {
-                const c = l2Chunk(response.events ?? [], barNs, this.fpOptions, carry);
+                const c = l2Chunk(response.mbo ?? [], barNs, this.fpOptions, carry);
                 if (c.trades.length) st.hasTrades = true;
                 return c;
             }
             default:
-                return processL3Chunk(response.events ?? [], barNs, this.fpOptions, carry);
+                return processL3Chunk(response.mbo ?? [], barNs, this.fpOptions, carry);
         }
     }
 
     // process a whole new window with its forming buckete and the book where that starts
-    private _processWindow(response: BarResponse, st: SymbolState, fetchBarNs: bigint) {
+    private _processWindow(response: FetchResponse, st: SymbolState, fetchBarNs: bigint) {
         const barNs = this._chunkBarNs(st, fetchBarNs);
         const forming = formingOf(st.symbolInfo?.dataLevel ?? 'l3', response, barNs);
         const processed = this._process(response, st, { snapAt: forming?.bucket, barNs });
@@ -1679,7 +1679,7 @@ export class DataEngine {
 
     // Realtime
 
-    private _handleRealtimeBar(st: SymbolState, bar: BarResponse): void {
+    private _handleRealtimeBar(st: SymbolState, bar: FetchResponse): void {
         if (this.destroyed) return;
         if (!st.master) return;
         if (this._appendResponse(st, bar, 'realtime')) st.hasMoreForward = true;
@@ -1693,7 +1693,7 @@ export class DataEngine {
     }
 
     // a forward page or live chunk onto the right edge. false when it brought nothing new
-    private _appendResponse(st: SymbolState, response: BarResponse, from: string): boolean {
+    private _appendResponse(st: SymbolState, response: FetchResponse, from: string): boolean {
         if (!st.master) return false;
         const level = st.master.dataLevel;
         const barNs = this._chunkBarNs(st);
@@ -2467,7 +2467,7 @@ export class DataEngine {
         const timeframe = this._fetchTimeframe(st, fetchBarNs);
         st.staging = { barNs: fetchBarNs, from, to };
 
-        let response: BarResponse;
+        let response: FetchResponse;
         try {
             response = await adapter.fetchBars({
                 symbolInfo: st.symbolInfo,

@@ -13,9 +13,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   trades, `l2Trades: false` for the book alone.
 - l2 holds the whole book and not just the best bid/ask. bars, footprints, paging, live, timeframe
   switches and the memory budget all work like l3 does. an l2 response can carry `ticks` next to
-  `l2Snapshots`, without them the bars are mid candles until the first trade
+  `depth`, without them the bars are mid candles until the first trade
 
 ### Changed
+- **Breaking:** `BarResponse` is now `FetchResponse`, it never held just bars. `ohlcvBars` -> `bars`,
+  `l2Snapshots` -> `depth`, `events` -> `mbo` and its optional now, no more `events: []` on every
+  response. `subscribeRealtime`'s `onBar` -> `onData`
 - **Breaking:** `processL2Chunk(snapshots, ticks, barNs, fpOptions?)` takes the trades and returns
   the l3 shape. so a `compactBuf` of one synthetic order per price level, trades, footprints and
   `midBars`. used to keep only the best bid/ask

@@ -44,7 +44,7 @@ describe('SimulatedMarketAdapter realtime', () => {
             const sim = new SimulatedMarketAdapter({ seed: 7, realtime: true });
 
             // a window running into the future stops at the forming bar
-            const a = (await sim.fetchBars(range(t0 - 600 * MIN, t0 + 3600 * MIN))).ohlcvBars!;
+            const a = (await sim.fetchBars(range(t0 - 600 * MIN, t0 + 3600 * MIN))).bars!;
             const last = a[a.length - 1];
             assert.equal(last.time, t0 - 30_000);
             assert.equal(a.length, 600);
@@ -55,12 +55,12 @@ describe('SimulatedMarketAdapter realtime', () => {
             }
 
             // overlapping windows read the same path
-            const b = (await sim.fetchBars(range(t0 - 100 * MIN, t0))).ohlcvBars!;
+            const b = (await sim.fetchBars(range(t0 - 100 * MIN, t0))).bars!;
             const aByTime = new Map(a.map((x) => [x.time, x]));
             for (const x of b.slice(0, -1)) assert.deepEqual(aByTime.get(x.time), x);
 
             const got: any[][] = [];
-            const unsub = sim.subscribeRealtime!(since(last.time), (r) => got.push(r.ohlcvBars!));
+            const unsub = sim.subscribeRealtime!(since(last.time), (r) => got.push(r.bars!));
             mock.timers.tick(1000);
             assert.equal(got.length, 4);
             assert.equal(got[0][0].time, last.time);
@@ -88,12 +88,12 @@ describe('SimulatedMarketAdapter realtime', () => {
         mock.timers.enable({ apis: ['setInterval', 'Date'], now: t0 });
         try {
             const sim = new SimulatedMarketAdapter({ seed: 7, realtime: true });
-            const a = (await sim.fetchBars(range(t0 - 10 * MIN, t0))).ohlcvBars!;
+            const a = (await sim.fetchBars(range(t0 - 10 * MIN, t0))).bars!;
             const last = a[a.length - 1];
 
             mock.timers.setTime(t0 + 3 * MIN);
             const got: any[][] = [];
-            const unsub = sim.subscribeRealtime!(since(last.time), (r) => got.push(r.ohlcvBars!));
+            const unsub = sim.subscribeRealtime!(since(last.time), (r) => got.push(r.bars!));
             mock.timers.tick(250);
             unsub();
             assert.deepEqual(
@@ -108,7 +108,7 @@ describe('SimulatedMarketAdapter realtime', () => {
     it('still makes whole bars for a window when not live', async () => {
         const t0 = Date.UTC(2026, 9, 29, 12, 0, 0);
         const h = (await new SimulatedMarketAdapter({ seed: 7 }).fetchBars(range(t0 - 600 * MIN, t0)))
-            .ohlcvBars!;
+            .bars!;
         assert.equal(h.length, 600);
         assert.equal(h[0].open, 21000);
         for (let i = 1; i < h.length; i++) assert.equal(h[i].open, h[i - 1].close);
@@ -121,7 +121,7 @@ describe('SimulatedMarketAdapter realtime', () => {
         try {
             const sim = new SimulatedMarketAdapter({ seed: 7, realtime: true, historyBars: 200, dataLevel: level });
             assert.equal(sim.resolveSymbol().dataLevel, level);
-            const items = (r: any): any[] => (level === 'tick' ? r.ticks : r.events);
+            const items = (r: any): any[] => (level === 'tick' ? r.ticks : r.mbo);
             const events = async (fromMs: number, toMs: number) =>
                 items(await sim.fetchBars({ ...range(fromMs, toMs), direction: 'initial' }));
             // thousands of events, a deepEqual diff of them runs out of memory
@@ -159,7 +159,7 @@ describe('SimulatedMarketAdapter realtime', () => {
                     direction: 'initial',
                 });
             const ticks = (await fetch('tick')).ticks!.map((t) => [t.time, t.price, t.size, t.side]);
-            const trades = (await fetch('l3')).events
+            const trades = (await fetch('l3')).mbo!
                 .filter((e) => e.action === 'T')
                 .map((e) => [Date.parse(e.ts_event), e.price, e.size, e.side]);
             assert.ok(ticks.length > 100);
@@ -182,8 +182,8 @@ describe('SimulatedMarketAdapter realtime', () => {
             const l2 = await fetch({ dataLevel: 'l2' });
             const ms = performance.now() - started;
             const tick = await fetch({ dataLevel: 'tick' });
-            assert.ok(l2.l2Snapshots!.length > 1000, `${l2.l2Snapshots!.length} snapshots`);
-            const { bids, asks } = l2.l2Snapshots!.at(-1)!;
+            assert.ok(l2.depth!.length > 1000, `${l2.depth!.length} snapshots`);
+            const { bids, asks } = l2.depth!.at(-1)!;
             assert.ok(bids.length === 10 && asks.length === 10, 'a full 10 a side');
             assert.equal(JSON.stringify(l2.ticks), JSON.stringify(tick.ticks));
             assert.ok(ms < 3000, `half an hour took ${ms.toFixed(0)} ms`);
@@ -199,7 +199,7 @@ describe('SimulatedMarketAdapter realtime', () => {
         try {
             const sim = new SimulatedMarketAdapter({ seed: 7, realtime: true, historyBars: 60, dataLevel: 'l3' });
             const r = await sim.fetchBars({ ...range(t0 - 3 * 60 * MIN, t0), direction: 'initial' });
-            assert.ok(Date.parse(r.events[0].ts_event) >= t0 - 30 * MIN);
+            assert.ok(Date.parse(r.mbo[0].ts_event) >= t0 - 30 * MIN);
             assert.equal(r.hasMore, true);
             const back = await sim.fetchBars({ ...range(t0 - 3 * 60 * MIN, t0 - 50 * MIN), direction: 'backward' });
             assert.equal(back.hasMore, false, 'the path starts 60 bars back');

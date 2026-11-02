@@ -9,7 +9,7 @@ import { describe, it } from 'node:test';
 import { DataEngine } from './DataEngine';
 import { ChartState, type ChartStateShape } from './ChartState';
 import { TypedEventBus } from './TypedEventBus';
-import type { BarResponse, IDataAdapter } from '../interfaces/IDataAdapter';
+import type { FetchResponse, IDataAdapter } from '../interfaces/IDataAdapter';
 import { installInlineSliceWorker } from '../lib/inline-slice-worker';
 import { simMboEvents, simTicks } from '../lib/sim-levels';
 import { BYTES_PER_EVENT, createCompactBuffer, getEvent, getTsNs } from '../lib/compact-buffer';
@@ -70,15 +70,15 @@ function ohlcvBars(symbol: string, fromMs: number, toMs: number, periodMs: numbe
     return bars;
 }
 
-function respond(level: Level, symbol: string, fromMs: number, toMs: number, periodMs: number): Partial<BarResponse> {
-    if (level === 'ohlcv') return { events: [], ohlcvBars: ohlcvBars(symbol, fromMs, toMs, periodMs) };
-    if (level === 'tick') return { events: [], ticks: simTicks(priceOf(symbol), fromMs, toMs) };
-    return { events: simMboEvents(priceOf(symbol), fromMs, toMs) as never };
+function respond(level: Level, symbol: string, fromMs: number, toMs: number, periodMs: number): Partial<FetchResponse> {
+    if (level === 'ohlcv') return { bars: ohlcvBars(symbol, fromMs, toMs, periodMs) };
+    if (level === 'tick') return { ticks: simTicks(priceOf(symbol), fromMs, toMs) };
+    return { mbo: simMboEvents(priceOf(symbol), fromMs, toMs) as never };
 }
 
 function fuzzEngine(level: Level, maxBytes: number, timeframeMs: number) {
     let edge = T0;
-    const subs: { symbol: string; periodMs: number; sentTo: number; onBar: (r: BarResponse) => void; open: boolean }[] = [];
+    const subs: { symbol: string; periodMs: number; sentTo: number; onData: (r: FetchResponse) => void; open: boolean }[] = [];
     const bus = new TypedEventBus();
     const state = new ChartState({ symbol: 'NQ', timeframe: tfOf(timeframeMs) } as unknown as ChartStateShape);
 
@@ -86,7 +86,7 @@ function fuzzEngine(level: Level, maxBytes: number, timeframeMs: number) {
         if (!sub.open || toMs <= sub.sentTo) return;
         const fromMs = sub.sentTo;
         sub.sentTo = toMs;
-        sub.onBar({ ...respond(level, sub.symbol, fromMs, toMs, sub.periodMs), hasMore: false } as BarResponse);
+        sub.onData({ ...respond(level, sub.symbol, fromMs, toMs, sub.periodMs), hasMore: false } as FetchResponse);
     };
 
     const adapter = {
@@ -105,12 +105,12 @@ function fuzzEngine(level: Level, maxBytes: number, timeframeMs: number) {
             return { ...r, hasMore };
         },
         // act like a real feed - catch up from `since` then stream
-        subscribeRealtime: (req: any, onBar: any) => {
+        subscribeRealtime: (req: any, onData: any) => {
             const sub = {
                 symbol: req.symbolInfo.symbol,
                 periodMs: msOf(req.timeframe.barNs),
                 sentTo: msOf(req.since),
-                onBar,
+                onData,
                 open: true,
             };
             subs.push(sub);

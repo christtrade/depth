@@ -23,7 +23,7 @@ function info(symbol: string): SymbolInfo {
 function source(overrides: Partial<PluginDataSource> = {}): PluginDataSource {
     return {
         prefix: 'X:',
-        fetchBars: async () => ({ events: [], ohlcvBars: [], hasMore: true }),
+        fetchBars: async () => ({ bars: [], hasMore: true }),
         ...overrides,
     };
 }
@@ -144,7 +144,7 @@ describe('the adapter it hands DataEngine', () => {
             source({
                 fetchBars: async (req) => {
                     seen.push(req);
-                    return { events: [], ohlcvBars: [], hasMore: false };
+                    return { bars: [], hasMore: false };
                 },
             }),
         );
@@ -241,8 +241,7 @@ describe('the tick bridge', () => {
         registry.register(
             source({
                 onTick: ({ trade: t }) => ({
-                    events: [],
-                    ohlcvBars: [
+                    bars: [
                         {
                             time: Number(t.ts / 1_000_000n),
                             open: t.price,
@@ -259,7 +258,7 @@ describe('the tick bridge', () => {
 
         registry
             .adapterFor('X:ONE')!
-            .subscribeRealtime!(live('X:ONE'), (bar) => pushed.push(bar.ohlcvBars![0].close));
+            .subscribeRealtime!(live('X:ONE'), (bar) => pushed.push(bar.bars![0].close));
 
         assert.equal(registry.handleTick(trade), true);
         assert.deepEqual(pushed, [10]);
@@ -268,7 +267,7 @@ describe('the tick bridge', () => {
     it('goes quiet once the subscription is torn down', () => {
         let pushes = 0;
         registry.register(
-            source({ onTick: () => ({ events: [], ohlcvBars: [], hasMore: true }) }),
+            source({ onTick: () => ({ bars: [], hasMore: true }) }),
         );
 
         const unsub = registry.adapterFor('X:ONE')!.subscribeRealtime!(live('X:ONE'), () => pushes++);

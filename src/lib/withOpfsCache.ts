@@ -1,5 +1,5 @@
 import type {
-    BarResponse,
+    FetchResponse,
     EvictedBars,
     FetchRequest,
     IDataAdapter,
@@ -179,13 +179,13 @@ export function withBarCache(adapter: IDataAdapter, store: ChunkStore, maxBytes:
         resolveSymbol: (symbol) => adapter.resolveSymbol(symbol),
         searchSymbols: (request) => adapter.searchSymbols(request),
 
-        async fetchBars(req: FetchRequest): Promise<BarResponse> {
+        async fetchBars(req: FetchRequest): Promise<FetchResponse> {
             // supplemental bars aren't cached, so those go to the source whole
             if (req.supplementalBarNs === undefined) {
                 try {
                     const bars = await fromCache(req);
                     // whether there's more past it is the source's call, on the next miss
-                    if (bars) return { events: [], ohlcvBars: bars, hasMore: true };
+                    if (bars) return { bars, hasMore: true };
                 } catch (err) {
                     console.error('[withOpfsCache] read failed', err);
                 }
@@ -209,7 +209,7 @@ export function withBarCache(adapter: IDataAdapter, store: ChunkStore, maxBytes:
 
     if (adapter.fetchPreview) cached.fetchPreview = (r) => adapter.fetchPreview!(r);
     if (adapter.subscribeRealtime) {
-        cached.subscribeRealtime = (r, onBar) => adapter.subscribeRealtime!(r, onBar);
+        cached.subscribeRealtime = (r, onData) => adapter.subscribeRealtime!(r, onData);
     }
     if (adapter.connect) cached.connect = () => adapter.connect!();
     if (adapter.destroy) cached.destroy = () => adapter.destroy!();

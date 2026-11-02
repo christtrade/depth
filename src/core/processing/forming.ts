@@ -1,4 +1,4 @@
-import type { BarResponse, TickEvent } from '../../interfaces/IDataAdapter';
+import type { FetchResponse, TickEvent } from '../../interfaces/IDataAdapter';
 import type { MboEvent } from '../../lib/types';
 import { isoToNs } from '../../lib/sampler';
 
@@ -14,7 +14,7 @@ type Item = TickEvent | MboEvent;
 
 const raw = (level: string): level is Level => level === 'tick' || level === 'l3' || level === 'l2';
 
-const field = (level: Level) => (level === 'tick' ? 'ticks' : 'events');
+const field = (level: Level) => (level === 'tick' ? 'ticks' : 'mbo');
 
 const tsOf = (level: Level, it: Item): bigint =>
     level === 'tick'
@@ -30,12 +30,12 @@ function keyOf(level: Level, it: Item): string {
     return `${e.ts_event}|${e.action}|${e.side}|${e.price}|${e.size}|${e.order_id}|${e.sequence}`;
 }
 
-function itemsOf(level: Level, response: BarResponse): Item[] | null {
+function itemsOf(level: Level, response: FetchResponse): Item[] | null {
     if (response._preProcessed) return null;
-    return ((level === 'tick' ? response.ticks : response.events) as Item[] | undefined) ?? [];
+    return ((level === 'tick' ? response.ticks : response.mbo) as Item[] | undefined) ?? [];
 }
 
-export function formingOf(level: string, response: BarResponse, barNs: bigint): Forming | null {
+export function formingOf(level: string, response: FetchResponse, barNs: bigint): Forming | null {
     if (!raw(level) || barNs <= 0n) return null;
     const items = itemsOf(level, response);
     if (!items?.length) return null;
@@ -68,9 +68,9 @@ export function narrowForming(
 export function joinForming(
     level: string,
     forming: Forming | null,
-    response: BarResponse,
+    response: FetchResponse,
     barNs: bigint,
-): { response: BarResponse; trimFromNs: bigint | null } | null {
+): { response: FetchResponse; trimFromNs: bigint | null } | null {
     if (!raw(level)) return { response, trimFromNs: null };
     const items = itemsOf(level, response);
     if (items === null) return { response, trimFromNs: null };

@@ -15,7 +15,7 @@
 import type {
     IDataAdapter,
     FetchRequest,
-    BarResponse,
+    FetchResponse,
     SymbolInfo,
     OhlcvBar,
     RealtimeRequest,
@@ -376,10 +376,10 @@ export class SimulatedMarketAdapter implements IDataAdapter {
             l2Trades: cfg.l2Trades ?? true,
         };
         // only subscribe when live
-        if (this.cfg.realtime) this.subscribeRealtime = (req, onBar) => this._subscribe(req, onBar);
+        if (this.cfg.realtime) this.subscribeRealtime = (req, onData) => this._subscribe(req, onData);
     }
 
-    subscribeRealtime?: (request: RealtimeRequest, onBar: (bar: BarResponse) => void) => () => void;
+    subscribeRealtime?: (request: RealtimeRequest, onData: (data: FetchResponse) => void) => () => void;
 
     private live: {
         rand: () => number;
@@ -424,24 +424,23 @@ export class SimulatedMarketAdapter implements IDataAdapter {
         return live;
     }
 
-    private _along(path: RecordedPath, fromMs: number, toMs: number): BarResponse {
+    private _along(path: RecordedPath, fromMs: number, toMs: number): FetchResponse {
         const { tickSize, seed } = this.cfg;
-        if (fromMs >= toMs) return { events: [], hasMore: false };
+        if (fromMs >= toMs) return { hasMore: false };
         if (this.cfg.dataLevel === 'tick')
-            return { events: [], ticks: simTicks(path.at, fromMs, toMs, { tickSize, seed }), hasMore: false };
+            return { ticks: simTicks(path.at, fromMs, toMs, { tickSize, seed }), hasMore: false };
         // a book a heatmap has something to show in
         const book = { tickSize, seed, levels: 40, lifeSlots: 600, wallOdds: 60 };
         if (this.cfg.dataLevel === 'l2')
             return {
-                events: [],
-                l2Snapshots: simL2Snapshots(path.at, fromMs, toMs, book),
+                depth: simL2Snapshots(path.at, fromMs, toMs, book),
                 ...(this.cfg.l2Trades && { ticks: simTicks(path.at, fromMs, toMs, { tickSize, seed }) }),
                 hasMore: false,
             };
-        return { events: simMboEvents(path.at, fromMs, toMs, book), hasMore: false };
+        return { mbo: simMboEvents(path.at, fromMs, toMs, book), hasMore: false };
     }
 
-    private _fetchPath(request: FetchRequest): BarResponse {
+    private _fetchPath(request: FetchRequest): FetchResponse {
         const now = this.cfg.realtime ? Date.now() : (this.frozenNow ??= Date.now());
         const path = this._liveTo(now).path!;
         const to = Math.min(request.range.toMs, now);
@@ -450,14 +449,14 @@ export class SimulatedMarketAdapter implements IDataAdapter {
         return { ...this._along(path, from, to), hasMore };
     }
 
-    private _subscribe(request: RealtimeRequest, onBar: (bar: BarResponse) => void): () => void {
+    private _subscribe(request: RealtimeRequest, onData: (data: FetchResponse) => void): () => void {
         if (this.cfg.dataLevel !== 'ohlcv') {
             let next = Number(request.since / 1_000_000n);
             const id = setInterval(() => {
                 const now = Date.now();
                 const chunk = this._along(this._liveTo(now).path!, next, now);
                 next = now;
-                if (chunk.events.length || chunk.ticks?.length || chunk.l2Snapshots?.length) onBar(chunk);
+                if (chunk.mbo?.length || chunk.ticks?.length || chunk.depth?.length) onData(chunk);
             }, this.cfg.realtimeUpdateMs);
             return () => clearInterval(id);
         }
@@ -468,12 +467,12 @@ export class SimulatedMarketAdapter implements IDataAdapter {
             const bars = live.closed.slice(sent);
             bars.push(toOhlcv(live.forming, this.cfg.tickSize));
             sent = live.closed.length;
-            onBar({ events: [], ohlcvBars: bars, hasMore: false });
+            onData({ bars, hasMore: false });
         }, this.cfg.realtimeUpdateMs);
         return () => clearInterval(id);
     }
 
-    private _fetchLive(request: FetchRequest): BarResponse {
+    private _fetchLive(request: FetchRequest): FetchResponse {
         const now = Date.now();
         const { closed, forming } = this._liveTo(now);
         const { fromMs, toMs } = request.range;
@@ -483,7 +482,7 @@ export class SimulatedMarketAdapter implements IDataAdapter {
         if (forming.time >= fromMs && forming.time < toMs) bars.push(toOhlcv(forming, this.cfg.tickSize));
         const first = closed.length ? closed[0].time : forming.time;
         const hasMore = request.direction === 'forward' ? toMs < now : fromMs > first;
-        return { events: [], ohlcvBars: bars, hasMore };
+        return { bars, hasMore };
     }
 
     async searchSymbols(): Promise<SymbolInfo[]> {
@@ -507,7 +506,7 @@ export class SimulatedMarketAdapter implements IDataAdapter {
         };
     }
 
-    async fetchBars(request: FetchRequest): Promise<BarResponse> {
+    async fetchBars(request: FetchRequest): Promise<FetchResponse> {
         if (this.cfg.dataLevel !== 'ohlcv') return this._fetchPath(request);
         if (this.cfg.realtime) return this._fetchLive(request);
         const { barDurationNs, intrabbarTicks, tickSize, startPrice, seed, regimes } = this.cfg;
@@ -535,8 +534,7 @@ export class SimulatedMarketAdapter implements IDataAdapter {
         }
 
         return {
-            events: [],
-            ohlcvBars: bars,
+            bars,
             hasMore: false,
         };
     }

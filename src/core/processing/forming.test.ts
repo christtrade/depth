@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { formingOf, joinForming } from './forming';
-import type { BarResponse, TickEvent } from '../../interfaces/IDataAdapter';
+import type { FetchResponse, TickEvent } from '../../interfaces/IDataAdapter';
 
 const MIN = 60_000_000_000n;
 const T0 = Date.UTC(2026, 0, 1);
 
 const tick = (time: number, size = 1): TickEvent => ({ time, price: 100, size, side: 'B' });
-const resp = (ticks: TickEvent[]) => ({ events: [], ticks, hasMore: false }) as BarResponse;
+const resp = (ticks: TickEvent[]) => ({ ticks, hasMore: false }) as FetchResponse;
 
 describe('forming bucket', () => {
     it('keeps the raw items of the newest bucket only', () => {
@@ -45,7 +45,7 @@ describe('forming bucket', () => {
     });
 
     it('ohlcv goes through untouched', () => {
-        const r = { events: [], ohlcvBars: [], hasMore: false } as BarResponse;
+        const r = { bars: [], hasMore: false } as FetchResponse;
         assert.deepEqual(joinForming('ohlcv', null, r, MIN), { response: r, trimFromNs: null });
     });
 });
