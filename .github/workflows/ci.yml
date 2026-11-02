@@ -65,7 +65,13 @@ jobs:
       - run: npx playwright install --with-deps chromium firefox webkit
 
       # new monkey seeds every run to keep exploring
-      - run: npm run e2e
+      - run: npm run e2e -- --project=chromium --project=firefox
+        env:
+          MONKEY_BASE: ${{ github.run_number }}000
+
+      # webkit misses the frame and timeout checks next to another worker. alone it passes
+      - run: npx playwright test --project=webkit --workers=1
+        if: success() || failure()
         env:
           MONKEY_BASE: ${{ github.run_number }}000
 
