@@ -22,7 +22,7 @@ import { TradeLineHitMap } from '../lib/renderers/drawTradeLines';
 import type { TradeLine } from '../lib/types';
 import type { StyleField } from '../components/drawings/drawing-settings-dialog';
 import type { ThemeDef } from '../interfaces/plugins/IChartPlugin';
-import { FootprintBar } from '../lib/types/footprint';
+import { FootprintBar, type FootprintOptions } from '../lib/types/footprint';
 import { ChartPane, Indicator } from '../lib/types/indicator-types';
 import { SerialTrade } from '../lib/types';
 import { Timeframe } from '../lib/timeframes';
@@ -175,6 +175,8 @@ export interface ChartEvents {
         trades: SerialTrade[];
         priceHistory: PriceHistory[];
         footprintBars: FootprintBar[];
+        /** What footprintBars were built with. */
+        fpOptions: FootprintOptions;
         /** Every loaded bar. Derived from footprintBars at l3/tick, empty at l2. */
         bars: BarStore;
         barNs: bigint;
@@ -218,6 +220,7 @@ export interface ChartEvents {
         trades: SerialTrade[];
         priceHistory: PriceHistory[];
         footprintBars: FootprintBar[];
+        fpOptions: FootprintOptions;
         /** This chunk's new bars at ohlcv, empty at every other level. */
         ohlcvBars: OhlcvBar[];
         /** Every loaded bar, this chunk included. */
@@ -256,6 +259,7 @@ export interface ChartEvents {
         trades: SerialTrade[];
         priceHistory: PriceHistory[];
         footprintBars: FootprintBar[];
+        fpOptions: FootprintOptions;
         /** This page's new bars at ohlcv, empty at every other level. */
         ohlcvBars: OhlcvBar[];
         /** Every loaded bar, this page included. */

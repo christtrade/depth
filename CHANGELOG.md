@@ -8,6 +8,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- Footprint settings reset to the defaults on the next page back or timeframe switch. the engine
+  built its bars with the options it was created with. `data:load`/`data:append`/`data:prepend`
+  now carry `fpOptions`, what their footprintBars were built with.
+
 ## [0.22.1] - 2026-11-02
 
 ### Fixed

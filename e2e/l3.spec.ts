@@ -192,6 +192,38 @@ test('l3: a footprint setting rebuilds the closed bars', async ({ page }) => {
     expect(errors).toEqual([]);
 });
 
+test('l3: a footprint setting survives a page back', async ({ page }) => {
+    const errors = watchErrors(page);
+    await page.goto('/?level=l3');
+    await settled(page);
+    await page.evaluate(() => (window as any).__chart.setChartSettings({ footprintImbalanceRatio: 1.01 }));
+    await page.evaluate(() => {
+        const w = window as any;
+        w.__prepends = 0;
+        w.__chart.on('data:prepend', () => w.__prepends++);
+    });
+    for (let i = 0; i < 10 && !(await page.evaluate(() => (window as any).__prepends)); i++) {
+        await drag(page, 600);
+        await settled(page);
+    }
+    expect(await page.evaluate(() => (window as any).__prepends)).toBeGreaterThan(0);
+
+    // at 1.01 nearly every level is an imbalance, at the default 3 about 1 in 10
+    const share = await page.evaluate(() => {
+        const bars: any[] = (window as any).__chart.renderEngine.drawParams.footprintBars;
+        let lv = 0,
+            imb = 0;
+        for (const b of bars)
+            for (const l of b.levels) {
+                lv++;
+                if (l.askImbalance || l.bidImbalance) imb++;
+            }
+        return imb / lv;
+    });
+    expect(share).toBeGreaterThan(0.5);
+    expect(errors).toEqual([]);
+});
+
 test('l3: raising the heatmap contrast hides the thin levels', async ({ page }) => {
     const errors = watchErrors(page);
     await page.goto('/?level=l3');

@@ -151,6 +151,12 @@ const DEFAULTS: Required<FootprintOptions> = {
     diagRatio: 3.0,
 };
 
+export function fpOptionsMatch(built: FootprintOptions, wanted: FootprintOptions): boolean {
+    const b = { ...DEFAULTS, ...built };
+    const w = { ...DEFAULTS, ...wanted };
+    return (Object.keys(wanted) as (keyof FootprintOptions)[]).every((k) => b[k] === w[k]);
+}
+
 // Builder
 export function buildFootprint(
     events: MboEvent[],

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, type MutableRefObject, type RefObject } from 'react';
 import { isoToNs } from '../lib/sampler';
 import { type PriceHistory, type TradePoint, type ViewBounds, type OhlcvBarMs } from '../lib/types';
-import { footprintFromTrades, type FootprintBar } from '../lib/types/footprint';
+import { footprintFromTrades, fpOptionsMatch, type FootprintBar, type FootprintOptions } from '../lib/types/footprint';
 import { openBarFrom } from '../lib/open-bar';
 import { extendBucketedPh, extendCandles, extendFootprints, foldTrades } from '../lib/bucket-tail';
 import {
@@ -519,9 +519,14 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         );
     }, []);
 
-    // the engines bars run to the data end, a replay needs them to stop at the playhead
-    const takeFootprints = useCallback((bars: FootprintBar[], barNs: bigint) => {
-        if (barNs === p.activeTimeframeRef.current.barNs && p.horizonRef.current >= datasetEndRef.current)
+    // the engines bars run to the data end, a replay needs them to stop at the playhead.
+    // the engine has one set of options for every pane, the panes own settings win
+    const takeFootprints = useCallback((bars: FootprintBar[], barNs: bigint, builtWith: FootprintOptions) => {
+        if (
+            barNs === p.activeTimeframeRef.current.barNs &&
+            p.horizonRef.current >= datasetEndRef.current &&
+            fpOptionsMatch(builtWith, fpSettingsFromRef())
+        )
             footprintBarsRef.current = bars;
         else rebuildFootprints();
     }, []);
@@ -1201,6 +1206,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 trades: newTrades,
                 priceHistory: newHistory,
                 footprintBars: newFpBars,
+                fpOptions: fpBuiltWith,
                 barNs: workerBarNs,
                 dataStart,
                 dataEnd,
@@ -1240,7 +1246,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             openBarTsRef.current = 0n;
             openBarTradeCountRef.current = 0;
             p.horizonRef.current = playFrom;
-            takeFootprints(newFpBars, workerBarNs);
+            takeFootprints(newFpBars, workerBarNs, fpBuiltWith);
             const _SCRIPTED = '__scripted__';
             const _keptIndsL3 = payload.replaced
                 ? p.indicatorsRef.current
@@ -1426,6 +1432,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 trades: newTrades,
                 priceHistory: newHistory,
                 footprintBars: newFpBars,
+                fpOptions: fpBuiltWith,
                 barNs: workerBarNs,
                 dataEnd,
             } = payload;
@@ -1451,7 +1458,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             playheadIdxRef.current = newPlayFromIdx;
             p.horizonRef.current = effHorizon;
             followHorizonBar(effHorizon);
-            takeFootprints(newFpBars, workerBarNs);
+            takeFootprints(newFpBars, workerBarNs, fpBuiltWith);
             if (activeTfBarNs > 0n) {
                 phCursorRef.current = extendBucketedPh(
                     priceHistoryRef.current,
@@ -1557,6 +1564,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 trades: newTrades,
                 priceHistory: newHistory,
                 footprintBars: newFpBars,
+                fpOptions: fpBuiltWith,
                 dataStart,
             } = payload;
             const ds = BigInt(dataStart) * 1_000_000n;
@@ -1573,7 +1581,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             allTradesRef.current = newTrades;
             allPriceHistoryRef.current = newHistory;
             tradesRef.current = newTrades;
-            if (newFpBars.length > 0) takeFootprints(newFpBars, payload.barNs);
+            if (newFpBars.length > 0) takeFootprints(newFpBars, payload.barNs, fpBuiltWith);
             playheadIdxRef.current = findFloorIndex(compactBufRef.current, p.horizonRef.current);
             datasetStartRef.current = ds;
             {
