@@ -42,6 +42,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   its levels to 0.01 on top of that. **Breaking:** `compactBuf` events are 32 bytes, price and size
   are float64 at bytes 8 and 16, ids at 24-30. 33% more memory at l2/l3, decode speed the same
   (331k events in ~43 ms either way)
+- l3 resting limits and take profits never filled when the book moved onto them without a trade at
+  their price, like when the queue ahead cancels and the ask drops onto your bid. they fill at their
+  price now
 
 ## [0.22.1] - 2026-11-02
 

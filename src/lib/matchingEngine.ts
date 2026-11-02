@@ -1205,6 +1205,50 @@ export function createL3MatchingEngine(
         }
     }
 
+    // the book reached a resting order with no trade at its price, so everyone queued ahead left
+    // and the other side would have hit it
+    function checkBookCross(tsNs: bigint): void {
+        for (const [id, qo] of workingOrders) {
+            const { order } = qo;
+            if (predatesSeed(id, tsNs)) continue;
+            const isLimit =
+                order.type === 'limit' || (order.type === 'stop_limit' && order.triggered);
+            if (!isLimit) continue;
+            const crossed =
+                order.side === 'long'
+                    ? bestAsk !== null && bestAsk <= order.price
+                    : bestBid !== null && bestBid >= order.price;
+            if (!crossed) continue;
+            scheduleFill(qo, order.price, tsNs);
+            workingOrders.delete(id);
+        }
+
+        const nowNs = Number(tsNs);
+        for (const pos of openPositions.values()) {
+            if (pos.remainingQuantity <= 0) continue;
+            if (predatesSeed(pos.id, tsNs)) continue;
+            for (const tp of pos.takeProfits) {
+                if (tp.triggered) continue;
+                const hit =
+                    pos.side === 'long'
+                        ? bestBid !== null && bestBid >= tp.price
+                        : bestAsk !== null && bestAsk <= tp.price;
+                if (!hit) continue;
+                const current = openPositions.get(pos.id);
+                if (!current || current.remainingQuantity <= 0) break;
+                closePositionInternal(
+                    current,
+                    Math.min(tp.qty, current.remainingQuantity),
+                    tp.price,
+                    nowNs,
+                    'tp',
+                    tp.id,
+                    undefined,
+                );
+            }
+        }
+    }
+
     // bracket triggers snap to the tick grid and update excursions/drawdown on
     // the same tick they trigger. partial tp falls out of closePositionInternal.
     function checkBracketTriggers(tradePrice: number, aggressorSide: string, tsNs: bigint): void {
@@ -2684,14 +2728,11 @@ export function createL3MatchingEngine(
                     const ask = bestAsk;
                     onMboEvent(getEvent(_cb, _processedUpToIdx), ts);
                     _processedUpToIdx++;
-                    if (
-                        stops &&
-                        bestBid !== null &&
-                        bestAsk !== null &&
-                        (bestBid !== bid || bestAsk !== ask)
-                    ) {
+                    if (bestBid === bid && bestAsk === ask) continue;
+                    if (stops && bestBid !== null && bestAsk !== null) {
                         checkStopTriggers({ symbol, bid: bestBid, ask: bestAsk, ts: Number(ts) });
                     }
+                    if (workingOrders.size || openPositions.size) checkBookCross(ts);
                 }
                 _cbSeekTs = tNs;
 

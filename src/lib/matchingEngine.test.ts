@@ -14,6 +14,10 @@ import { BarStore } from '../core/BarStore';
 import { appendEvents, BYTES_PER_EVENT, createCompactBuffer } from './compact-buffer';
 import { isoToNs } from './sampler';
 import type { MboEvent } from './types';
+import * as React from 'react';
+
+// a closed position toasts, and tsx compiles the toast's jsx against a global React
+(globalThis as any).React = React;
 
 // The engine talks to trading state through a handful of setters. None of them
 // matter here - these tests are about what the engine does before it has been
@@ -386,6 +390,24 @@ describe('l3 events handed over again', () => {
             paged.seekTo(later);
             assert.equal(book(paged), book(whole), `run ${run}, played on`);
         }
+    });
+
+    it('fills a resting limit the ask comes down onto with no trade', () => {
+        const { engine, positions } = placedAfterReplay();
+        engine.appendCompactBuf!(bufOf([...held, ev(3n, 'C', 'B', 100, 1), ev(4n, 'A', 'A', 99, 3)]));
+        engine.seekTo(T0 + 5n * SEC);
+        assert.equal(positions.at(-1)?.entryPrice, 99);
+    });
+
+    it('takes profit when the bid comes up to the target with no trade', () => {
+        const { engine, positions } = placedAfterReplay();
+        engine.placeOrder({
+            ...MARKET_BUY,
+            bracketTp: [{ id: 'tp', price: 102, qty: 1, triggered: false, triggeredAt: 0 }],
+        });
+        engine.appendCompactBuf!(bufOf([...held, ev(3n, 'C', 'A', 101, 2), ev(4n, 'A', 'B', 102, 3)]));
+        engine.seekTo(T0 + 5n * SEC);
+        assert.equal(positions.at(-1)?.remainingQuantity, 0);
     });
 
     it('starts a new window on an empty book', () => {
