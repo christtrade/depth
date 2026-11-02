@@ -1609,7 +1609,7 @@ export class DataEngine {
             case 'tick':
                 return processTickChunk(response.ticks ?? [], barNs, this.fpOptions);
             case 'l2':
-                return processL2Chunk(response.l2Snapshots ?? [], barNs);
+                return processL2Chunk(response.l2Snapshots ?? [], response.ticks ?? [], barNs, this.fpOptions);
             default:
                 return processL3Chunk(response.events ?? [], barNs, this.fpOptions, carry);
         }

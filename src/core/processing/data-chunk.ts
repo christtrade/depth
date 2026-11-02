@@ -5,6 +5,7 @@ import type { OhlcvBar } from '../../interfaces/IDataAdapter';
 import type { SerialTrade } from '../../lib/types';
 import type { PriceHistory } from '../../lib/types';
 import type { FootprintBar } from '../../lib/types/footprint';
+import type { L2DataChunk } from './l2-processor';
 
 // Per-level chunk types
 export interface L3DataChunk {
@@ -33,12 +34,7 @@ export interface OhlcvDataChunk {
     dataEnd: number;
 }
 
-export interface L2DataChunk {
-    kind: 'l2';
-    priceHistory: PriceHistory[];
-    dataStart: number;
-    dataEnd: number;
-}
+export type { L2DataChunk };
 
 export type DataChunk = L3DataChunk | TickDataChunk | OhlcvDataChunk | L2DataChunk;
 
@@ -48,7 +44,7 @@ export function isEmptyChunk(chunk: DataChunk): boolean {
         case 'l3':   return chunk.compactBuf.byteLength === 0;
         case 'tick': return chunk.trades.length === 0;
         case 'ohlcv':return chunk.ohlcvBars.length === 0;
-        case 'l2':   return chunk.priceHistory.length === 0;
+        case 'l2':   return chunk.compactBuf.byteLength === 0;
     }
 }
 
@@ -95,9 +91,16 @@ export function mergeChunks(a: DataChunk, b: DataChunk): DataChunk {
         }
         case 'l2': {
             const bL2 = b as L2DataChunk;
+            const merged = new Uint8Array(a.compactBuf.byteLength + bL2.compactBuf.byteLength);
+            merged.set(new Uint8Array(a.compactBuf), 0);
+            merged.set(new Uint8Array(bL2.compactBuf), a.compactBuf.byteLength);
             return {
                 kind: 'l2',
+                compactBuf: merged.buffer,
+                trades: a.trades.concat(bL2.trades),
                 priceHistory: a.priceHistory.concat(bL2.priceHistory),
+                footprintBars: a.footprintBars.concat(bL2.footprintBars),
+                midBars: a.midBars.concat(bL2.midBars),
                 dataStart: a.dataStart || bL2.dataStart,
                 dataEnd: bL2.dataEnd || a.dataEnd,
             };
