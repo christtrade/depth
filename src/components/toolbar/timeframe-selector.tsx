@@ -16,6 +16,7 @@ import {
 import type { FeaturesOptions } from '../../core/DepthChart';
 import type { TypedEventBus } from '../../core/TypedEventBus';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
+import { hasBook } from '../../lib/book';
 
 const PRESET_GROUPS = [
     {
@@ -239,7 +240,7 @@ export function TimeframeSelector({
                 >
                         <div className="p-2.5 space-y-3 flex-1 min-h-0 overflow-y-auto">
                             {PRESET_GROUPS.filter(
-                                (g) => g.tfs.length > 0 && (g.label !== 'Ticks' || dataLevel === 'l3' || dataLevel === 'tick'),
+                                (g) => g.tfs.length > 0 && (g.label !== 'Ticks' || hasBook(dataLevel) || dataLevel === 'tick'),
                             ).map((group) => (
                                 <div key={group.label}>
                                     <SectionLabel>{group.label}</SectionLabel>

@@ -302,6 +302,23 @@ for (const q of ['level=l2', 'level=l2&trades=0']) {
     });
 }
 
+test('l2: footprint is offered with trades, not without', async ({ page }) => {
+    const errors = watchErrors(page);
+    for (const [q, offered] of [['level=l2', 1], ['level=l2&trades=0', 0]] as const) {
+        await open(page, `/?${q}`);
+        await page.evaluate(() => (window as any).__chart.setChartSettings({ chartType: 'candles' }));
+        await page.getByRole('button', { name: 'Candles', exact: true }).click();
+        await expect(page.getByRole('button', { name: 'Area', exact: true }), q).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Footprint', exact: true }), q).toHaveCount(offered);
+        if (offered) {
+            await page.getByRole('button', { name: 'Footprint', exact: true }).click();
+            await page.waitForTimeout(300);
+            expect(await colouredPixels(page), q).toBeGreaterThan(500);
+        }
+    }
+    expect(errors).toEqual([]);
+});
+
 async function viewOverASecond(page: Page) {
     return page.evaluate(async () => {
         const tMax = () => (window as any).__chart.renderEngine.view.tMax as bigint;

@@ -141,9 +141,9 @@ test('l3: None opens on half a minute', async ({ page }) => {
     expect(errors).toEqual([]);
 });
 
-test('None is in the timeframe list at tick and l3 only', async ({ page }) => {
+test('None is in the timeframe list at tick, l2 and l3 only', async ({ page }) => {
     const errors = watchErrors(page);
-    for (const level of ['tick', 'l3']) {
+    for (const level of ['tick', 'l3', 'l2']) {
         await page.goto(`/?sim=1&level=${level}`);
         await settled(page);
         await pickTimeframe(page, 'None');

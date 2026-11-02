@@ -10,6 +10,7 @@ import { type TradePoint, type ViewBounds } from '../lib/types';
 import { type DataLevel } from '../interfaces/IDataAdapter';
 import { type TickEvent } from '../interfaces/IDataAdapter';
 import { isCompatible } from '../core/processing/data-level';
+import { hasBook } from '../lib/book';
 import { type OhlcvBar as IndicatorOhlcvBar } from '../lib/indicator-stdlib';
 import { type FootprintBar } from '../lib/types/footprint';
 import { type SerialTrade } from '../lib/types';
@@ -368,7 +369,7 @@ export function useChartSubscriptions(p: UseChartSubscriptionsParams): void {
                     else if (t < 1_000_000_000_000_000_000n) return t * 1_000n;
                     else return t;
                 }
-                if (dataLevelRef.current === 'l3' || dataLevelRef.current === 'tick') {
+                if (hasBook(dataLevelRef.current) || dataLevelRef.current === 'tick') {
                     for (const bar of previewBarsRef.current) {
                         ohlcv.push({
                             ts: toNs(bar.time),

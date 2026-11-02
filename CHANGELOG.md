@@ -16,6 +16,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `depth`, without them the bars are mid candles until the first trade
 - l2 draws the heatmap and the bid/ask like l3, the status line reads the book and the context menu
   has the heatmap toggle. it drew nothing before, not even a price scale lmao
+- l2 gets the sub-second timeframes (None, 1s..) and, once a trade came, the footprint chart type
 
 ### Changed
 - **Breaking:** `BarResponse` is now `FetchResponse`, it never held just bars. `ohlcvBars` -> `bars`,

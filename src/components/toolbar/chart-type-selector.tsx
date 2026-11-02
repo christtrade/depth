@@ -52,6 +52,7 @@ interface ChartTypeSelectorProps {
     value: ChartType;
     pluginChartTypes: any;
     dataLevel: DataLevel;
+    hasTrades: boolean;
     onChange: (t: ChartType) => void;
     onOpenChange?: (open: boolean) => void;
 }
@@ -60,6 +61,7 @@ export function ChartTypeSelector({
     value,
     pluginChartTypes = [],
     dataLevel,
+    hasTrades,
     onChange,
     onOpenChange,
 }: ChartTypeSelectorProps) {
@@ -76,7 +78,7 @@ export function ChartTypeSelector({
         { id: 'line', label: 'Line', icon: <LineIcon /> },
         { id: 'step', label: 'Step', icon: <StepIcon /> },
         { id: 'baseline', label: 'Baseline', icon: <BaselineIcon /> },
-    ].filter((type) => dataLevel === 'l3' || dataLevel === 'tick' || type.id !== 'footprint');
+    ].filter((type) => type.id !== 'footprint' || (dataLevel !== 'ohlcv' && hasTrades));
 
     // A plugin chart type stays listed on a symbol it cant compute from - its
     // installed, it just has nothing to work with here. Greyed out with the

@@ -3,7 +3,7 @@ import { BookState, MboEvent } from './types';
 import type { DataLevel } from '../interfaces/IDataAdapter';
 
 // l2 is held as l3 events, so both have a book
-export const hasBook = (level: DataLevel | undefined) => level === 'l3' || level === 'l2';
+export const hasBook = (level: DataLevel | string | undefined) => level === 'l3' || level === 'l2';
 
 // Creates a fresh, empty order book
 export function createBook(): BookState {

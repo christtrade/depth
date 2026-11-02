@@ -45,9 +45,9 @@ describe('servableBarNs', () => {
 });
 
 describe('unsupportedReason', () => {
-    it('None needs the trades', () => {
+    it('None needs events, trades or book', () => {
         const none = PRESET_TIMEFRAMES.find((t) => t.label === 'None')!;
-        for (const level of [undefined, 'ohlcv', 'l2']) assert.notEqual(unsupportedReason(none, undefined, level), null);
-        for (const level of ['tick', 'l3']) assert.equal(unsupportedReason(none, undefined, level), null);
+        for (const level of [undefined, 'ohlcv']) assert.notEqual(unsupportedReason(none, undefined, level), null);
+        for (const level of ['tick', 'l3', 'l2']) assert.equal(unsupportedReason(none, undefined, level), null);
     });
 });

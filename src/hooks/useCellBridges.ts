@@ -55,11 +55,21 @@ export function useTradingBridge(
     const tickValue = symbolInfo?.contract?.multiplier ?? 1;
 
     const [dataLevel, setDataLevel] = useState<DataLevel>('ohlcv');
+    // l2 trades are optional and footprints need them
+    const [hasTrades, setHasTrades] = useState(false);
     useEffect(() => {
         if (!eventBus) return;
-        return eventBus.on('data:load', ({ symbol: sym, dataLevel: dl }) => {
-            if (sym === symbol) setDataLevel(dl);
-        });
+        const offs = [
+            eventBus.on('data:load', ({ symbol: sym, dataLevel: dl, trades }) => {
+                if (sym !== symbol) return;
+                setDataLevel(dl);
+                setHasTrades(dl !== 'l2' || trades.length > 0);
+            }),
+            eventBus.on('data:append', ({ symbol: sym, trades }) => {
+                if (sym === symbol && trades?.length) setHasTrades(true);
+            }),
+        ];
+        return () => offs.forEach((off) => off());
     }, [eventBus, symbol]);
     const effectiveMarkMode = dataLevel === 'l3' || dataLevel === 'l2' ? 'conservative' : 'last';
 
@@ -163,7 +173,7 @@ export function useTradingBridge(
         trading.registerRedraw(redrawFnRef.current);
     }, [redrawFnRef.current]);
 
-    return { symbol, dataLevel, trading, executionEngine, redrawFnRef, tradingEvents };
+    return { symbol, dataLevel, hasTrades, trading, executionEngine, redrawFnRef, tradingEvents };
 }
 
 export type TradingBridge = ReturnType<typeof useTradingBridge>;

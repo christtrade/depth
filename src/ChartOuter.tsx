@@ -432,6 +432,7 @@ export default function Depth({
 
     const focusedBridge = cellBridges[focused] ?? cellBridges[0];
     const dataLevel: DataLevel = focusedBridge?.dataLevel ?? 'ohlcv';
+    const hasTrades = focusedBridge?.hasTrades ?? false;
     const dataLevelRef = useRef(dataLevel);
     dataLevelRef.current = dataLevel;
 
@@ -1346,6 +1347,7 @@ export default function Depth({
                                 value={chartSettings.chartType}
                                 pluginChartTypes={pluginChartTypeDefs}
                                 dataLevel={dataLevel}
+                                hasTrades={hasTrades}
                                 onChange={(t) => {
                                     if (chartTypeRefused(t)) return;
                                     eventBus.emit('chart:set-type', {

@@ -148,7 +148,7 @@ export function autoFitPriceAxis(
         settings.chartType === 'kagi' ||
         settings.chartType === 'line-break'
     ) {
-        if (dataLevel === 'l3' || dataLevel === 'tick') scanTrades();
+        if (hasBook(dataLevel) || dataLevel === 'tick') scanTrades();
         scanBars();
         foldOpenBar();
     }
@@ -817,7 +817,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         }
 
         const ohlcv: any[] = [];
-        if (dataLevelRef.current === 'l3' || dataLevelRef.current === 'tick') {
+        if (hasBook(dataLevelRef.current) || dataLevelRef.current === 'tick') {
             for (const [ts, bar] of candleCacheRef.current ?? new Map()) {
                 ohlcv.push({
                     ts: toNs(ts),
@@ -919,7 +919,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         }
 
         const ohlcv: any[] = [];
-        if (dataLevelRef.current === 'l3' || dataLevelRef.current === 'tick') {
+        if (hasBook(dataLevelRef.current) || dataLevelRef.current === 'tick') {
             for (const [ts, bar] of candleCacheRef.current ?? new Map()) {
                 ohlcv.push({
                     ts: toNs(ts),

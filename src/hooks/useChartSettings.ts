@@ -7,6 +7,7 @@ import { type RenderEngine } from '../core/RenderEngine';
 import { type BarStore } from '../core/BarStore';
 import { StorageKey, readJSON, writeJSON } from '../lib/storage';
 import { autoFitPriceAxis } from './useChartData';
+import { hasBook } from '../lib/book';
 
 export interface UseChartSettingsParams {
     chartSettingsRef: MutableRefObject<ChartSettings>;
@@ -179,7 +180,7 @@ export function useChartSettings(p: UseChartSettingsParams): UseChartSettingsRes
         ] as const;
         if (
             footprintRebuildKeys.some((k) => chartSettings[k] !== prev[k]) &&
-            (dataLevelRef.current === 'l3' || dataLevelRef.current === 'tick')
+            (hasBook(dataLevelRef.current) || dataLevelRef.current === 'tick')
         ) {
             rebuildFootprints();
         }
