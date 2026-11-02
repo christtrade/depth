@@ -578,23 +578,33 @@ for (const level of ['tick', 'l3', 'l2'] as const) {
     });
 }
 
-// candles off the mid: every snapshots mid inside its minute, the last one the close
+// candles off the mid like tick candles: a tick is the mid changing, a bar the ohlc of its ticks
 function assertMidBars(p: any, fromMs: number, toMs: number) {
-    const bars = p.bars.toArray();
-    assert.equal(bars.length, Math.ceil((toMs - fromMs) / MIN_MS), 'a bar a minute');
-    const byMin = new Map(bars.map((b: any) => [b.time, b]));
-    const last = new Map<number, number>();
+    const want: any[] = [];
+    let last: number | null = null;
     for (const s of simL2Snapshots(priceOf('NQ'), fromMs, toMs)) {
-        if (!s.bids.length || !s.asks.length) continue;
-        const mid = (s.bids[0].price + s.asks[0].price) / 2;
-        const t = Math.floor(s.time / MIN_MS) * MIN_MS;
-        const b: any = byMin.get(t);
-        assert.ok(b, `a bar at ${new Date(t).toISOString()}`);
-        assert.ok(mid >= b.low - 1e-9 && mid <= b.high + 1e-9, `mid ${mid} in ${b.low}..${b.high}`);
-        last.set(t, mid);
+        // in cents, or the same mid off another bid/ask pair reads as a change
+        const mid = s.bids.length && s.asks.length ? (Math.round(s.bids[0].price * 100) + Math.round(s.asks[0].price * 100)) / 200 : null;
+        if (mid === last) continue;
+        last = mid;
+        if (mid === null) continue;
+        const time = Math.floor(s.time / MIN_MS) * MIN_MS;
+        const b = want.at(-1);
+        if (b?.time === time) {
+            b.high = Math.max(b.high, mid);
+            b.low = Math.min(b.low, mid);
+            b.close = mid;
+        } else want.push({ time, open: mid, high: mid, low: mid, close: mid, volume: 0 });
     }
-    for (const [t, mid] of last) assert.ok(Math.abs((byMin.get(t) as any).close - mid) < 1e-9, 'closes on the last mid');
-    for (const b of bars) assert.equal(b.volume, 0);
+    const got = p.bars.toArray();
+    assert.equal(got.length, want.length, 'one bar per minute the mid moved in');
+    for (let i = 0; i < want.length; i++) {
+        const g = got[i], w = want[i];
+        const at = new Date(w.time).toISOString();
+        assert.equal(g.time, w.time, `bar ${i} at ${at}`);
+        for (const k of ['open', 'high', 'low', 'close'] as const) assert.ok(Math.abs(g[k] - w[k]) < 1e-9, `${at} ${k} ${g[k]} want ${w[k]}`);
+        assert.equal(g.volume, 0);
+    }
 }
 
 describe('l2 level, bar source', () => {
@@ -639,6 +649,52 @@ describe('l2 level, book only', () => {
         assert.ok(p.dataStart < T0 - 30 * MIN_MS, 'got older data');
         assertMidBars(p, p.dataStart, T0);
         assertBookIs(p, 'NQ', p.dataStart, T0);
+    });
+
+    it('the budget drops history far from the view, and the candles stay the mid ticks', async () => {
+        const { bus, de, next, announce, settle } = levelEngine('l2-book', { maxBytes: 3_000_000 });
+        const loaded = next('data:load');
+        await de.load('NQ');
+        await loaded;
+        announce(MIN, T0 - 10 * MIN_MS, T0);
+        await settle();
+        const cut = next('data:load');
+        bus.emit('data:request-backward', { viewMin: nsOf(T0 - 2 * HOUR_MS), symbol: 'NQ' });
+        const p = await cut;
+        assert.equal(p.replaced, true);
+        assert.ok(p.dataStart > T0 - 2 * HOUR_MS, 'dropped some');
+        assertMidBars(p, p.dataStart, T0);
+        assertBookIs(p, 'NQ', p.dataStart, T0);
+
+        const edge = Math.floor(p.dataStart / MIN_MS) * MIN_MS;
+        const prepended = next('data:prepend');
+        bus.emit('data:request-backward', { viewMin: nsOf(edge - 10 * MIN_MS), symbol: 'NQ' });
+        const q = await prepended;
+        assertMidBars(q, q.dataStart, T0);
+    });
+
+    it('the budget drops what is past the view, and the next page carries the mid on', async () => {
+        const { bus, de, fetches, next, announce } = levelEngine('l2-book', { maxBytes: 3_000_000 });
+        const loaded = next('data:load');
+        await de.load('NQ');
+        await loaded;
+        const cut = new Promise<any>((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error('no cut')), 5000);
+            bus.on('data:load', (p: any) => {
+                if (p.dataEnd >= T0 - HOUR_MS) return;
+                clearTimeout(timer);
+                resolve(p);
+            });
+        });
+        announce(MIN, T0 - 2 * HOUR_MS, T0 - 2 * HOUR_MS + 10 * MIN_MS);
+        const p = await cut;
+        const end = Math.floor(p.dataEnd / MIN_MS) * MIN_MS + MIN_MS;
+        assertMidBars(p, p.dataStart, end);
+
+        const appended = next('data:append');
+        bus.emit('data:request-forward', { viewMax: nsOf(end + 10 * MIN_MS), symbol: 'NQ' });
+        const q = await appended;
+        assertMidBars(q, p.dataStart, fetches.at(-1)!.toMs);
     });
 
     it('live chunks extend the mid candles and the book', async () => {

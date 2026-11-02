@@ -19,7 +19,7 @@ import type { MboEvent } from './types';
 export const BYTES_PER_EVENT = 24;
 const TWO_32 = 2 ** 32;
 const INT32_MIN = -2_147_483_648; // sentinel for null price
-const PRICE_SCALE = 100; // store price x 100 as int32
+export const PRICE_SCALE = 100; // store price x 100 as int32
 
 // Maps must stay in the same order as buffer.ts ACTION_NAMES / SIDE_NAMES.
 const ACTION_ENCODE: Record<string, number> = { A: 0, C: 1, M: 2, T: 3, F: 4, R: 5 };

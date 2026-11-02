@@ -175,6 +175,8 @@ export interface ChartEvents {
         trades: SerialTrade[];
         priceHistory: PriceHistory[];
         footprintBars: FootprintBar[];
+        /** (l2) the mid each time it changes, size 0. Empty at every other level. */
+        midPrints: SerialTrade[];
         /** What footprintBars were built with. */
         fpOptions: FootprintOptions;
         /** Every loaded bar. Derived from footprintBars at l3/tick, empty at l2. */
@@ -220,6 +222,8 @@ export interface ChartEvents {
         trades: SerialTrade[];
         priceHistory: PriceHistory[];
         footprintBars: FootprintBar[];
+        /** (l2) the mid each time it changes, size 0. Empty at every other level. */
+        midPrints: SerialTrade[];
         fpOptions: FootprintOptions;
         /** This chunk's new bars at ohlcv, empty at every other level. */
         ohlcvBars: OhlcvBar[];
@@ -259,6 +263,8 @@ export interface ChartEvents {
         trades: SerialTrade[];
         priceHistory: PriceHistory[];
         footprintBars: FootprintBar[];
+        /** (l2) the mid each time it changes, size 0. Empty at every other level. */
+        midPrints: SerialTrade[];
         fpOptions: FootprintOptions;
         /** This page's new bars at ohlcv, empty at every other level. */
         ohlcvBars: OhlcvBar[];

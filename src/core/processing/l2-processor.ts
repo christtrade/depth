@@ -7,7 +7,7 @@ import type { L2Snapshot, OhlcvBar, TickEvent } from '../../interfaces/IDataAdap
 import type { FootprintBar, FootprintOptions } from '../../lib/types/footprint';
 import type { BookState, MboEvent, PriceHistory, SerialTrade } from '../../lib/types';
 import { applyEvent, cloneBook, createBook, getBestAsk, getBestBid } from '../../lib/book';
-import { BYTES_PER_EVENT, createCompactBuffer, getEvent, getTsNs } from '../../lib/compact-buffer';
+import { BYTES_PER_EVENT, PRICE_SCALE, createCompactBuffer, getEvent, getTsNs } from '../../lib/compact-buffer';
 import { encodeEvents, processL3Chunk } from './l3-processor';
 
 export interface L2DataChunk {
@@ -18,6 +18,8 @@ export interface L2DataChunk {
     priceHistory: PriceHistory[];
     /** From the trades, empty without them. */
     footprintBars: FootprintBar[];
+    /** The mid each time it changes, size 0. What the mid candles are built from. */
+    midPrints: SerialTrade[];
     /** Candles off the mid price, volume 0. The bars to draw when the feed has no trades. */
     midBars: OhlcvBar[];
     /** Unix ms */
@@ -55,6 +57,7 @@ export function l2Chunk(
             trades: [],
             priceHistory: [],
             footprintBars: [],
+            midPrints: [],
             midBars: [],
             dataStart: 0,
             dataEnd: 0,
@@ -62,13 +65,15 @@ export function l2Chunk(
     // processL3Chunk mutates the carried book
     const before = carry.book && cloneBook(carry.book);
     const c = processL3Chunk(events, barNs, fpOptions, carry);
+    const prints = midPrints(c.compactBuf, before);
     return {
         kind: 'l2',
         compactBuf: c.compactBuf,
         trades: c.trades,
         priceHistory: c.priceHistory,
         footprintBars: c.footprintBars,
-        midBars: barNs > 0n ? midBars(c.compactBuf, barNs, before) : [],
+        midPrints: prints,
+        midBars: barNs > 0n ? midBars(prints, barNs) : [],
         dataStart: c.dataStart,
         dataEnd: c.dataEnd,
         ...(c.bookAt && { bookAt: c.bookAt }),
@@ -140,30 +145,47 @@ export function anchorEvents(book: BookState, tsNs: bigint): ArrayBuffer {
     return encodeEvents(out, new BigInt64Array(out.length).fill(tsNs));
 }
 
-// candles off the mid of the book `buf` replays to (vol 0)
-// a side left emtpy skips that moment
-export function midBars(buf: ArrayBuffer, barNs: bigint, book: BookState = createBook()): OhlcvBar[] {
+// the mid each time it changes, after everything at that ts. a side left empty has no mid.
+// size 0 so the trade candle code builds mid candles off them with volume 0
+export function midPrints(buf: ArrayBuffer, book: BookState = createBook()): SerialTrade[] {
     const cb = createCompactBuffer(0);
     cb._buf = buf;
     cb._view = new DataView(buf);
     cb.length = cb.capacity = buf.byteLength / BYTES_PER_EVENT;
-    const out: OhlcvBar[] = [];
+    const out: SerialTrade[] = [];
+    let last = midOf(book);
     for (let i = 0; i < cb.length; i++) {
         const ts = getTsNs(cb, i);
         applyEvent(book, getEvent(cb, i));
-        // the book after everything at this ts
         if (i + 1 < cb.length && getTsNs(cb, i + 1) === ts) continue;
-        const bid = getBestBid(book);
-        const ask = getBestAsk(book);
-        if (bid === null || ask === null) continue;
-        const mid = (bid + ask) / 2;
-        const time = Number((ts / barNs) * barNs / 1_000_000n);
+        const mid = midOf(book);
+        if (mid === last) continue;
+        last = mid;
+        if (mid !== null) out.push({ ts, price: mid, size: 0, side: 'B' });
+    }
+    return out;
+}
+
+// in the buffers own units, so the same mid off different bid/ask pairs is the same float
+export function midOf(book: BookState): number | null {
+    const bid = getBestBid(book);
+    const ask = getBestAsk(book);
+    if (bid === null || ask === null) return null;
+    return (Math.round(bid * PRICE_SCALE) + Math.round(ask * PRICE_SCALE)) / (2 * PRICE_SCALE);
+}
+
+// candles off midPrints, from index `from` on
+export function midBars(prints: readonly SerialTrade[], barNs: bigint, from = 0): OhlcvBar[] {
+    const out: OhlcvBar[] = [];
+    for (let i = from; i < prints.length; i++) {
+        const { ts, price } = prints[i];
+        const time = Number(((ts / barNs) * barNs) / 1_000_000n);
         const bar = out.at(-1);
         if (bar && bar.time === time) {
-            if (mid > bar.high) bar.high = mid;
-            if (mid < bar.low) bar.low = mid;
-            bar.close = mid;
-        } else out.push({ time, open: mid, high: mid, low: mid, close: mid, volume: 0 });
+            if (price > bar.high) bar.high = price;
+            if (price < bar.low) bar.low = price;
+            bar.close = price;
+        } else out.push({ time, open: price, high: price, low: price, close: price, volume: 0 });
     }
     return out;
 }

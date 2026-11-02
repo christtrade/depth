@@ -35,7 +35,7 @@ import {
     type OhlcvDataChunk,
 } from './processing/ohlcv-processor';
 import { processTickChunk, type TickDataChunk } from './processing/tick-processor';
-import { anchorEvents, l2Chunk, l2Events, midBars, type L2DataChunk } from './processing/l2-processor';
+import { anchorEvents, l2Chunk, l2Events, midBars, midOf, type L2DataChunk } from './processing/l2-processor';
 import { type DataChunk, isEmptyChunk } from './processing/data-chunk';
 import { type Forming, formingOf, joinForming, narrowForming } from './processing/forming';
 import { applyEvent, cloneBook } from '../lib/book';
@@ -90,6 +90,8 @@ interface MasterBuffer {
     priceHistory: PriceHistory[];
     /** Populated for l3 and tick; empty for ohlcv and l2. */
     footprintBars: FootprintBar[];
+    /** l2 only, the mid each time it changes. */
+    midPrints: SerialTrade[];
     /** Populated for ohlcv; derived from footprintBars for l3/tick; empty for l2. */
     ohlcvBars: BarStore;
     barNs: bigint;
@@ -204,6 +206,7 @@ function _chunkToMasterFields(
     | 'trades'
     | 'priceHistory'
     | 'footprintBars'
+    | 'midPrints'
     | 'ohlcvBars'
     | 'dataStart'
     | 'dataEnd'
@@ -217,6 +220,7 @@ function _chunkToMasterFields(
                 trades: chunk.trades,
                 priceHistory: chunk.priceHistory,
                 footprintBars: chunk.footprintBars,
+                midPrints: [],
                 ohlcvBars: _deriveOhlcvFromFootprint(chunk.footprintBars),
                 dataStart: chunk.dataStart,
                 dataEnd: chunk.dataEnd,
@@ -228,6 +232,7 @@ function _chunkToMasterFields(
                 trades: chunk.trades,
                 priceHistory: chunk.priceHistory,
                 footprintBars: chunk.footprintBars,
+                midPrints: [],
                 ohlcvBars: _deriveOhlcvFromFootprint(chunk.footprintBars),
                 dataStart: chunk.dataStart,
                 dataEnd: chunk.dataEnd,
@@ -239,6 +244,7 @@ function _chunkToMasterFields(
                 trades: [],
                 priceHistory: [],
                 footprintBars: [],
+                midPrints: [],
                 ohlcvBars: BarStore.from(chunk.ohlcvBars),
                 dataStart: chunk.dataStart,
                 dataEnd: chunk.dataEnd,
@@ -251,6 +257,7 @@ function _chunkToMasterFields(
                 trades: chunk.trades,
                 priceHistory: chunk.priceHistory,
                 footprintBars: chunk.footprintBars,
+                midPrints: chunk.midPrints,
                 ohlcvBars: chunk.trades.length
                     ? _deriveOhlcvFromFootprint(chunk.footprintBars)
                     : BarStore.from(chunk.midBars),
@@ -304,7 +311,7 @@ const BUDGETED = new Set<DataLevel>(['ohlcv', 'tick', 'l3', 'l2']);
 function heldBytes(m: MasterBuffer): number {
     let fp = 0;
     for (const b of m.footprintBars) fp += 160 + 72 * b.levels.length;
-    return m.ohlcvBars.bytes + m.compactBuf.byteLength + 96 * m.trades.length + 88 * m.priceHistory.length + fp;
+    return m.ohlcvBars.bytes + m.compactBuf.byteLength + 96 * (m.trades.length + m.midPrints.length) + 88 * m.priceHistory.length + fp;
 }
 
 function _gcd(a: bigint, b: bigint): bigint {
@@ -1743,6 +1750,7 @@ export class DataEngine {
                 master.trades = _joined(master.trades, cut(master.trades), c.trades);
                 master.priceHistory = _joined(master.priceHistory, cut(master.priceHistory), c.priceHistory);
                 master.footprintBars = _joined(master.footprintBars, cut(master.footprintBars), c.footprintBars);
+                if (dl === 'l2') master.midPrints = _joined(master.midPrints, cut(master.midPrints), (c as L2DataChunk).midPrints);
 
                 if (evented(dl)) {
                     const keep =
@@ -1756,12 +1764,14 @@ export class DataEngine {
                     master.compactBuf = merged.buffer;
                 }
                 if (this._midBars(st)) {
-                    // replaying the whole buffer every live chunk is o(n), the chunk rebuilt from its first bar on
-                    const mid = (c as L2DataChunk).midBars;
-                    if (mid.length) {
+                    // from the chunks first bar on, that bar can have started chunks ago
+                    const first = (c as L2DataChunk).midPrints[0];
+                    if (first) {
+                        const barNs = master.barNs;
+                        const from = (first.ts / barNs) * barNs;
                         const bars = master.ohlcvBars.clone();
-                        bars.replaceRange(mid[0].time, Infinity, []);
-                        bars.append(mid);
+                        bars.replaceRange(Number(from / 1_000_000n), Infinity, []);
+                        bars.append(midBars(master.midPrints, barNs, firstTsAtOrAfter(master.midPrints, from)));
                         master.ohlcvBars = bars;
                     }
                 } else master.ohlcvBars = _deriveOhlcvFromFootprint(master.footprintBars);
@@ -1814,7 +1824,7 @@ export class DataEngine {
     private _rebar(st: SymbolState, barNs: bigint): void {
         const m = st.master!;
         m.ohlcvBars = this._midBars(st)
-            ? BarStore.from(midBars(m.compactBuf, barNs))
+            ? BarStore.from(midBars(m.midPrints, barNs))
             : _deriveOhlcvFromFootprint(m.footprintBars);
     }
 
@@ -1841,6 +1851,12 @@ export class DataEngine {
                 master.compactBuf = merged.buffer;
                 master.trades = c.trades.concat(master.trades);
                 master.priceHistory = c.priceHistory.concat(held);
+                if (dl === 'l2') {
+                    // the held start is a fresh book, its first print can repeat the pages last mid
+                    const page = (c as L2DataChunk).midPrints;
+                    const dup = page.length > 0 && master.midPrints[0]?.price === page.at(-1)!.price;
+                    master.midPrints = page.concat(dup ? master.midPrints.slice(1) : master.midPrints);
+                }
                 master.footprintBars = _prependFootprints(
                     c.footprintBars,
                     master.footprintBars,
@@ -2002,6 +2018,7 @@ export class DataEngine {
             trades: master.trades,
             priceHistory: master.priceHistory,
             footprintBars: master.footprintBars,
+            midPrints: master.midPrints,
             fpOptions: this.fpOptions,
             bars: master.ohlcvBars,
             barNs: master.barNs,
@@ -2055,6 +2072,7 @@ export class DataEngine {
             trades: master.trades,
             priceHistory: master.priceHistory,
             footprintBars: master.footprintBars,
+            midPrints: master.midPrints,
             fpOptions: this.fpOptions,
             ohlcvBars: 'ohlcvBars' in chunk ? chunk.ohlcvBars : [],
             bars: master.ohlcvBars,
@@ -2266,13 +2284,18 @@ export class DataEngine {
             );
         m.trades = cut(m.trades);
         m.priceHistory = cut(m.priceHistory);
+        m.midPrints = cut(m.midPrints);
         m.footprintBars = cut(m.footprintBars);
         if (evented(m.dataLevel)) {
             const kept = eventsBetween(m.compactBuf, fromNs, toNs);
             // l2 has no R until the next chunk, so without the book in front nothing draws up to there
             if (m.dataLevel === 'l2' && fromNs !== null && kept.byteLength > 0) {
                 const at = new DataView(kept).getBigInt64(0, true);
-                const anchor = anchorEvents(bookAfter(eventsBetween(m.compactBuf, null, fromNs)), at);
+                const book = bookAfter(eventsBetween(m.compactBuf, null, fromNs));
+                const anchor = anchorEvents(book, at);
+                // the anchor is a fresh book, a replay prints its mid there
+                const mid = midOf(book);
+                if (mid !== null && !(m.midPrints[0]?.ts === at)) m.midPrints = [{ ts: at, price: mid, size: 0, side: 'B' }, ...m.midPrints];
                 const joined = new Uint8Array(anchor.byteLength + kept.byteLength);
                 joined.set(new Uint8Array(anchor), 0);
                 joined.set(new Uint8Array(kept), anchor.byteLength);

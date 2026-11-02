@@ -25,6 +25,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Breaking:** `processL2Chunk(snapshots, ticks, barNs, fpOptions?)` takes the trades and returns
   the l3 shape. so a `compactBuf` of one synthetic order per price level, trades, footprints and
   `midBars`. used to keep only the best bid/ask
+- **Breaking:** l2 mid candles are tick candles off the mid: a tick is the mid changing, a bar the
+  ohlc of its ticks, like trade candles. they opened on whatever mid stood at the first book update,
+  even a deep one. `L2DataChunk.midPrints` and `data:load`/`append`/`prepend`'s `midPrints` hold the
+  ticks (size 0)
 
 ### Fixed
 - Footprint settings reset to the defaults on the next page back or timeframe switch. the engine

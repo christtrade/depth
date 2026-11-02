@@ -82,16 +82,25 @@ describe('processL2Chunk', () => {
         assert.equal(c.trades.length, 0);
         assert.equal(c.footprintBars.length, 0);
         assert.equal(c.midBars.length, 30);
-        const byMin = new Map(c.midBars.map((b) => [b.time, b]));
-        const last = new Map<number, number>();
+        // a tick is the mid changing, like a trade for trade candles
+        const ticks: { time: number; mid: number }[] = [];
         for (const s of snaps) {
-            const m = (s.bids[0].price + s.asks[0].price) / 2;
-            const b = byMin.get(Math.floor(s.time / MIN_MS) * MIN_MS)!;
-            assert.ok(m >= b.low - 1e-9 && m <= b.high + 1e-9, `mid ${m} in ${b.low}..${b.high}`);
-            last.set(b.time, m);
+            // in cents, or the same mid off another bid/ask pair reads as a change
+            const mid = (Math.round(s.bids[0].price * 100) + Math.round(s.asks[0].price * 100)) / 200;
+            if (mid !== ticks.at(-1)?.mid) ticks.push({ time: s.time, mid });
         }
+        // prices come back off the compact buffer, last bits differ
+        const near = (a: number, b: number) => Math.abs(a - b) < 1e-9;
+        assert.equal(c.midPrints.length, ticks.length);
+        c.midPrints.forEach((p, i) => {
+            assert.equal(Number(p.ts / 1_000_000n), ticks[i].time);
+            assert.ok(near(p.price, ticks[i].mid), `print ${i} ${p.price} want ${ticks[i].mid}`);
+            assert.equal(p.size, 0);
+        });
         for (const b of c.midBars) {
-            assert.ok(Math.abs(b.close - last.get(b.time)!) < 1e-9, 'closes on the last mid');
+            const inBar = ticks.filter((t) => Math.floor(t.time / MIN_MS) * MIN_MS === b.time).map((t) => t.mid);
+            const want = [inBar[0], Math.max(...inBar), Math.min(...inBar), inBar.at(-1)!];
+            [b.open, b.high, b.low, b.close].forEach((v, i) => assert.ok(near(v, want[i]), `${b.time} ${v} want ${want[i]}`));
             assert.equal(b.volume, 0);
         }
     });
@@ -126,7 +135,7 @@ describe('processL2Chunk', () => {
 
     it('midBars rebuckets what is held at another size', () => {
         const c = processL2Chunk(snaps, [], MIN);
-        const five = midBars(c.compactBuf, 5n * MIN);
+        const five = midBars(c.midPrints, 5n * MIN);
         assert.equal(five.length, 6);
         assert.equal(five[0].high, Math.max(...c.midBars.slice(0, 5).map((b) => b.high)));
         assert.equal(five.at(-1)!.close, c.midBars.at(-1)!.close);

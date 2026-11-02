@@ -100,6 +100,7 @@ export function mergeChunks(a: DataChunk, b: DataChunk): DataChunk {
                 trades: a.trades.concat(bL2.trades),
                 priceHistory: a.priceHistory.concat(bL2.priceHistory),
                 footprintBars: a.footprintBars.concat(bL2.footprintBars),
+                midPrints: a.midPrints.concat(bL2.midPrints),
                 midBars: a.midBars.concat(bL2.midBars),
                 dataStart: a.dataStart || bL2.dataStart,
                 dataEnd: bL2.dataEnd || a.dataEnd,
