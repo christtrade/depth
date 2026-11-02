@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { describe, it as baseIt } from 'node:test';
 
 import { DataEngine } from './DataEngine';
 import { ChartState, type ChartStateShape } from './ChartState';
 import { TypedEventBus } from './TypedEventBus';
 import type { BarResponse, IDataAdapter } from '../interfaces/IDataAdapter';
 import { installInlineSliceWorker } from '../lib/inline-slice-worker';
-import { simMboEvents, simTicks } from '../lib/sim-levels';
+import { simL2Snapshots, simMboEvents, simTicks } from '../lib/sim-levels';
+import { applyEvent, createBook } from '../lib/book';
 import { processL3Chunk } from './processing/l3-processor';
 import { footprintFromTrades } from '../lib/types/footprint';
 import { BYTES_PER_EVENT, createCompactBuffer, getEvent, getTsNs } from '../lib/compact-buffer';
@@ -19,16 +20,18 @@ const HOUR_MS = 3_600_000;
 const T0 = Date.UTC(2026, 0, 1);
 const START = T0 - 6 * HOUR_MS;
 
-type Level = 'tick' | 'l3';
+// l2-book is l2 without trades
+type Level = 'tick' | 'l3' | 'l2' | 'l2-book';
 
 const priceOf = (symbol: string) => (ms: number) =>
     (symbol === 'NQ' ? 100 : 50) + 3 * Math.sin(ms / 2.7e6) + 0.4 * Math.sin(ms / 7_000);
 
 function respond(level: Level, symbol: string, fromMs: number, toMs: number): Partial<BarResponse> {
     const price = priceOf(symbol);
-    return level === 'tick'
-        ? { events: [], ticks: simTicks(price, fromMs, toMs) }
-        : { events: simMboEvents(price, fromMs, toMs) as never };
+    if (level === 'tick') return { events: [], ticks: simTicks(price, fromMs, toMs) };
+    if (level === 'l2') return { events: [], l2Snapshots: simL2Snapshots(price, fromMs, toMs), ticks: simTicks(price, fromMs, toMs) };
+    if (level === 'l2-book') return { events: [], l2Snapshots: simL2Snapshots(price, fromMs, toMs) };
+    return { events: simMboEvents(price, fromMs, toMs) as never };
 }
 
 const tfOf = (barNs: bigint) => ({ label: String(barNs), barNs, defaultBars: 100, isPreset: false });
@@ -56,7 +59,7 @@ function levelEngine(
         resolveSymbol: async (symbol: string) => ({
             symbol,
             type: 'future',
-            dataLevel: level,
+            dataLevel: level === 'l2-book' ? 'l2' : level,
             priceFormat: { minTick: 0.01, precision: 2 },
         }),
         getCapabilities: () => ({}),
@@ -173,10 +176,43 @@ function assertFootprintsClean(p: any, barNs: bigint) {
     assert.equal(p.bars.length, ts.length, 'a bar for every footprint');
 }
 
-const firstMs = (p: any) => Number(p.trades[0].ts / 1_000_000n);
+// l2 only - replaying the held events gives the adapters book at every snapshot
+function assertBookIs(p: any, symbol: string, fromMs: number, toMs: number) {
+    if (p.dataLevel !== 'l2') return;
+    const want = simL2Snapshots(priceOf(symbol), fromMs, toMs);
+    assert.ok(want.length > 0);
+    const cb = createCompactBuffer(0);
+    cb._buf = p.compactBuf;
+    cb._view = new DataView(p.compactBuf);
+    cb.length = cb.capacity = p.compactBuf.byteLength / BYTES_PER_EVENT;
+    const book = createBook();
+    const levels = (m: Map<string, { price: number; size: number }>, desc: boolean) => {
+        const by = new Map<number, number>();
+        for (const o of m.values()) by.set(o.price, (by.get(o.price) ?? 0) + o.size);
+        return [...by]
+            .sort((a, b) => (desc ? b[0] - a[0] : a[0] - b[0]))
+            .slice(0, 10)
+            .map(([price, size]) => `${price.toFixed(6)}x${size}`)
+            .join(' ');
+    };
+    let i = 0;
+    for (const s of want) {
+        const at = nsOf(s.time);
+        while (i < cb.length && getTsNs(cb, i) <= at) applyEvent(book, getEvent(cb, i++));
+        const got = `${levels(book.bids as any, true)} | ${levels(book.asks as any, false)}`;
+        const exp = `${s.bids.map((l) => `${l.price.toFixed(6)}x${l.size}`).join(' ')} | ${s.asks.map((l) => `${l.price.toFixed(6)}x${l.size}`).join(' ')}`;
+        assert.ok(got === exp, `book at ${new Date(s.time).toISOString()}:\n  got      ${got}\n  expected ${exp}`);
+    }
+}
 
-for (const level of ['tick', 'l3'] as const) {
+const firstMs = (p: any) => Number(p.trades[0].ts / 1_000_000n);
+const L2_TODO = 'l2 plan steps 3-4';
+
+for (const level of ['tick', 'l3', 'l2'] as const) {
     describe(`${level} level`, () => {
+        // l2 is the spec until the engine catches up, so it reports without failing the run
+        const it = (name: string, fn: () => Promise<void>) =>
+            level === 'l2' ? baseIt(name, { todo: L2_TODO }, fn) : baseIt(name, fn);
         it('loads the initial window', async () => {
             const { de, next } = levelEngine(level);
             const loaded = next('data:load');
@@ -185,6 +221,7 @@ for (const level of ['tick', 'l3'] as const) {
             assert.equal(p.dataLevel, level);
             assert.ok(p.ingestOhlcvBuf.byteLength > 0, 'the slice worker bucketed the trades');
             assertTradesAre(p, 'NQ', T0 - 30 * MIN_MS, T0);
+            assertBookIs(p, 'NQ', T0 - 30 * MIN_MS, T0);
             assertFootprintsClean(p, MIN);
             assert.equal(p.footprintBars.length, 30);
         });
@@ -221,6 +258,7 @@ for (const level of ['tick', 'l3'] as const) {
                 `reached the asked-for view, fetched ${JSON.stringify(fetches)}`,
             );
             assertTradesAre(p, 'NQ', firstMs(p), T0);
+            assertBookIs(p, 'NQ', p.dataStart, T0);
             assertFootprintsClean(p, MIN);
         });
 
@@ -262,6 +300,7 @@ for (const level of ['tick', 'l3'] as const) {
             const p = await appended;
             assertTradesAre(p, 'NQ', T0 - 30 * MIN_MS, T0 + 10 * MIN_MS);
             assertEventsAre(p, 'NQ', T0 - 30 * MIN_MS, T0 + 10 * MIN_MS);
+            assertBookIs(p, 'NQ', T0 - 30 * MIN_MS, T0 + 10 * MIN_MS);
             assertFootprintsClean(p, MIN);
         });
 
@@ -279,7 +318,7 @@ for (const level of ['tick', 'l3'] as const) {
             }
         };
 
-        const budget = level === 'l3' ? 8_000_000 : 4_000_000;
+        const budget = level === 'tick' ? 4_000_000 : 8_000_000;
 
         it('the budget drops history far from the view, and pages it back in', async () => {
             const { bus, de, fetches, next, announce, settle } = levelEngine(level, { maxBytes: budget });
@@ -409,6 +448,7 @@ for (const level of ['tick', 'l3'] as const) {
             const p = await appended;
             assertTradesAre(p, 'NQ', T0 - 30 * MIN_MS, T0 + 30_000);
             assertEventsAre(p, 'NQ', T0 - 30 * MIN_MS, T0 + 30_000);
+            assertBookIs(p, 'NQ', T0 - 30 * MIN_MS, T0 + 30_000);
             assertFootprintsClean(p, MIN);
             const last = p.footprintBars.at(-1);
             assert.equal(last.ts, nsOf(T0), 'the forming minute');
@@ -537,3 +577,68 @@ for (const level of ['tick', 'l3'] as const) {
         });
     });
 }
+
+// candles off the mid: every snapshots mid inside its minute, the last one the close
+function assertMidBars(p: any, fromMs: number, toMs: number) {
+    const bars = p.bars.toArray();
+    assert.equal(bars.length, Math.ceil((toMs - fromMs) / MIN_MS), 'a bar a minute');
+    const byMin = new Map(bars.map((b: any) => [b.time, b]));
+    const last = new Map<number, number>();
+    for (const s of simL2Snapshots(priceOf('NQ'), fromMs, toMs)) {
+        if (!s.bids.length || !s.asks.length) continue;
+        const mid = (s.bids[0].price + s.asks[0].price) / 2;
+        const t = Math.floor(s.time / MIN_MS) * MIN_MS;
+        const b: any = byMin.get(t);
+        assert.ok(b, `a bar at ${new Date(t).toISOString()}`);
+        assert.ok(mid >= b.low - 1e-9 && mid <= b.high + 1e-9, `mid ${mid} in ${b.low}..${b.high}`);
+        last.set(t, mid);
+    }
+    for (const [t, mid] of last) assert.ok(Math.abs((byMin.get(t) as any).close - mid) < 1e-9, 'closes on the last mid');
+    for (const b of bars) assert.equal(b.volume, 0);
+}
+
+describe('l2 level, book only', () => {
+    const it = (name: string, fn: () => Promise<void>) => baseIt(name, { todo: L2_TODO }, fn);
+
+    it('loads mid candles and the book, no trades', async () => {
+        const { de, next } = levelEngine('l2-book');
+        const loaded = next('data:load');
+        await de.load('NQ');
+        const p = await loaded;
+        assert.equal(p.dataLevel, 'l2');
+        assert.equal(p.trades.length, 0);
+        assert.equal(p.footprintBars.length, 0);
+        assertMidBars(p, T0 - 30 * MIN_MS, T0);
+        assertBookIs(p, 'NQ', T0 - 30 * MIN_MS, T0);
+    });
+
+    it('pages back with the book whole across the seam', async () => {
+        const { bus, de, next } = levelEngine('l2-book');
+        const loaded = next('data:load');
+        await de.load('NQ');
+        await loaded;
+        const prepended = next('data:prepend');
+        bus.emit('data:request-backward', { viewMin: nsOf(T0 - 90 * MIN_MS), symbol: 'NQ' });
+        const p = await prepended;
+        assert.ok(p.dataStart < T0 - 30 * MIN_MS, 'got older data');
+        assertMidBars(p, p.dataStart, T0);
+        assertBookIs(p, 'NQ', p.dataStart, T0);
+    });
+
+    it('live chunks extend the mid candles and the book', async () => {
+        const { de, next, announce, push, settle } = levelEngine('l2-book');
+        const loaded = next('data:load');
+        await de.load('NQ');
+        await loaded;
+        announce(MIN, T0 - 20 * MIN_MS, T0);
+        await settle();
+        let appended = next('data:append');
+        push(T0, T0 + 15_000);
+        await appended;
+        appended = next('data:append');
+        push(T0 + 15_000, T0 + 75_000);
+        const p = await appended;
+        assertMidBars(p, T0 - 30 * MIN_MS, T0 + 75_000);
+        assertBookIs(p, 'NQ', T0 - 30 * MIN_MS, T0 + 75_000);
+    });
+});
