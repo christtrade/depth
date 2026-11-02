@@ -48,6 +48,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - l3 stops and resting limits went off the book halfway through an update, so when a feed sends a
   timestamp's cancels before its adds a stop could fill on an ask that never showed. they check once
   per timestamp now
+- l3 refused every order with "No market data yet", the book replay never set a last price so
+  `hasPrice` said no. a book replay prices at the mid now, and so does `getCurrentPrice`
 
 ## [0.22.1] - 2026-11-02
 

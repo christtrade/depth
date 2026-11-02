@@ -88,6 +88,21 @@ describe('a book with no price yet', () => {
 
         assert.equal(engine.getPrice(), 101.5);
     });
+
+    it('is priced at the mid once seeked through l3 events', () => {
+        const { state } = stubTradingState();
+        const engine = createL3MatchingEngine(state, { symbolInfo: SYMBOL_INFO });
+        const ts_event = new Date(Number(T0 / 1_000_000n)).toISOString();
+        const add = (side: 'B' | 'A', price: number, id: string): MboEvent =>
+            ({ ts_event, action: 'A', side, price, size: 1, order_id: id, sequence: 0, flags: 0 });
+        const cb = createCompactBuffer();
+        appendEvents(cb, [add('B', 100, '1'), add('A', 101, '2')], isoToNs);
+        engine.ingestCompactBuf!(cb._buf.slice(0, cb.length * BYTES_PER_EVENT));
+
+        engine.seekTo(T0 + BAR_NS);
+
+        assert.equal(engine.getPrice(), 100.5);
+    });
 });
 
 describe("reading the chart's store", () => {

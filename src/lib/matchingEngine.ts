@@ -2673,9 +2673,10 @@ export function createL3MatchingEngine(
         _cbSeekTs = 0n;
     }
 
-    /** Last traded price, or NaN until this book has been seeked into its data. */
+    /** Last traded price, the mid off a book replay, or NaN until this book has been seeked into its data. */
     function getPrice(): number {
-        return lastTick ? lastTick.last : NaN;
+        if (!lastTick) return NaN;
+        return lastTick.last ?? (lastTick.bid + lastTick.ask) / 2;
     }
 
     function seekTo(tNs: bigint): void {

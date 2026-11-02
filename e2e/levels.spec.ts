@@ -55,6 +55,18 @@ test('l3 live: the heatmap keeps drawing when renders take longer than a chunk',
     expect(await heatmaps(), 'heatmaps drawn').toBeGreaterThan(before + 3);
 });
 
+test('l3: an order placed on load is taken, not refused for having no price', async ({ page }) => {
+    await open(page, '/?level=l3');
+    const placed = await page.evaluate(() => {
+        const c = (window as any).__chart;
+        const blocked: string[] = [];
+        c.on('trading:order-blocked', (e: any) => blocked.push(e.reason));
+        const id = c.executionEngine.placeOrder({ side: 'long', type: 'market', qty: 1, symbol: c.getSymbol() });
+        return { id: typeof id, blocked };
+    });
+    expect(placed).toEqual({ id: 'string', blocked: [] });
+});
+
 // l3 lines fit to the bid/ask, which a trade can poke past between samples
 test('tick: the price axis fits the trades on screen', async ({ page }) => {
     const errors = watchErrors(page);
