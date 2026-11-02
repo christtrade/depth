@@ -17,6 +17,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - l2 draws the heatmap and the bid/ask like l3, the status line reads the book and the context menu
   has the heatmap toggle. it drew nothing before, not even a price scale lmao
 - l2 gets the sub-second timeframes (None, 1s..) and, once a trade came, the footprint chart type
+- book only l2 draws its mid candles at every timeframe, through playback, paging and live. it drew
+  none before
 
 ### Changed
 - **Breaking:** `BarResponse` is now `FetchResponse`, it never held just bars. `ohlcvBars` -> `bars`,
@@ -25,10 +27,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Breaking:** `processL2Chunk(snapshots, ticks, barNs, fpOptions?)` takes the trades and returns
   the l3 shape. so a `compactBuf` of one synthetic order per price level, trades, footprints and
   `midBars`. used to keep only the best bid/ask
-- **Breaking:** l2 mid candles are tick candles off the mid: a tick is the mid changing, a bar the
-  ohlc of its ticks, like trade candles. they opened on whatever mid stood at the first book update,
-  even a deep one. `L2DataChunk.midPrints` and `data:load`/`append`/`prepend`'s `midPrints` hold the
-  ticks (size 0)
+- **Breaking:** l2 mid candles are tick candles now, a tick being the mid changing, so they work like
+  trade candles. they used to open on whatever mid stood at the first book update, even a deep one.
+  `L2DataChunk.midPrints` and `data:load`/`append`/`prepend`'s `midPrints` hold the ticks (size 0)
 
 ### Fixed
 - Footprint settings reset to the defaults on the next page back or timeframe switch. the engine

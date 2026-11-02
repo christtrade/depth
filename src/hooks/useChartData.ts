@@ -323,6 +323,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
     // Data refs
     const compactBufRef = useRef<CompactBuffer>(createCompactBuffer());
     const allTradesRef = useRef<TradePoint[]>([]);
+    const midPrintsRef = useRef<TradePoint[]>([]);
     const tradesRef = useRef<TradePoint[]>([]);
     const priceHistoryRef = useRef<PriceHistory[]>([]);
     const allPriceHistoryRef = useRef<PriceHistory[]>([]);
@@ -412,6 +413,13 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
     );
 
     // Data helpers
+    // book only l2 has no trades so its candles come off the mid prints
+    const candleSrc = useCallback(
+        (trades: TradePoint[]): TradePoint[] =>
+            dataLevelRef.current === 'l2' && allTradesRef.current.length === 0 ? midPrintsRef.current : trades,
+        [],
+    );
+
     const rebuildCandleCache = useCallback((trades: TradePoint[], barNs: bigint) => {
         if (barNs === 0n) {
             candleCacheRef.current = null;
@@ -428,7 +436,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 delta: number;
             }
         >();
-        for (const t of trades) {
+        for (const t of candleSrc(trades)) {
             if (t.ts > p.horizonRef.current) break;
             const k = (t.ts / barNs) * barNs;
             const b = map.get(k);
@@ -1096,6 +1104,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             }
             compactBufRef.current = createCompactBuffer(0);
             allTradesRef.current = [];
+            midPrintsRef.current = [];
             tradesRef.current = [];
             allPriceHistoryRef.current = [];
             priceHistoryRef.current = [];
@@ -1222,6 +1231,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             compactBufRef.current.firstTs = BigInt(dataStart) * 1_000_000n;
             compactBufRef.current.lastTs = BigInt(dataEnd) * 1_000_000n;
             allTradesRef.current = newTrades;
+            midPrintsRef.current = payload.midPrints ?? [];
             allPriceHistoryRef.current = newHistory;
             tradesRef.current = newTrades;
             openBarRef.current = null;
@@ -1332,6 +1342,8 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                     p.horizonRef.current,
                 );
             }
+            // the ingest buckets trades and book only l2 has none
+            if (candleSrc(newTrades) !== newTrades) rebuildCandleCache(newTrades, activeTfBarNs);
             if (workerRef.current) {
                 sendHeatmapInit();
                 workerReadyRef.current = true;
@@ -1447,6 +1459,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             cb.lastTs = BigInt(dataEnd) * 1_000_000n;
             compactBufRef.current = cb;
             allTradesRef.current = newTrades;
+            midPrintsRef.current = payload.midPrints ?? [];
             allPriceHistoryRef.current = newHistory;
             tradesRef.current = newTrades;
             const activeTfBarNs = p.activeTimeframeRef.current.barNs;
@@ -1468,7 +1481,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                     effHorizon,
                 );
                 if (candleCacheRef.current)
-                    extendCandles(candleCacheRef.current, newTrades, activeTfBarNs, effHorizon);
+                    extendCandles(candleCacheRef.current, candleSrc(newTrades), activeTfBarNs, effHorizon);
                 else rebuildCandleCache(newTrades, activeTfBarNs);
             }
             if (p.isYAxisAutoRef.current)
@@ -1580,6 +1593,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             compactBufRef.current = cb;
             sendHeatmapInit();
             allTradesRef.current = newTrades;
+            midPrintsRef.current = payload.midPrints ?? [];
             allPriceHistoryRef.current = newHistory;
             tradesRef.current = newTrades;
             if (newFpBars.length > 0) takeFootprints(newFpBars, payload.barNs, fpBuiltWith);
@@ -2018,10 +2032,10 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
 
         if (hotPath) {
             if (tick && barNs > 0n && candleCacheRef.current) {
-                extendCandles(candleCacheRef.current, allTradesRef.current, barNs, horizon);
+                extendCandles(candleCacheRef.current, candleSrc(allTradesRef.current), barNs, horizon);
             } else if (barNs > 0n && candleCacheRef.current && newIdx > prevIdx) {
                 const prevTs = prevIdx >= 0 ? getTsNs(cb, prevIdx) : 0n;
-                foldTrades(candleCacheRef.current, allTradesRef.current, barNs, prevTs, horizon);
+                foldTrades(candleCacheRef.current, candleSrc(allTradesRef.current), barNs, prevTs, horizon);
             }
             runHorizonAdvance(horizon);
             p.pushDrawParamsRef.current();

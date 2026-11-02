@@ -134,6 +134,93 @@ const candlesVsTrades = (page: Page) =>
         return { wrong, past, fpWrong, fpPast };
     });
 
+// book only l2, the panes closed candles against the engines mid bars
+const candlesVsMid = (page: Page) =>
+    page.evaluate(() => {
+        const c = (window as any).__chart;
+        const dp = c.renderEngine.drawParams;
+        const h = BigInt(c.horizon()) * 1_000_000n;
+        const barNs = dp.barNs as bigint;
+        const bars = c.getData().bars;
+        // the engine can hold a finer source than the pane draws, 1m under 5m
+        const want = new Map<bigint, { open: number; high: number; low: number; close: number }>();
+        for (let i = 0; i < bars.length; i++) {
+            const k = ((BigInt(bars.time[i]) * 1_000_000n) / barNs) * barNs;
+            const b = want.get(k);
+            if (!b) want.set(k, { open: bars.open[i], high: bars.high[i], low: bars.low[i], close: bars.close[i] });
+            else {
+                b.high = Math.max(b.high, bars.high[i]);
+                b.low = Math.min(b.low, bars.low[i]);
+                b.close = bars.close[i];
+            }
+        }
+        const cache: Map<bigint, any> = dp.candleCache ?? new Map();
+        const wrong: string[] = [];
+        let checked = 0;
+        const off = (a: number, b: number) => a !== b;
+        for (const [k, w] of want) {
+            if (k + barNs > h) continue;
+            checked++;
+            const got = cache.get(k);
+            if (!got || off(got.open, w.open) || off(got.high, w.high) || off(got.low, w.low) || off(got.close, w.close))
+                wrong.push(String(k));
+        }
+        const past = [...cache.keys()].filter((k) => k > h).length;
+        return { checked, wrong: wrong.length, past };
+    });
+
+test('l2 without trades: the candles are the engines mid bars, at any timeframe and after a page back', async ({ page }) => {
+    const errors = watchErrors(page);
+    await open(page, '/?level=l2&trades=0');
+    await page.evaluate(() => (window as any).__chart.setChartSettings({ chartType: 'candles', showHeatmap: false }));
+    const check = async (tag: string) => {
+        const r = await candlesVsMid(page);
+        expect(r.checked, tag).toBeGreaterThan(5);
+        expect(r.wrong, tag).toBe(0);
+        expect(r.past, tag).toBe(0);
+        expect(await colouredPixels(page), tag).toBeGreaterThan(500);
+    };
+    await check('1m');
+    await drag(page, 600);
+    await settled(page);
+    await check('1m paged back');
+    for (const tf of ['5m', '1s']) {
+        await pickTimeframe(page, tf);
+        await settled(page);
+        await page.waitForTimeout(300);
+        await check(tf);
+    }
+    expect(errors).toEqual([]);
+});
+
+test('l2 without trades: the candles follow the playhead both ways, and live', async ({ page }) => {
+    const errors = watchErrors(page);
+    await open(page, '/?level=l2&trades=0');
+    await page.evaluate(() => (window as any).__chart.setChartSettings({ chartType: 'candles', showHeatmap: false }));
+    const ok = async (tag: string) => {
+        const r = await candlesVsMid(page);
+        expect(r.checked, tag).toBeGreaterThan(5);
+        expect({ wrong: r.wrong, past: r.past }, tag).toEqual({ wrong: 0, past: 0 });
+    };
+    await page.evaluate(() => {
+        for (let i = 0; i < 20; i++) (window as any).__chart.playback.stepBack();
+    });
+    await settled(page);
+    await ok('after a step back');
+    await page.evaluate(() => {
+        for (let i = 0; i < 5; i++) (window as any).__chart.playback.stepForward();
+    });
+    await settled(page);
+    await ok('and forward');
+
+    await open(page, '/?sim=1&level=l2&trades=0');
+    await page.evaluate(() => (window as any).__chart.setChartSettings({ chartType: 'candles', showHeatmap: false }));
+    const before = await appends(page);
+    await expect.poll(() => appends(page), { message: 'live chunks land', timeout: 10_000 }).toBeGreaterThan(before + 4);
+    await ok('live');
+    expect(errors).toEqual([]);
+});
+
 test('tick: a step after going finer scrolls one new bar, not the old bar', async ({ page }) => {
     const errors = watchErrors(page);
     await open(page, '/?level=tick');

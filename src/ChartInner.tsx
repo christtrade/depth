@@ -797,8 +797,8 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         // for serialize/restore). ChartInner stays the live owner.
         model.setTimeframe(activeTimeframe);
         if (compactBufRef.current.length > 0) {
-            // invalidate bar OHLCV cache and open bar on TF change
-            candleCacheRef.current = null;
+            // rebuilt and not dropped cus without a cache the renderer builds off trades and book only l2 has none
+            rebuildCandleCache(tradesRef.current, activeTimeframe.barNs);
             openBarRef.current = null;
             openBarTsRef.current = 0n;
             openBarTradeCountRef.current = 0;

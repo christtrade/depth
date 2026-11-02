@@ -578,7 +578,7 @@ for (const level of ['tick', 'l3', 'l2'] as const) {
     });
 }
 
-// candles off the mid like tick candles: a tick is the mid changing, a bar the ohlc of its ticks
+// mid candles are tick candles where a tick is the mid changing
 function assertMidBars(p: any, fromMs: number, toMs: number) {
     const want: any[] = [];
     let last: number | null = null;
