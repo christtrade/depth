@@ -8,7 +8,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-## Added
+## [0.22.0] - 2026-11-02
+
+### Added
 - The baseline chart type's base line value is now fixed to screen pixels, and is now draggable. Used
   to be fixed to the start of loaded data.
 - `chart.getChartSettings()`: the focused pane's settings, as a copy. Couldnt read them back before.
@@ -43,7 +45,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `processL3Chunk(events, barNs, fpOptions, carry)`: `carry.book` starts the chunk from an existing
   book instead of an empty one, `carry.snapAt` gives back a copy of the book at that ns as `bookAt`
 
-## Changed
+### Changed
 - At None, following a live feed, the view moves with the clock every frame instead of jumping
   per trade. `horizonScrollEasing` and `horizonScrollDuration` dont apply there. It does cost a repaint
   every frame.
@@ -107,7 +109,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - None is in the timeframe list under ticks at tick and l3, and refused at ohlcv and l2, which have
   no trades to show one by one. It wasnt in the list at all previously.
 
-## Fixed
+### Fixed
 - The last price pill looked gone when the price sat on the bid or ask, same number and color as
   that pill. Now the bid/ask pill gets an edge in the candle color instead of a second pill.
 - The context menu had no orders at tick. It only read a bid/ask at l3 and ohlcv.
@@ -933,7 +935,8 @@ Not user-visible, but this is what the split out of the monorepo turned up:
 - 30 unused UI components were removed, taking `depth.css` from 147 KB to
   124 KB.
 
-[unreleased]: https://github.com/christtrade/depth/compare/v0.21.0...HEAD
+[unreleased]: https://github.com/christtrade/depth/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/christtrade/depth/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/christtrade/depth/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/christtrade/depth/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/christtrade/depth/compare/v0.18.0...v0.19.0
