@@ -8,6 +8,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- Heatmap froze on a slow pc. each live chunk asked for a new render and threw out the one still
+  on its way so when a render took longer than a chunk none ever landed
+
 ## [0.22.0] - 2026-11-02
 
 ### Added

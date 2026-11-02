@@ -733,11 +733,9 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
 
     // Workers
     const onWorkerMessage = (e: MessageEvent) => {
-        const { bitmap, bounds, requestId } = e.data;
-        if (requestId !== workerRequestIdRef.current) {
-            bitmap.close();
-            return;
-        }
+        // draw it even if a newer one is asked for, it has its own bounds. dropping those starved a slow
+        // machine, every live chunk asks again before the last one is back
+        const { bitmap, bounds } = e.data;
         heatmapBitmapRef.current?.close();
         heatmapBitmapRef.current = bitmap;
         cacheBoundsRef.current = {

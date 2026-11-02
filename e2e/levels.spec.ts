@@ -32,6 +32,29 @@ test('the public simulated adapter at l3: live, heatmap and all', async ({ page 
     expect(errors).toEqual([]);
 });
 
+// a slow pc: each render comes back after the next live chunk askedfor a new one
+test('l3 live: the heatmap keeps drawing when renders take longer than a chunk', async ({ page }) => {
+    await page.addInitScript(() => {
+        const d = Object.getOwnPropertyDescriptor(Worker.prototype, 'onmessage')!;
+        Object.defineProperty(Worker.prototype, 'onmessage', {
+            get() {
+                return d.get!.call(this);
+            },
+            set(fn) {
+                d.set!.call(this, (e: MessageEvent) => (e.data?.bitmap ? setTimeout(() => fn(e), 600) : fn(e)));
+            },
+        });
+    });
+    await open(page, '/?sim=1&level=l3');
+    const heatmaps = () => page.evaluate(() => (window as any).__heatmaps as number);
+    await page.waitForTimeout(2000);
+    const before = await heatmaps();
+    const chunks = await appends(page);
+    await page.waitForTimeout(5000);
+    expect(await appends(page), 'live chunks land').toBeGreaterThan(chunks + 10);
+    expect(await heatmaps(), 'heatmaps drawn').toBeGreaterThan(before + 3);
+});
+
 // l3 lines fit to the bid/ask, which a trade can poke past between samples
 test('tick: the price axis fits the trades on screen', async ({ page }) => {
     const errors = watchErrors(page);
