@@ -12,6 +12,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Footprint settings reset to the defaults on the next page back or timeframe switch. the engine
   built its bars with the options it was created with. `data:load`/`data:append`/`data:prepend`
   now carry `fpOptions`, what their footprintBars were built with.
+- **Breaking:** `DataEngine.rebuildFootprint(fpOptions)` drops the unused `barNs`. It looped until the
+  stack blew, now it rebuilds the held footprints and sends them as a rehydrate load
 
 ## [0.22.1] - 2026-11-02
 

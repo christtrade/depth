@@ -911,13 +911,20 @@ export class DataEngine {
         }
     }
 
-    rebuildFootprint(barNs: bigint, fpOptions?: FootprintOptions): void {
+    // rebuild every held footprint with `fpOptions` and send it to the panes as a rehydrate load
+    rebuildFootprint(fpOptions: FootprintOptions): void {
         if (this.destroyed) return;
-        if (fpOptions !== undefined) this.fpOptions = fpOptions;
-        this.eventBus.emit('data:rebuild-footprint', {
-            barNs: this.state.get('timeframe').barNs,
-            fpOptions: this.fpOptions,
-        });
+        this.fpOptions = fpOptions;
+        for (const st of this._states.values()) {
+            const m = st.master;
+            if (!m || (m.dataLevel !== 'l3' && m.dataLevel !== 'tick')) continue;
+            m.footprintBars = footprintFromTrades(m.trades, m.barNs, fpOptions);
+            m.ohlcvBars = _deriveOhlcvFromFootprint(m.footprintBars);
+            this._emitLoad(st, /* rehydrate */ true).catch((err) =>
+                console.error('[DataEngine] rebuildFootprint _emitLoad failed', err),
+            );
+        }
+        this._syncShared();
     }
 
     /**
@@ -1861,9 +1868,7 @@ export class DataEngine {
             this.eventBus.on('data:pane-resolution', ({ id, symbol, barNs, viewFrom, viewTo }) =>
                 this._onPaneResolution(id, symbol, barNs, viewFrom, viewTo),
             ),
-            this.eventBus.on('data:rebuild-footprint', ({ barNs, fpOptions }) =>
-                this.rebuildFootprint(barNs, fpOptions),
-            ),
+            this.eventBus.on('data:rebuild-footprint', ({ fpOptions }) => this.rebuildFootprint(fpOptions)),
             this.eventBus.on('data:prefetch', ({ spanNs, symbol }) => {
                 // a named symbol paginates only itself. an unnamed one is the
                 // playback clock asking for the whole layout, so every loaded

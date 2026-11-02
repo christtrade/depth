@@ -284,7 +284,7 @@ export interface ChartEvents {
      */
     'data:prefetch': { spanNs?: bigint; symbol?: string };
     'data:prefetch-done': void;
-    'data:rebuild-footprint': { barNs: bigint; fpOptions: unknown };
+    'data:rebuild-footprint': { fpOptions: FootprintOptions };
     /**
      * Ask the engine for symbols. `requestId` correlates the answer: the picker
      * fires one per keystroke and ignores anything that isnt its latest, so "AA"

@@ -189,6 +189,24 @@ for (const level of ['tick', 'l3'] as const) {
             assert.equal(p.footprintBars.length, 30);
         });
 
+        it('rebuildFootprint rebuilds what is held with the new options', async () => {
+            const { de, next } = levelEngine(level);
+            const loaded = next('data:load');
+            await de.load('NQ');
+            const before = await loaded;
+            const fp = { imbalanceRatio: 1.01 };
+            const reloaded = next('data:load');
+            de.rebuildFootprint(fp);
+            const p = await reloaded;
+            assert.deepEqual(p.fpOptions, fp);
+            assert.equal(
+                JSON.stringify(p.footprintBars, (_, v) => (typeof v === 'bigint' ? String(v) : v)),
+                JSON.stringify(footprintFromTrades(before.trades, MIN, fp), (_, v) =>
+                    typeof v === 'bigint' ? String(v) : v,
+                ),
+            );
+        });
+
         it('pages back into history without a gap or a repeat', async () => {
             const { bus, de, fetches, next } = levelEngine(level);
             const loaded = next('data:load');
