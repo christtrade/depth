@@ -284,6 +284,24 @@ test('tick: no heatmap pill, it has no heatmap', async ({ page }) => {
     expect(await rebuilding(page)).toBe(false);
 });
 
+for (const q of ['level=l2', 'level=l2&trades=0']) {
+    test(`${q}: the bid/ask draw and the heatmap is offered`, async ({ page }) => {
+        const errors = watchErrors(page);
+        await open(page, `/?${q}`);
+        // heatmap off, so its the lines doing the color
+        await page.evaluate(() => (window as any).__chart.setChartSettings({ showHeatmap: false }));
+        for (const chartType of ['line', 'area', 'baseline']) {
+            await page.evaluate((t) => (window as any).__chart.setChartSettings({ chartType: t }), chartType);
+            await page.waitForTimeout(300);
+            expect(await colouredPixels(page), chartType).toBeGreaterThan(500);
+        }
+        const box = await chartBox(page);
+        await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button: 'right' });
+        await expect(page.getByText('Show Heatmap')).toBeVisible({ timeout: 5000 });
+        expect(errors).toEqual([]);
+    });
+}
+
 async function viewOverASecond(page: Page) {
     return page.evaluate(async () => {
         const tMax = () => (window as any).__chart.renderEngine.view.tMax as bigint;

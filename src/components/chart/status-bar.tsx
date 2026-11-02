@@ -7,6 +7,7 @@ import type { LiveTransformer } from '../../interfaces/ICoordinateTransformer';
 import type { FootprintBar } from '../../lib/types/footprint';
 import type { ChartSettings } from '../../lib/types/chart-settings';
 import { cn } from '../../lib/utils';
+import { hasBook } from '../../lib/book';
 
 type CandleCache = Map<
     bigint,
@@ -37,7 +38,7 @@ function computeStatusFromEvent(
     dataLevel: DataLevel,
     transformer: LiveTransformer,
 ) {
-    if (dataLevel === 'l3') {
+    if (hasBook(dataLevel)) {
         if (priceHistory.length === 0) return null;
 
         const tsAtMouse = BigInt(
@@ -263,7 +264,7 @@ export function StatusBar({
                         Vol <span className="text-white/80">{statusLine.volume}</span>
                     </span>
                 )}
-                {chartSettings.statusLineDelta && statusLine.volume > 0 && dataLevel === 'l3' && (
+                {chartSettings.statusLineDelta && statusLine.volume > 0 && hasBook(dataLevel) && (
                     <span
                         className={cn(statusLine.delta >= 0 ? 'text-[#00e676]' : 'text-[#ff1744]')}
                     >

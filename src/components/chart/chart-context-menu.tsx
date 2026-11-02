@@ -21,6 +21,7 @@ import { ChartSettings } from '../../lib/types/chart-settings';
 import { Drawing } from '../../lib/types/drawing-types';
 import { PlaceOrderRequest } from '../../lib/matchingEngine';
 import { DataLevel } from '../../core';
+import { hasBook } from '../../lib/book';
 
 interface ChartContextMenuProps {
     x: number;
@@ -358,7 +359,7 @@ export function ChartContextMenu({
                         >
                             Screenshot
                         </MenuItem>
-                        {dataLevel === 'l3' && (
+                        {hasBook(dataLevel) && (
                             <MenuItem
                                 icon={<Layers size={12} />}
                                 onClick={() => {

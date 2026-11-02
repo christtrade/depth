@@ -28,6 +28,7 @@ import { type TypedEventBus } from '../core/TypedEventBus';
 import { type RenderEngine } from '../core/RenderEngine';
 import { type SessionMapper } from '../core/SessionMapper';
 import { BarStore } from '../core/BarStore';
+import { hasBook } from '../lib/book';
 import { ohlcvBucketRange } from '../lib/bar-grid';
 import {
     aggregateOhlcvBars,
@@ -122,7 +123,7 @@ export function autoFitPriceAxis(
     ) {
         // tick bid/ask start at 0 until each side has traded, so its trades
         if (dataLevel === 'tick') scanTrades();
-        else if (dataLevel === 'l3') {
+        else if (hasBook(dataLevel)) {
             for (const h of priceHistory) {
                 if (h.ts > horizon || h.ts < view.tMin || h.ts >= view.tMax) continue;
                 if (h.bestAsk > hi) hi = h.bestAsk;

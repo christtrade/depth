@@ -14,6 +14,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - l2 holds the whole book and not just the best bid/ask. bars, footprints, paging, live, timeframe
   switches and the memory budget all work like l3 does. an l2 response can carry `ticks` next to
   `depth`, without them the bars are mid candles until the first trade
+- l2 draws the heatmap and the bid/ask like l3, the status line reads the book and the context menu
+  has the heatmap toggle. it drew nothing before, not even a price scale lmao
 
 ### Changed
 - **Breaking:** `BarResponse` is now `FetchResponse`, it never held just bars. `ohlcvBars` -> `bars`,

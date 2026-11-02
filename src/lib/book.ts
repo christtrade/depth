@@ -1,14 +1,9 @@
-//  Book - applies MBO events to maintain order book state
-//
-//  Input:  MboEvent
-//  Output: mutates BookState in-place
-//
-//  PERF: bestBid / bestAsk are maintained incrementally.
-//  getBestBid() / getBestAsk() are now O(1) instead of O(N).
-//  The only expensive case is when the current best is removed and we must
-//  rescan - but that is amortised to near-zero over a realistic event stream
-//  because the best level changes only a tiny fraction of the time.
+// best bid/ask kept incrementally, a rescan only when the best level goes
 import { BookState, MboEvent } from './types';
+import type { DataLevel } from '../interfaces/IDataAdapter';
+
+// l2 is held as l3 events, so both have a book
+export const hasBook = (level: DataLevel | undefined) => level === 'l3' || level === 'l2';
 
 // Creates a fresh, empty order book
 export function createBook(): BookState {

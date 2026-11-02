@@ -18,6 +18,7 @@ import { getEffectiveDpr, snapToDevicePx } from '../dpr';
 import { formatPrice, resolveTickSize } from '../priceFormat';
 import { PriceTransition } from '../priceTransition';
 import { hasHole } from '../view-edges';
+import { hasBook } from '../book';
 import {
     PricePoint,
     OrdinalModel,
@@ -3026,7 +3027,7 @@ export function drawPriceLabel(
     // year's close drawn as the price line reads as the current one
     let stale = false;
 
-    if (dataLevel === 'l3') {
+    if (hasBook(dataLevel)) {
         const idx = nearestIndex(priceHistory, bounds.tMax);
         if (idx === -1) return [];
 
@@ -3075,7 +3076,7 @@ export function drawPriceLabel(
     let bidPill: Pill | null = null;
 
     if (hasBidAsk) {
-        if (dataLevel === 'l3') {
+        if (hasBook(dataLevel)) {
             ask = currPrice.bestAsk;
             bid = currPrice.bestBid;
         } else if (dataLevel === 'ohlcv') {
@@ -3144,7 +3145,7 @@ export function drawPriceLabel(
         const cutTs = horizon > 0n ? horizon : bounds.tMax;
         const lastBarTs = (cutTs / barNs) * barNs;
 
-        if (dataLevel === 'l3' || dataLevel === 'tick') {
+        if (hasBook(dataLevel) || dataLevel === 'tick') {
             if (candleCache !== null) {
                 for (let ts = lastBarTs; ts >= lastBarTs - barNs * 10n; ts -= barNs) {
                     const c = candleCache.get(ts);
@@ -3231,7 +3232,7 @@ export function drawPriceLabel(
     ctx.setLineDash([]);
 
     // historical prices (when scrolled back)
-    if (dataLevel === 'l3') {
+    if (hasBook(dataLevel)) {
         if (price.ts < currPrice.ts) {
             let histAskY = transformer.priceToY(price.bestAsk, h);
             histAskY += yOffset;
@@ -3501,7 +3502,7 @@ function drawPriceChart(
         return;
     }
     if (chartType === 'area') {
-        if (hasBidAsk || dataLevel === 'l3') {
+        if (hasBidAsk || hasBook(dataLevel)) {
             if (showAsk)
                 drawAreaChart(
                     ctx,
@@ -3551,7 +3552,7 @@ function drawPriceChart(
         return;
     }
     if (chartType === 'line') {
-        if (hasBidAsk || dataLevel === 'l3') {
+        if (hasBidAsk || hasBook(dataLevel)) {
             if (showBid)
                 drawSmoothLine(
                     ctx,
@@ -3606,7 +3607,7 @@ function drawPriceChart(
     if (chartType === 'hollow' || chartType === 'heikin-ashi' || chartType === 'bars') {
         if (barNs === 0n) {
             // OHLC types need a bar size; with none, fall back to bid/ask lines.
-            if (dataLevel === 'l3' || hasBidAsk) {
+            if (hasBook(dataLevel) || hasBidAsk) {
                 if (showBid)
                     drawTradeLine(
                         ctx,
@@ -3669,7 +3670,7 @@ function drawPriceChart(
         return;
     }
     if (chartType === 'baseline') {
-        if (hasBidAsk || dataLevel === 'l3') {
+        if (hasBidAsk || hasBook(dataLevel)) {
             // Single-series chart: prefer the bid, falling back to the ask.
             const baselineSide = showBid || !showAsk ? 'bid' : 'ask';
             drawBaselineChart(
@@ -3732,7 +3733,7 @@ function drawPriceChart(
     //step line
     // doesnt need an if.. I could add one but why
     // it acts as a nice fallback if something strange happens
-    if (dataLevel === 'l3' || hasBidAsk) {
+    if (hasBook(dataLevel) || hasBidAsk) {
         if (showBid) {
             drawTradeLine(
                 ctx,
