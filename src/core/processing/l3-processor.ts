@@ -42,10 +42,14 @@ export interface ProcessedL3Chunk {
 // ProcessedL3Chunk is the old name, kept around for compat
 export type L3DataChunk = ProcessedL3Chunk;
 
-function encodeEvents(events: MboEvent[], tsCache: BigInt64Array): ArrayBuffer {
+/**
+ * Packs mbo events into the `compactBuf` an `L3DataChunk` carries.
+ * `tsNs[i]` is `events[i].ts_event` in ns. Events sorted ascending.
+ */
+export function encodeEvents(events: MboEvent[], tsNs: BigInt64Array): ArrayBuffer {
     const buf = new ArrayBuffer(events.length * BYTES_PER_EVENT);
     const view = new DataView(buf);
-    for (let i = 0; i < events.length; i++) encodeAt(view, i, tsCache[i], events[i]);
+    for (let i = 0; i < events.length; i++) encodeAt(view, i, tsNs[i], events[i]);
     return buf;
 }
 

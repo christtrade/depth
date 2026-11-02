@@ -145,7 +145,7 @@ export type {
 export { isCompatible, DATA_LEVEL_LABELS, incompatibleReason } from './processing/data-level';
 
 // Processors, for adapter authors
-export { processL3Chunk, mergeL3Chunks } from './processing/l3-processor';
+export { processL3Chunk, mergeL3Chunks, encodeEvents } from './processing/l3-processor';
 export type { ProcessedL3Chunk, L3DataChunk } from './processing/l3-processor';
 export { processOhlcvChunk, processOhlcvWithSupplemental } from './processing/ohlcv-processor';
 export type { OhlcvDataChunk } from './processing/ohlcv-processor';

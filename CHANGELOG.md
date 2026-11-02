@@ -147,7 +147,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - l3 kept 24 bits of each order id, so two resting orders could share one and a cancel of one took
   out the other. Ids past 2^53 lost their low bits before that even. Keeps 56 bits now, exact up to
   7.2*10^16. **Breaking:** `compactBuf` events are 24 bytes, not 20, ids at bytes 16-22. 20% more
-  memory at l3, 128 -> 142 ms to decode 265k events :(
+  memory at l3, 128 -> 142 ms to decode 265k events :(. `encodeEvents()` is exported now, so an
+  adapter can build one without copying the layout.
 - The status bar kept the old bar after a wheel zoom until the mouse moved. The last move of a fast
   swipe got dropped the same way, it waited on a throttle with no trailing call.
 - While playing or live, a timeframe switch that took more than 200 ms flipped the toolbar back to
