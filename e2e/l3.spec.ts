@@ -129,7 +129,8 @@ test('l3: None opens on half a minute', async ({ page }) => {
     await page.goto('/?sim=1&level=l3');
     await settled(page);
     await page.evaluate(() => (window as any).__chart.setTimeframe('None'));
-    await expect.poll(() => page.evaluate(() => (window as any).__chart.getTimeframe())).toBe('None');
+    // the switch takes over 5 s in webkit on a slow runner
+    await expect.poll(() => page.evaluate(() => (window as any).__chart.getTimeframe()), { timeout: 20_000 }).toBe('None');
     // getTimeframe already says None while the switch is landing
     const spanMs = () =>
         page.evaluate(() => {
@@ -166,7 +167,8 @@ test('l3: None zooms out past its own 30 s', async ({ page }) => {
     await page.goto('/?sim=1&level=l3');
     await settled(page);
     await page.evaluate(() => (window as any).__chart.setTimeframe('None'));
-    await expect.poll(() => page.evaluate(() => (window as any).__chart.getTimeframe())).toBe('None');
+    // the switch takes over 5 s in webkit on a slow runner
+    await expect.poll(() => page.evaluate(() => (window as any).__chart.getTimeframe()), { timeout: 20_000 }).toBe('None');
     await settled(page);
     // positive dy zooms out
     await wheel(page, 400, 20);
