@@ -20,7 +20,7 @@ import type {
     OhlcvBar,
     RealtimeRequest,
 } from '../interfaces/IDataAdapter';
-import { simMboEvents, simTicks } from './sim-levels';
+import { simL2Snapshots, simMboEvents, simTicks } from './sim-levels';
 
 // -
 // Config
@@ -51,10 +51,13 @@ export interface SimulatedAdapterConfig {
     historyBars?: number;
     /**
      * tick serves trades along the same price path, l3 mbo events with those same trades in
-     * them, both at `tickSize`. The path runs up to now, same as `realtime`, and `realtime`
-     * decides whether it keeps streaming. A fetch is at most 30 minutes. Default `'ohlcv'`
+     * them, l2 the l3 book as 10-level snapshots plus the trades, all at `tickSize`. The path
+     * runs up to now, same as `realtime`, and `realtime` decides whether it keeps streaming. A
+     * fetch is at most 30 minutes. Default `'ohlcv'`
      */
-    dataLevel?: 'ohlcv' | 'tick' | 'l3';
+    dataLevel?: 'ohlcv' | 'tick' | 'l2' | 'l3';
+    /** l2 only: false serves the book without trades. Default true. */
+    l2Trades?: boolean;
 }
 
 // -
@@ -370,6 +373,7 @@ export class SimulatedMarketAdapter implements IDataAdapter {
             realtimeUpdateMs: cfg.realtimeUpdateMs ?? 250,
             historyBars: cfg.historyBars ?? 10_000,
             dataLevel: cfg.dataLevel ?? 'ohlcv',
+            l2Trades: cfg.l2Trades ?? true,
         };
         // only subscribe when live
         if (this.cfg.realtime) this.subscribeRealtime = (req, onBar) => this._subscribe(req, onBar);
@@ -426,8 +430,15 @@ export class SimulatedMarketAdapter implements IDataAdapter {
         if (this.cfg.dataLevel === 'tick')
             return { events: [], ticks: simTicks(path.at, fromMs, toMs, { tickSize, seed }), hasMore: false };
         // a book a heatmap has something to show in
-        const events = simMboEvents(path.at, fromMs, toMs, { tickSize, seed, levels: 40, lifeSlots: 600, wallOdds: 60 });
-        return { events, hasMore: false };
+        const book = { tickSize, seed, levels: 40, lifeSlots: 600, wallOdds: 60 };
+        if (this.cfg.dataLevel === 'l2')
+            return {
+                events: [],
+                l2Snapshots: simL2Snapshots(path.at, fromMs, toMs, book),
+                ...(this.cfg.l2Trades && { ticks: simTicks(path.at, fromMs, toMs, { tickSize, seed }) }),
+                hasMore: false,
+            };
+        return { events: simMboEvents(path.at, fromMs, toMs, book), hasMore: false };
     }
 
     private _fetchPath(request: FetchRequest): BarResponse {
@@ -446,7 +457,7 @@ export class SimulatedMarketAdapter implements IDataAdapter {
                 const now = Date.now();
                 const chunk = this._along(this._liveTo(now).path!, next, now);
                 next = now;
-                if (chunk.events.length || chunk.ticks?.length) onBar(chunk);
+                if (chunk.events.length || chunk.ticks?.length || chunk.l2Snapshots?.length) onBar(chunk);
             }, this.cfg.realtimeUpdateMs);
             return () => clearInterval(id);
         }

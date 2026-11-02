@@ -8,7 +8,9 @@ import {
     type RealtimeRequest,
     type SymbolInfo,
 } from '@christtrade/depth';
-import { simMboEvents, simTicks } from '../../src/lib/sim-levels';
+import { simL2Snapshots, simMboEvents, simTicks } from '../../src/lib/sim-levels';
+
+type Level = 'ohlcv' | 'tick' | 'l2' | 'l3';
 
 // what the adapter does wrong, changeable whlile the page runs
 export interface Faults {
@@ -67,20 +69,28 @@ export class HarnessAdapter implements IDataAdapter {
         private readonly endMs: () => number,
         live: boolean,
         readonly faults: Faults = { down: false, failRate: 0, slowMs: 0, code: 'network_error' },
-        private readonly level: 'ohlcv' | 'tick' | 'l3' = 'ohlcv',
+        private readonly level: Level = 'ohlcv',
+        private readonly l2Trades = true,
     ) {
         if (live) this.subscribeRealtime = (req, onBar) => this.stream(req, onBar);
     }
 
-    private levelOf(symbol: string): 'ohlcv' | 'tick' | 'l3' {
+    private levelOf(symbol: string): Level {
         const s = symbol.split('-')[1]?.toLowerCase();
-        return s === 'l3' || s === 'tick' || s === 'ohlcv' ? s : this.level;
+        return s === 'l3' || s === 'l2' || s === 'tick' || s === 'ohlcv' ? s : this.level;
     }
 
     private events(level: string, from: number, to: number): BarResponse {
-        return level === 'tick'
-            ? { events: [], ticks: simTicks(price, from, to, { slotMs: 250 }), hasMore: false }
-            : { events: simMboEvents(price, from, to, { slotMs: 250 }), hasMore: false };
+        const o = { slotMs: 250 };
+        if (level === 'tick') return { events: [], ticks: simTicks(price, from, to, o), hasMore: false };
+        if (level === 'l2')
+            return {
+                events: [],
+                l2Snapshots: simL2Snapshots(price, from, to, o),
+                ...(this.l2Trades && { ticks: simTicks(price, from, to, o) }),
+                hasMore: false,
+            };
+        return { events: simMboEvents(price, from, to, o), hasMore: false };
     }
 
     resolveSymbol(symbol = SYMBOL.symbol): SymbolInfo {
@@ -123,7 +133,7 @@ export class HarnessAdapter implements IDataAdapter {
                 const now = Date.now();
                 const chunk = this.events(level, next, now);
                 next = now;
-                if (chunk.events.length || chunk.ticks?.length) onBar(chunk);
+                if (chunk.events.length || chunk.ticks?.length || chunk.l2Snapshots?.length) onBar(chunk);
             }, 250);
             return () => clearInterval(id);
         }

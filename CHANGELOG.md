@@ -8,6 +8,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- `SimulatedMarketAdapter` takes `dataLevel: 'l2'`: the l3 book as 10-level snapshots plus the same
+  trades, `l2Trades: false` for the book alone.
+
 ### Fixed
 - Footprint settings reset to the defaults on the next page back or timeframe switch. the engine
   built its bars with the options it was created with. `data:load`/`data:append`/`data:prepend`

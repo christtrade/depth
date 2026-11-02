@@ -1,4 +1,4 @@
-import type { TickEvent } from '../interfaces/IDataAdapter';
+import type { L2Snapshot, TickEvent } from '../interfaces/IDataAdapter';
 import type { MboEvent } from './types';
 
 // tick and l3 data as pure fns of time
@@ -135,5 +135,56 @@ export function simMboEvents(
         const t = tradeAt(k, mid, seed);
         if (t) ev('T', t.side, t.ticks, t.size, 0);
     }
+    return out;
+}
+
+export function simL2Snapshots(
+    price: (ms: number) => number,
+    fromMs: number,
+    toMs: number,
+    opts: SimLevelOptions & { depth?: number } = {},
+): L2Snapshot[] {
+    const slot = opts.slotMs ?? 100;
+    const depth = opts.depth ?? 10;
+    const warmFrom = fromMs - (opts.lifeSlots ?? 50) * slot;
+    const events = simMboEvents(price, warmFrom, toMs, opts);
+    // size per price
+    const bids = new Map<number, number>();
+    const asks = new Map<number, number>();
+    const top = (m: typeof bids, desc: boolean) =>
+        [...m]
+            .sort((a, b) => (desc ? b[0] - a[0] : a[0] - b[0]))
+            .slice(0, depth)
+            .map(([price, size]) => ({ price, size }));
+
+    const out: L2Snapshot[] = [];
+    let last = '';
+    const flush = (time: number) => {
+        if (time < fromMs) return;
+        const snap = { time, bids: top(bids, true), asks: top(asks, false) };
+        const key = JSON.stringify([snap.bids, snap.asks]);
+        if (key === last) return;
+        last = key;
+        out.push(snap);
+    };
+
+    const live = new Set<string>();
+    let ts = '';
+    let time = 0;
+    for (const e of events) {
+        if (e.ts_event !== ts) {
+            if (ts) flush(time);
+            ts = e.ts_event;
+            time = Date.parse(ts);
+        }
+        if (e.action !== 'A' && e.action !== 'C') continue;
+        if (e.action === 'C' && !live.delete(e.order_id)) continue;
+        if (e.action === 'A') live.add(e.order_id);
+        const m = e.side === 'B' ? bids : asks;
+        const size = (m.get(e.price!) ?? 0) + (e.action === 'A' ? e.size : -e.size);
+        if (size > 0) m.set(e.price!, size);
+        else m.delete(e.price!);
+    }
+    if (ts) flush(time);
     return out;
 }

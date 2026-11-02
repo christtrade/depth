@@ -10,7 +10,8 @@ const params = new URLSearchParams(location.search);
 const sim = params.get('sim') === '1';
 const live = sim || params.get('live') === '1';
 const budget = params.get('budget');
-const level = (['l3', 'tick'] as const).find((l) => l === params.get('level')) ?? 'ohlcv';
+const level = (['l3', 'l2', 'tick'] as const).find((l) => l === params.get('level')) ?? 'ohlcv';
+const l2Trades = params.get('trades') !== '0';
 const split = params.get('layout') === '2h';
 
 const win = window as any;
@@ -22,14 +23,14 @@ function App() {
     const { adapter, end } = useMemo(() => {
         const end = live ? Date.now() : Date.UTC(2026, 0, 1);
         if (sim) {
-            return { adapter: createSimulatedAdapter({ seed: 7, realtime: true, dataLevel: level }), end };
+            return { adapter: createSimulatedAdapter({ seed: 7, realtime: true, dataLevel: level, l2Trades }), end };
         }
         const adapter = new HarnessAdapter(end - 400 * DAY_MS, () => (live ? Date.now() : end), live, {
             down: params.get('down') === '1',
             failRate: Number(params.get('fail') ?? 0),
             slowMs: Number(params.get('slow') ?? 0),
             code: (params.get('code') as any) ?? 'network_error',
-        }, level);
+        }, level, l2Trades);
         // tests flip these while the page runs
         win.__faults = adapter.faults;
         return { adapter, end };

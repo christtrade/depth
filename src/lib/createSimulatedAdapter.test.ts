@@ -169,6 +169,30 @@ describe('SimulatedMarketAdapter realtime', () => {
         }
     });
 
+    it('l2: the l3 book as snapshots, with the same trades unless l2Trades is false', async () => {
+        const t0 = Date.UTC(2026, 9, 29, 12, 0, 30);
+        mock.timers.enable({ apis: ['Date'], now: t0 });
+        try {
+            const fetch = (cfg: object) =>
+                new SimulatedMarketAdapter({ seed: 7, realtime: true, historyBars: 60, ...cfg }).fetchBars({
+                    ...range(t0 - 30 * MIN, t0),
+                    direction: 'initial',
+                });
+            const started = performance.now();
+            const l2 = await fetch({ dataLevel: 'l2' });
+            const ms = performance.now() - started;
+            const tick = await fetch({ dataLevel: 'tick' });
+            assert.ok(l2.l2Snapshots!.length > 1000, `${l2.l2Snapshots!.length} snapshots`);
+            const { bids, asks } = l2.l2Snapshots!.at(-1)!;
+            assert.ok(bids.length === 10 && asks.length === 10, 'a full 10 a side');
+            assert.equal(JSON.stringify(l2.ticks), JSON.stringify(tick.ticks));
+            assert.ok(ms < 3000, `half an hour took ${ms.toFixed(0)} ms`);
+            assert.equal((await fetch({ dataLevel: 'l2', l2Trades: false })).ticks, undefined);
+        } finally {
+            mock.timers.reset();
+        }
+    });
+
     it('l3: half an hour a fetch, back to where the path starts', async () => {
         const t0 = Date.UTC(2026, 9, 29, 12, 0, 30);
         mock.timers.enable({ apis: ['Date'], now: t0 });

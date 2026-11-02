@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { simMboEvents, simTicks } from './sim-levels';
+import { simL2Snapshots, simMboEvents, simTicks } from './sim-levels';
 import { applyEvent, createBook } from './book';
 import { processL3Chunk } from '../core/processing/l3-processor';
 import { processTickChunk } from '../core/processing/tick-processor';
@@ -81,6 +81,58 @@ describe('simulated levels', () => {
         const ticks = priceHistory.map((p) => Math.round((p.bestAsk - p.bestBid) / 0.01));
         const oneTick = ticks.filter((t) => t === 1).length / ticks.length;
         assert.ok(oneTick > 0.3, `a tick wide ${(oneTick * 100).toFixed(0)}% of the time`);
+    });
+
+    it('l2: pages join, a repeat of the last snapshot at the seam aside', () => {
+        const to = T0 + 10 * MIN_MS;
+        for (const split of [T0 + 5 * MIN_MS, T0 + 5 * MIN_MS + 37]) {
+            const joined = simL2Snapshots(price, T0, split).concat(simL2Snapshots(price, split, to));
+            const deduped = joined.filter(
+                (s, i) => i === 0 || JSON.stringify([s.bids, s.asks]) !== JSON.stringify([joined[i - 1].bids, joined[i - 1].asks]),
+            );
+            same(deduped, simL2Snapshots(price, T0, to), 'snapshots');
+        }
+    });
+
+    it('l2: in range, in order, sorted, one row a price, never crossed', () => {
+        const from = T0 + 123;
+        const to = T0 + 5 * MIN_MS;
+        const snaps = simL2Snapshots(price, from, to, { depth: 5 });
+        assert.ok(snaps.length > 100);
+        for (let i = 0; i < snaps.length; i++) {
+            const { time, bids, asks } = snaps[i];
+            assert.ok(time >= from && time < to);
+            if (i) assert.ok(time > snaps[i - 1].time);
+            assert.ok(bids.length <= 5 && asks.length <= 5);
+            for (let j = 1; j < bids.length; j++) assert.ok(bids[j].price < bids[j - 1].price);
+            for (let j = 1; j < asks.length; j++) assert.ok(asks[j].price > asks[j - 1].price);
+            if (bids.length && asks.length) assert.ok(bids[0].price < asks[0].price, `crossed at ${time}`);
+        }
+    });
+
+    it('l2: the touch and its size match the l3 book', () => {
+        const events = simMboEvents(price, T0, T0 + 5 * MIN_MS);
+        const snaps = simL2Snapshots(price, T0, T0 + 5 * MIN_MS);
+        const book = createBook();
+        // past the first lifeSlots the l3 replay holds every resting order too
+        const warm = T0 + 10_000;
+        let s = 0;
+        let checked = 0;
+        for (let i = 0; i < events.length; i++) {
+            applyEvent(book, events[i]);
+            const t = Date.parse(events[i].ts_event);
+            if (i + 1 < events.length && Date.parse(events[i + 1].ts_event) === t) continue;
+            while (s + 1 < snaps.length && snaps[s + 1].time <= t) s++;
+            if (t < warm || snaps[s].time > t) continue;
+            const sizeAt = (m: Map<string, { price: number; size: number }>, p: number) =>
+                [...m.values()].filter((o) => o.price === p).reduce((n, o) => n + o.size, 0);
+            const { bids, asks } = snaps[s];
+            assert.equal(bids[0]?.price ?? null, book.bestBid, `best bid at ${t}`);
+            assert.equal(asks[0]?.price ?? null, book.bestAsk, `best ask at ${t}`);
+            if (bids[0]) assert.equal(bids[0].size, sizeAt(book.bids as any, bids[0].price));
+            checked++;
+        }
+        assert.ok(checked > 1000, `checked ${checked}`);
     });
 
     it('tick and l3 print the same trades', () => {
