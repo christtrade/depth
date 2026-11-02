@@ -2,6 +2,7 @@ node_modules/
 dist/
 e2e/.out/
 test-results/
+test-results-webkit/
 playwright-report/
 *.tsbuildinfo
 .DS_Store

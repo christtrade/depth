@@ -71,7 +71,8 @@ jobs:
 
       # linux webkit on a runner is too slow for l3 live, it times out. so it reports but cant
       # fail the build. run e2e:docker for webkit before a release
-      - run: npx playwright test --project=webkit --workers=1
+      # own output dir, playwright empties test-results first and the firefox traces went with it
+      - run: npx playwright test --project=webkit --workers=1 --output=test-results-webkit
         if: success() || failure()
         continue-on-error: true
         env:
@@ -82,5 +83,7 @@ jobs:
         if: always()
         with:
           name: e2e-traces
-          path: test-results/
+          path: |
+            test-results/
+            test-results-webkit/
           retention-days: 14

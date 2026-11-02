@@ -18,7 +18,8 @@ export default defineConfig({
     testDir: 'e2e',
     timeout: 120_000,
     fullyParallel: true,
-    retries: 0,
+    // one runner flake a run, a different test each time. a retry shows them as flaky, a real break fails both
+    retries: process.env.CI ? 1 : 0,
     reporter: process.env.CI ? [['github'], ['list']] : [['list']],
     use: {
         baseURL: `http://localhost:${PORT}`,
