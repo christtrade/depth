@@ -13,7 +13,7 @@ import type {
     OrderSide,
 } from './types/trading-types';
 import { getTickValue, calcUnrealizedPnl, calcUnrealizedPnlPct } from './types/trading-types';
-import type { MboEvent, PriceHistory } from './types';
+import type { MboEvent } from './types';
 import type { OhlcvBar, SymbolInfo } from '../interfaces/IDataAdapter';
 import type { SerialTrade } from './types';
 import { BYTES_PER_EVENT as CBUF_BYTES, CompactBuffer, createCompactBuffer, getEvent, getTsNs } from './compact-buffer';
@@ -393,11 +393,8 @@ export interface L3MatchingEngine {
     ) => void;
     /** Tick path: ingest SerialTrades (trade-by-trade); seekTo replays each trade. */
     ingestTicks: (trades: SerialTrade[]) => void;
-    /** L2 path: ingest pre-sampled BBO history; seekTo advances snapshot by snapshot. */
-    ingestPriceHistory: (history: PriceHistory[]) => void;
-    /** Cursor-preserving forms of the three above, for streamed extensions. */
+    /** Cursor-preserving forms of the ingests above, for streamed extensions. */
     appendTicks: (trades: SerialTrade[]) => void;
-    appendPriceHistory: (history: PriceHistory[]) => void;
     appendCompactBuf: (buf: ArrayBuffer) => void;
     seekTo: (tNs: bigint) => void;
     getPrice: () => number;
@@ -711,8 +708,7 @@ export function createL3MatchingEngine(
               /** Bar period in ns. Tells a completed bar from the forming one. */
               barNs: bigint;
           }
-        | { kind: 'tick'; trades: SerialTrade[] }
-        | { kind: 'l2'; history: PriceHistory[] };
+        | { kind: 'tick'; trades: SerialTrade[] };
 
     let _nonL3: NonL3Mode | null = null;
     let _nonL3Cursor = 0;
@@ -1246,6 +1242,10 @@ export function createL3MatchingEngine(
                     undefined,
                 );
             }
+            // on the bid/ask like stop orders, cus book only l2 has no trades to go off
+            const cur = openPositions.get(pos.id);
+            if (!cur || bestBid === null || bestAsk === null) continue;
+            checkSlLoop(cur, bestBid, bestAsk, nowNs);
         }
     }
 
@@ -2349,17 +2349,6 @@ export function createL3MatchingEngine(
         _processedUpToIdx = 0;
     }
 
-    function ingestPriceHistory(history: PriceHistory[]): void {
-        _nonL3 = {
-            kind: 'l2',
-            history: [...history].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0)),
-        };
-        _nonL3Cursor = 0;
-        _nonL3LastTs = 0n;
-        _cb = createCompactBuffer(0);
-        _processedUpToIdx = 0;
-    }
-
     // ingest* rewinds to zero, which re-settles the whole history on the next seek and can fill a
     // live order back in the past. these keep the replay where it was
 
@@ -2379,21 +2368,6 @@ export function createL3MatchingEngine(
         }
         _nonL3.trades = sorted;
         _nonL3Cursor = lo;
-    }
-
-    function appendPriceHistory(history: PriceHistory[]): void {
-        if (_nonL3?.kind !== 'l2' || history.length === 0) {
-            if (history.length) ingestPriceHistory(history);
-            return;
-        }
-        const sorted = [...history].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
-        if (_nonL3.history.length > 0 && sorted[0].ts < _nonL3.history[0].ts) {
-            ingestPriceHistory(history);
-            return;
-        }
-        const cursor = Math.min(_nonL3Cursor, sorted.length);
-        _nonL3.history = sorted;
-        _nonL3Cursor = cursor;
     }
 
     // this is the l3 counterpart
@@ -2618,39 +2592,6 @@ export function createL3MatchingEngine(
         _nonL3LastSeekTs = tNs;
     }
 
-    function seekToL2(tNs: bigint): void {
-        const data = _nonL3 as { kind: 'l2'; history: PriceHistory[] };
-
-        if (tNs < _nonL3LastTs) _nonL3Cursor = 0;
-
-        while (_nonL3Cursor < data.history.length) {
-            const snap = data.history[_nonL3Cursor];
-            if (snap.ts > tNs) break;
-            _nonL3Cursor++;
-            _nonL3LastTs = snap.ts;
-
-            const snapNs = Number(snap.ts);
-            const { bestBid, bestAsk } = snap;
-            const mid = (bestBid + bestAsk) / 2;
-
-            onTick({ symbol, bid: bestBid, ask: bestAsk, last: mid, ts: snapNs });
-
-            // Marketable-limit check: fill if limit price is at or inside the BBO.
-            for (const [id, qo] of workingOrders) {
-                const { order } = qo;
-                if (order.type !== 'limit') continue;
-                const p = order.price;
-                const marketable = order.side === 'long' ? bestAsk <= p : bestBid >= p;
-                if (!marketable) continue;
-                const fillPrice = order.side === 'long' ? bestAsk : bestBid;
-                scheduleFill(qo, fillPrice, snap.ts);
-                workingOrders.delete(id);
-            }
-
-            // Bracket check using the full BBO spread as the effective price range.
-            checkBracketTriggersFromRange(bestBid, bestAsk, snap.ts);
-        }
-    }
     //  Compact buffer ingestion + horizon-driven seek
 
     let _cb: CompactBuffer = createCompactBuffer(0);
@@ -2699,9 +2640,6 @@ export function createL3MatchingEngine(
                         break;
                     case 'tick':
                         seekToTick(tNs);
-                        break;
-                    case 'l2':
-                        seekToL2(tNs);
                         break;
                 }
             } else if (_cb.length > 0) {
@@ -2804,10 +2742,8 @@ export function createL3MatchingEngine(
         ingestSupplementalBars,
         appendSupplementalBars,
         appendTicks,
-        appendPriceHistory,
         appendCompactBuf,
         ingestTicks,
-        ingestPriceHistory,
         seekTo,
         getPrice,
         placeOrder,

@@ -7,7 +7,7 @@ import type {
 import { L3MatchingEngine, DEFAULT_FILL_SEARCH, type BookDepth } from '../lib/matchingEngine';
 import type { TypedEventBus } from './TypedEventBus';
 import type { BracketAmendment, Order, Position } from '../lib/types/trading-types';
-import type { MboEvent, PriceHistory } from '../lib/types';
+import type { MboEvent } from '../lib/types';
 import type { OhlcvBar } from '../interfaces/IDataAdapter';
 import type { SerialTrade } from '../lib/types';
 import { BarStore } from './BarStore';
@@ -228,22 +228,11 @@ export class ExecutionEngine {
         this.targetFor(symbol)?.ingestTicks?.(trades);
     }
 
-    ingestPriceHistory(history: PriceHistory[], symbol?: string): void {
-        this.targetFor(symbol)?.ingestPriceHistory?.(history);
-    }
-
     appendTicks(trades: SerialTrade[], symbol?: string): void {
         const target = this.targetFor(symbol);
         if (!target) return;
         if (target.appendTicks) target.appendTicks(trades);
         else target.ingestTicks?.(trades);
-    }
-
-    appendPriceHistory(history: PriceHistory[], symbol?: string): void {
-        const target = this.targetFor(symbol);
-        if (!target) return;
-        if (target.appendPriceHistory) target.appendPriceHistory(history);
-        else target.ingestPriceHistory?.(history);
     }
 
     appendCompactBuf(buf: ArrayBuffer, symbol?: string): void {

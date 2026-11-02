@@ -15,6 +15,8 @@ import { appendEvents, BYTES_PER_EVENT, createCompactBuffer } from './compact-bu
 import { isoToNs } from './sampler';
 import type { MboEvent } from './types';
 import * as React from 'react';
+import { simL2Snapshots, simMboEvents, simTicks } from './sim-levels';
+import { processL2Chunk } from '../core/processing/l2-processor';
 
 // a closed position toasts, and tsx compiles the toast's jsx against a global React
 (globalThis as any).React = React;
@@ -435,6 +437,17 @@ describe('l3 events handed over again', () => {
         assert.equal(positions.at(-1)?.remainingQuantity, 0);
     });
 
+    it('stops out when the bid comes down to the stop loss with no trade', () => {
+        const { engine, positions } = placedAfterReplay();
+        engine.placeOrder({
+            ...MARKET_BUY,
+            bracketSl: [{ id: 'sl', price: 99.5, qty: 1, triggered: false, triggeredAt: 0 }],
+        });
+        engine.appendCompactBuf!(bufOf([...held, ev(3n, 'A', 'B', 99.5, 3), ev(4n, 'C', 'B', 100, 1)]));
+        engine.seekTo(T0 + 5n * SEC);
+        assert.equal(positions.at(-1)?.remainingQuantity, 0);
+    });
+
     it('starts a new window on an empty book', () => {
         const { state } = stubTradingState();
         const engine = createL3MatchingEngine(state, { symbolInfo: SYMBOL_INFO });
@@ -447,6 +460,68 @@ describe('l3 events handed over again', () => {
             engine.getDepth!(5).bids.map((l) => l.price),
             [90],
         );
+    });
+});
+
+describe('l2 made from l3', () => {
+    const MIN_MS = 60_000;
+    const from = Date.UTC(2026, 0, 1);
+    const to = from + 30 * MIN_MS;
+    const price = (ms: number) => 100 + 3 * Math.sin(ms / 2.7e6) + 0.4 * Math.sin(ms / 7_000);
+    const info: any = { symbol: 'TEST', priceFormat: { minTick: 0.01, precision: 2 }, contract: { multiplier: 1 } };
+    const tick = 0.01;
+
+    const l3Buf = () => {
+        const cb = createCompactBuffer();
+        // the l2 snapshots warm their book up over the 50 slots before `from`, so the l3 side does too
+        appendEvents(cb, simMboEvents(price, from - 50 * 100, to), isoToNs);
+        return cb._buf.slice(0, cb.length * BYTES_PER_EVENT);
+    };
+    const snaps = simL2Snapshots(price, from, to);
+    const l2Buf = (trades: boolean) =>
+        processL2Chunk(snaps, trades ? simTicks(price, from, to) : [], BAR_NS).compactBuf;
+
+    // every 2 min, a limit and a stop each way two and three ticks off the touch
+    function run(buf: ArrayBuffer) {
+        const engine = createL3MatchingEngine(stubTradingState().state, { symbolInfo: info });
+        engine.ingestCompactBuf!(buf);
+        const ids: string[] = [];
+        for (let ms = from + 1000; ms < to; ms += 5000) {
+            engine.seekTo(BigInt(ms) * 1_000_000n);
+            if ((ms - from - 1000) % (2 * MIN_MS) !== 0) continue;
+            const { bids, asks } = engine.getDepth!(1);
+            const bid = bids[0].price;
+            const ask = asks[0].price;
+            const at = (p: number) => Math.round(p / tick) * tick;
+            ids.push(
+                engine.placeOrder({ side: 'long', type: 'limit', qty: 1, limitPrice: at(bid - 2 * tick), symbol: 'TEST' }),
+                engine.placeOrder({ side: 'short', type: 'limit', qty: 1, limitPrice: at(ask + 2 * tick), symbol: 'TEST' }),
+                engine.placeOrder({ side: 'long', type: 'stop', qty: 1, stopPrice: at(ask + 3 * tick), symbol: 'TEST' }),
+                engine.placeOrder({ side: 'short', type: 'stop', qty: 1, stopPrice: at(bid - 3 * tick), symbol: 'TEST' }),
+            );
+        }
+        const fills = engine.getFills();
+        const orders = engine.getOrders();
+        return ids.map((id) => {
+            const f = fills.find((f) => f.orderId === id);
+            const o = orders.find((o) => o.id === id)!;
+            return { type: o.type, limit: o.price, fill: f ? `${f.price.toFixed(2)} @ ${f.ts}` : 'none' };
+        });
+    }
+
+    it('fills the same orders at the same prices and times as the l3 it came from', () => {
+        const l3 = run(l3Buf());
+        for (const type of ['limit', 'stop'])
+            assert.ok(l3.filter((r) => r.type === type && r.fill !== 'none').length > 5, `too few ${type} fills to say much`);
+        assert.deepEqual(run(l2Buf(true)), l3);
+    });
+
+    it('fills limits at their price and triggers stops off the book alone', () => {
+        const l2 = run(l2Buf(false));
+        for (const type of ['limit', 'stop'])
+            assert.ok(l2.filter((r) => r.type === type && r.fill !== 'none').length > 5, `too few ${type} fills`);
+        for (const r of l2)
+            if (r.type === 'limit' && r.fill !== 'none') assert.equal(r.fill.split(' @ ')[0], r.limit.toFixed(2));
     });
 });
 

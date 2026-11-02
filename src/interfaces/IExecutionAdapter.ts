@@ -10,7 +10,6 @@ import type {
 } from '../lib/types/trading-types';
 import type { MboEvent, OhlcvBar } from './IDataAdapter';
 import type { SerialTrade } from '../lib/types';
-import type { PriceHistory } from '../lib/types';
 
 export interface IExecutionAdapter {
     readonly id: string; // 'backtest' | 'paper' | 'live-rithmic' | 'live-ib' | etc.
@@ -72,10 +71,8 @@ export interface IExecutionAdapter {
         }>,
     ): void;
     ingestTicks?(trades: SerialTrade[]): void;
-    ingestPriceHistory?(history: PriceHistory[]): void;
     /** Streamed extensions; fall back to the ingest form when not implemented. */
     appendTicks?(trades: SerialTrade[]): void;
-    appendPriceHistory?(history: PriceHistory[]): void;
     appendCompactBuf?(buf: ArrayBuffer): void;
     seekTo?(tNs: bigint): void;
 

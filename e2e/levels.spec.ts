@@ -233,6 +233,43 @@ test('l2 without trades: the candles follow the playhead both ways, and live', a
     expect(errors).toEqual([]);
 });
 
+test('l2 without trades: orders fill off the book the chart holds, after a page back too', async ({ page }) => {
+    const errors = watchErrors(page);
+    await open(page, '/?level=l2&trades=0');
+    const book = () =>
+        page.evaluate(() => {
+            const d = (window as any).__chart.executionEngine.getDepth(5);
+            return { bids: d?.bids.map((l: any) => l.price) ?? [], asks: d?.asks.map((l: any) => l.price) ?? [] };
+        });
+    expect((await book()).bids.length, 'the engine has the whole book, not only the best bid').toBeGreaterThan(1);
+
+    await page.evaluate(() => {
+        for (let i = 0; i < 20; i++) (window as any).__chart.playback.stepBack();
+    });
+    await settled(page);
+    const { bids } = await book();
+    expect(bids.length).toBeGreaterThan(1);
+
+    // one level under the best bid, so it rests until the book comes down onto it
+    await page.evaluate((limitPrice) => {
+        const c = (window as any).__chart;
+        c.executionEngine.placeOrder({ side: 'long', type: 'limit', qty: 1, limitPrice, symbol: c.getSymbol() });
+    }, bids[1]);
+    expect(await page.evaluate(() => (window as any).__chart.executionEngine.hasPendingTriggers())).toBe(true);
+    await expect
+        .poll(
+            () =>
+                page.evaluate(() => {
+                    const c = (window as any).__chart;
+                    c.playback.stepForward();
+                    return c.executionEngine.hasPendingTriggers();
+                }),
+            { message: 'the limit fills', timeout: 20_000, intervals: [50] },
+        )
+        .toBe(false);
+    expect(errors).toEqual([]);
+});
+
 test('tick: a step after going finer scrolls one new bar, not the old bar', async ({ page }) => {
     const errors = watchErrors(page);
     await open(page, '/?level=tick');

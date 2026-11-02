@@ -30,6 +30,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Breaking:** l2 mid candles are tick candles now, a tick being the mid changing, so they work like
   trade candles. they used to open on whatever mid stood at the first book update, even a deep one.
   `L2DataChunk.midPrints` and `data:load`/`append`/`prepend`'s `midPrints` hold the ticks (size 0)
+- **Breaking:** l2 fills off the whole book like l3, so it fills the same orders at the same prices and
+  times as the l3 it's made from. it used to see only the best bid/ask, stop limits never filled and
+  an empty side filled long limits at 0. `ExecutionEngine.ingestPriceHistory`/`appendPriceHistory`
+  and `IExecutionAdapter`'s hooks of the same name are gone
+- stop losses go off on the bid/ask too, like stop orders, so book only l2 has something to stop
+  out on. at l3 that's when the bid gets to a long's stop, not only when a trade prints there
 
 ### Fixed
 - Footprint settings reset to the defaults on the next page back or timeframe switch. the engine

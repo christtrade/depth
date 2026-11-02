@@ -54,6 +54,7 @@ import SymbolSwitcher from './components/toolbar/SymbolSwitcher';
 import { globalChartBus } from './core/GlobalChartBus';
 import { FeaturesOptions, TimePrecision } from './core/DepthChart';
 import { MAX, useCellBridges, useTradingBridge } from './hooks/useCellBridges';
+import { hasBook } from './lib/book';
 import { LETTERS, PRESETS, LayoutPicker, type Preset } from './components/multi-chart/LayoutPicker';
 import { DEFAULT_SYNC_IN_LAYOUT, type SyncInLayout } from './lib/types/layout-sync';
 import {
@@ -605,6 +606,7 @@ export default function Depth({
             if (!symbolBridgesRef.current.some((b) => b.symbol === sym)) return;
 
             switch (payload.dataLevel) {
+                case 'l2':
                 case 'l3': {
                     const buf = payload.compactBuf as ArrayBuffer;
                     if (mode === 'load') eng.ingestCompactBuf(buf, sym);
@@ -652,10 +654,6 @@ export default function Depth({
                 case 'tick':
                     if (mode === 'load') eng.ingestTicks(payload.trades ?? [], sym);
                     else eng.appendTicks(payload.trades ?? [], sym);
-                    break;
-                case 'l2':
-                    if (mode === 'append') eng.appendPriceHistory(payload.priceHistory ?? [], sym);
-                    else eng.ingestPriceHistory(payload.priceHistory ?? [], sym);
                     break;
             }
 
@@ -941,7 +939,7 @@ export default function Depth({
             eventBus.on('data:append', (payload) => ingestForExecution(payload, 'append')),
             // ohlcv reads the chart's store in place, so it already has the page
             eventBus.on('data:prepend', (payload) => {
-                if (payload.dataLevel === 'tick' || payload.dataLevel === 'l3')
+                if (payload.dataLevel === 'tick' || hasBook(payload.dataLevel))
                     ingestForExecution(payload, 'append');
             }),
             eventBus.on('playback:play', () => pb.play()),
