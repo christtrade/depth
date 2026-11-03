@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { feed, newBuild, seal, unseal } from './heatmap-build';
+import { feed, newBuild, rowTicks, seal, sumRows, unseal } from './heatmap-build';
 import { simMboEvents } from './sim-levels';
 
 const T0 = Date.UTC(2026, 0, 1);
@@ -46,5 +46,30 @@ describe('the heatmap build', () => {
         const b = newBuild();
         seal(b);
         assert.deepEqual(b.snaps.map((s) => s.length), [0, 0, 0, 0]);
+    });
+});
+
+describe('heatmap rows', () => {
+    it('are the fewest ticks, a power of 2, that make a row tall enough', () => {
+        assert.equal(rowTicks(5, 3), 1);
+        assert.equal(rowTicks(3, 3), 1);
+        assert.equal(rowTicks(1, 3), 4);
+        assert.equal(rowTicks(0.01, 3), 512);
+    });
+
+    it('add up the sizes of the prices in them, so a spread out wall outweighs one big level', () => {
+        // ten 1 lot asks 100.00..100.09 and a 5 lot at 100.11, rows of 8 ticks
+        const asks = new Float64Array([...Array.from({ length: 10 }, (_, i) => [100 + i / 100, 1]).flat(), 100.11, 5]);
+        assert.deepEqual([...sumRows(asks, 0.01, 8)], [1250, 8, 1251, 7]);
+    });
+
+    it('come out the same with the prices high to low, like bids', () => {
+        const bids = new Float64Array([100.09, 2, 100.03, 1, 99.99, 4, 99.98, 1]);
+        assert.deepEqual([...sumRows(bids, 0.01, 4)], [2502, 2, 2500, 1, 2499, 5]);
+    });
+
+    it('put a price off by float noise in its own tick', () => {
+        const asks = new Float64Array([0.1 + 0.2, 3, 0.31, 1]);
+        assert.deepEqual([...sumRows(asks, 0.01, 1)], [30, 3, 31, 1]);
     });
 });

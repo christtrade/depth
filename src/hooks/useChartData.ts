@@ -1037,6 +1037,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 chartH: bitmapH,
                 horizonNs: horizon > 0n ? horizon.toString() : undefined,
                 contrast: p.chartSettingsRef.current.heatmapContrast,
+                tickSize: p.resolvedSymbolInfoRef.current?.priceFormat?.minTick || 0.01,
             };
             p.eventBus.emit('heatmap:status', { recalculating: true, cellId: p.cellId });
             workerRef.current!.postMessage(msg);

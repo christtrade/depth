@@ -8,6 +8,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- the heatmap draws each price on its own row, and zoomed out a row adds up the sizes of the prices in
+  it (rows of 1, 2, 4.. ticks, at least 3px tall (like the footprint)). It used to stretch each level down
+  to the next one, and zoomed out a pixel kept only its biggest level so a wall spread over many prices disappeared
+
 ## [0.23.0] - 2026-11-03
 
 ### Added

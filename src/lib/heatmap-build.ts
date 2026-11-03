@@ -157,6 +157,29 @@ export function sortPairs(arr: Float64Array, highToLow: boolean): void {
     }
 }
 
+// ticks per heatmap row
+export function rowTicks(tickPx: number, minPx: number): number {
+    if (!(tickPx > 0)) return 1;
+    let n = 1;
+    while (tickPx * n < minPx && n < 2 ** 30) n *= 2;
+    return n;
+}
+
+// [price, size, ...] sorted by price -> [row, summed size, ...]
+export function sumRows(pairs: Float64Array, tickSize: number, ticks: number): Float64Array {
+    const out = new Float64Array(pairs.length);
+    let n = 0;
+    for (let i = 0; i < pairs.length; i += 2) {
+        const row = Math.floor(Math.round(pairs[i] / tickSize) / ticks);
+        if (n > 0 && out[n - 2] === row) out[n - 1] += pairs[i + 1];
+        else {
+            out[n++] = row;
+            out[n++] = pairs[i + 1];
+        }
+    }
+    return out.slice(0, n);
+}
+
 function applyEvent(book: BookState, event: MboEvent): void {
     if (event.action === 'R') {
         book.bids.clear();

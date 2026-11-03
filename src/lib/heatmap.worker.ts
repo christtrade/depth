@@ -12,14 +12,17 @@ import {
     LOD_INTERVALS_NS,
     feed,
     newBuild,
+    rowTicks,
     seal,
     sortPairs,
+    sumRows,
     unseal,
 } from './heatmap-build';
 
 // How many columns-per-pixel we tolerate before stepping up to a coarser level.
 // 3 = switch levels when the snapshot count exceeds 3x the canvas width.
 const LOD_RATIO = 3;
+const MIN_ROW_PX = 3;
 
 // One snapshot array per LOD level, indexed same as LOD_INTERVALS_NS.
 let lodSnapshots: Snapshot[][] = [];
@@ -122,7 +125,7 @@ function handleRender(msg: HeatmapRequest & { type: 'render' }) {
     };
 
     const horizon = horizonNs ? BigInt(horizonNs) : null;
-    const bitmap = renderView(bounds, chartW, chartH, horizon, msg.contrast ?? 0);
+    const bitmap = renderView(bounds, chartW, chartH, horizon, msg.contrast ?? 0, msg.tickSize);
     if (!bitmap) return;
 
     const response: HeatmapResponse = { requestId, bitmap, bounds: rawBounds };
@@ -157,6 +160,7 @@ function renderView(
     chartH: number,
     horizon: bigint | null,
     contrast: number,
+    tickSize: number,
 ): ImageBitmap | null {
     if (lodSnapshots.length === 0 && masterSnapshots.length === 0) return null;
 
@@ -191,7 +195,7 @@ function renderView(
     const ctx = offscreen.getContext('2d') as OffscreenCanvasRenderingContext2D;
     if (!ctx) return null;
 
-    paintSnapshots(ctx, snapshots, first, last, bounds, chartW, chartH, contrast);
+    paintSnapshots(ctx, snapshots, first, last, bounds, chartW, chartH, contrast, tickSize);
 
     return offscreen.transferToImageBitmap();
 }
@@ -206,6 +210,7 @@ function paintSnapshots(
     chartW: number,
     chartH: number,
     contrast: number,
+    tickSize: number,
 ): void {
     const tRange = Number(bounds.tMax - bounds.tMin);
     const pRange = bounds.pMax - bounds.pMin;
@@ -279,7 +284,20 @@ function paintSnapshots(
         }
     }
 
-    // Find global max for normalisation
+    const ticks = rowTicks((tickSize / pRange) * chartH, MIN_ROW_PX);
+    const rowPrice = tickSize * ticks;
+    // the downsample path forward fills with the same arrays
+    let fromBids: Float64Array | null = null;
+    let fromAsks: Float64Array | null = null;
+    let rowBids: Float64Array = new Float64Array(0);
+    let rowAsks: Float64Array = new Float64Array(0);
+    for (const col of columns) {
+        if (col.bids !== fromBids) rowBids = sumRows((fromBids = col.bids), tickSize, ticks);
+        if (col.asks !== fromAsks) rowAsks = sumRows((fromAsks = col.asks), tickSize, ticks);
+        col.bids = rowBids;
+        col.asks = rowAsks;
+    }
+
     let maxSize = 1;
     for (const col of columns) {
         for (let j = 1; j < col.bids.length; j += 2)
@@ -288,6 +306,7 @@ function paintSnapshots(
             if (col.asks[j] > maxSize) maxSize = col.asks[j];
     }
     const logMax = Math.log1p(maxSize);
+    const yOf = (price: number) => (chartH - ((price - bounds.pMin) / pRange) * chartH + 0.5) | 0;
 
     // Write pixels
     const imageData = ctx.createImageData(chartW, chartH);
@@ -300,7 +319,7 @@ function paintSnapshots(
     const paintSide = (arr: Float64Array, isBid: boolean, x0: number, x1: number) => {
         const len = arr.length;
         for (let i = 0; i < len; i += 2) {
-            const price = arr[i];
+            const row = arr[i];
             const size = arr[i + 1];
 
             const intensity = Math.log1p(size) / logMax; // 0..1
@@ -320,17 +339,13 @@ function paintSnapshots(
                 b = 50;
             }
 
-            const yThis = (chartH - ((price - bounds.pMin) / pRange) * chartH + 0.5) | 0;
-            const nextPrice = i + 2 < len ? arr[i + 2] : isBid ? -Infinity : Infinity;
-            const yNext =
-                i + 2 < len
-                    ? (chartH - ((nextPrice - bounds.pMin) / pRange) * chartH + 0.5) | 0
-                    : isBid
-                      ? chartH
-                      : 0;
-
-            const yFrom = Math.max(0, yThis < yNext ? yThis : yNext);
-            const yTo = Math.min(chartH - 1, (yThis > yNext ? yThis : yNext) - 1);
+            // half a tick either side, so a row of one tick sits on its price
+            const low = (row * ticks - 0.5) * tickSize;
+            const top = yOf(low + rowPrice);
+            const bottom = Math.max(top, yOf(low) - 1);
+            if (bottom < 0 || top >= chartH) continue;
+            const yFrom = Math.max(0, top);
+            const yTo = Math.min(chartH - 1, bottom);
 
             for (let y = yFrom; y <= yTo; y++) {
                 const rowBase = (y * chartW + x0) * 4;

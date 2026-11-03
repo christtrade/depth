@@ -28,6 +28,7 @@ export type HeatmapRequest = {
     horizonNs?: string;
     /** 0 shows every level, 1 none. */
     contrast: number;
+    tickSize: number;
 };
 
 export type HeatmapResponse = {
