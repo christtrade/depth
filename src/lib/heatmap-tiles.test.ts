@@ -57,6 +57,29 @@ describe('heatmap tiles on screen', () => {
         assert.deepEqual(asked.map((r) => r.type === 'tiles' && r.tiles), [[0]]);
     });
 
+    it('asks for brightness over what it showed once the view stops, up to the playhead', () => {
+        const { tiles, ctx, asked } = setup();
+        tiles.draw(ctx, { ...view, horizon: SPAN / 2n });
+        tiles.settled();
+        const s = asked.find((r) => r.type === 'settle');
+        assert.deepEqual(s && [s.from, s.to], ['0', (SPAN / 2n).toString()]);
+    });
+
+    it('keeps drawing at the old brightness while tiles at the new one are built', () => {
+        const { tiles, ctx, drawn, asked, bitmap } = setup();
+        tiles.onReply({ type: 'norm', normKey: key.split(':').slice(0, 3).join(':') });
+        tiles.draw(ctx, view);
+        assert.deepEqual(drawn, [bitmap]);
+        assert.deepEqual(asked.map((r) => r.type === 'tiles' && r.tiles), [[0]]);
+    });
+
+    it('leaves tiles of another row size alone when one brightness changes', () => {
+        const { tiles, ctx, asked } = setup();
+        tiles.onReply({ type: 'norm', normKey: `${COLUMN_NS.indexOf(COL)}:0.01:2` });
+        tiles.draw(ctx, view);
+        assert.deepEqual(asked, []);
+    });
+
     it('does the same when the whole buffer was sent again', () => {
         const { tiles, ctx, drawn, bitmap } = setup();
         tiles.onReply({ type: 'data', from: '0' });

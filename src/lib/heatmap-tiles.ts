@@ -29,6 +29,7 @@ export class HeatmapTiles {
     private fill: Fill | null = null;
     private fillAsked = '';
     private missing = false;
+    private seen: { config: TileConfig; from: bigint; to: bigint } | null = null;
     //bitmaps the last frame drew, for tests
     drawn: ImageBitmap[] = [];
 
@@ -41,6 +42,15 @@ export class HeatmapTiles {
     onReply(r: HeatmapReply): void {
         if (r.type === 'data') {
             this.invalidate(BigInt(r.from));
+            return;
+        }
+        if (r.type === 'norm') {
+            for (const [key, tiles] of this.byConfig)
+                if (key.startsWith(r.normKey + ':')) for (const t of tiles.values()) t.stale = true;
+            if (this.fill?.key.startsWith(r.normKey + ':')) this.fill.stale = true;
+            this.asked = '';
+            this.fillAsked = '';
+            this.changed();
             return;
         }
         if (r.type === 'fill') {
@@ -100,6 +110,7 @@ export class HeatmapTiles {
         const cut = v.horizon > 0n ? (v.horizon / colNs) * colNs : null;
         const end = cut !== null && cut < view.tMax ? cut : view.tMax;
         const tiles = this.byConfig.get(key);
+        this.seen = { config, from: view.tMin, to: end };
 
         const smoothing = ctx.imageSmoothingEnabled;
         ctx.imageSmoothingEnabled = false;
@@ -147,6 +158,13 @@ export class HeatmapTiles {
             const busy = this.missing;
             queueMicrotask(() => this.status(busy));
         }
+    }
+
+    // the view stopped moving
+    settled(): void {
+        const s = this.seen;
+        if (!s || s.to <= s.from) return;
+        this.post({ type: 'settle', from: s.from.toString(), to: s.to.toString(), ...s.config });
     }
 
     private paint(ctx: CanvasRenderingContext2D, t: Tile, span: bigint, c: TileConfig, v: TileView): void {

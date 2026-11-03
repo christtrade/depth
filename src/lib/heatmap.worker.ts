@@ -1,7 +1,14 @@
-import { configKey, type HeatmapReply, type HeatmapRequest, type TileConfig, type WorkerInitMessage } from './types/heatmap-types';
+import {
+    configKey,
+    normKey,
+    type HeatmapReply,
+    type HeatmapRequest,
+    type TileConfig,
+    type WorkerInitMessage,
+} from './types/heatmap-types';
 import type { MboEvent } from './types';
 import { createCompactBuffer, sliceToMboEvents } from './compact-buffer';
-import { type Build, type Texels, bookColumn, buildTile, feed, newBuild, rowNorm, seal, unseal } from './heatmap-build';
+import { type Build, type Texels, bookColumn, buildTile, feed, newBuild, pickNorm, rowNorm, seal, unseal } from './heatmap-build';
 
 let build: Build | null = null;
 let buildGen = 0;
@@ -52,13 +59,22 @@ self.onmessage = (e: MessageEvent<WorkerInitMessage | HeatmapRequest>) => {
         });
         return;
     }
+    if (msg.type === 'settle') {
+        if (!build) return;
+        const current = normOf(msg);
+        const next = pickNorm(current, rowNorm(build.snaps, msg.column, msg.tickSize, msg.ticks, BigInt(msg.from), BigInt(msg.to)));
+        if (next === current) return;
+        norms.set(normKey(msg), next);
+        post({ type: 'norm', normKey: normKey(msg) });
+        return;
+    }
     if (msg.type === 'tiles') wanted = msg;
     else if (msg.type === 'fill') fillWanted = msg;
     pump();
 };
 
 function normOf(c: TileConfig): number {
-    const key = `${c.column}:${c.tickSize}:${c.ticks}`;
+    const key = normKey(c);
     let n = norms.get(key);
     if (n === undefined) norms.set(key, (n = rowNorm(build!.snaps, c.column, c.tickSize, c.ticks)));
     return n;

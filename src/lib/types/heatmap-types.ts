@@ -15,7 +15,9 @@ export type TileConfig = {
 export type HeatmapRequest =
     | ({ type: 'tiles'; tiles: number[] } & TileConfig)
     // the book at the playhead, painted from there to the right edge
-    | ({ type: 'fill'; ts: string } & TileConfig);
+    | ({ type: 'fill'; ts: string } & TileConfig)
+    // the view stopped on [from, to), brightness follows it if it's far off
+    | ({ type: 'settle'; from: string; to: string } & TileConfig);
 
 export type TileReply = {
     type: 'tile';
@@ -30,6 +32,10 @@ export type HeatmapReply =
     | TileReply
     | { type: 'fill'; key: string; ts: string; rowLo: number; rows: number; bitmap: ImageBitmap | null }
     // tiles from this time on are stale, all of them when '0'
-    | { type: 'data'; from: string };
+    | { type: 'data'; from: string }
+    // brightness changed for the configs starting with normKey
+    | { type: 'norm'; normKey: string };
+
+export const normKey = (c: TileConfig) => `${c.column}:${c.tickSize}:${c.ticks}`;
 
 export const configKey = (c: TileConfig) => `${c.column}:${c.tickSize}:${c.ticks}:${c.contrast}`;

@@ -8,6 +8,7 @@ import {
     buildTile,
     feed,
     newBuild,
+    pickNorm,
     rowNorm,
     rowTicks,
     seal,
@@ -85,6 +86,18 @@ describe('heatmap rows', () => {
     it('put a price off by float noise in its own tick', () => {
         const asks = new Float64Array([0.1 + 0.2, 3, 0.31, 1]);
         assert.deepEqual([...sumRows(asks, 0.01, 1)], [30, 3, 31, 1]);
+    });
+});
+
+describe('heatmap brightness once a view settles', () => {
+    it('follows the view when it is far off', () => {
+        assert.equal(pickNorm(100, 20), 20);
+        assert.equal(pickNorm(20, 100), 100);
+    });
+
+    it('stays put when it is close, so a small pan does not flicker it', () => {
+        assert.equal(pickNorm(100, 80), 100);
+        assert.equal(pickNorm(100, 140), 100);
     });
 });
 

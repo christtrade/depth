@@ -16,6 +16,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   50ms after the pan (or whatever) stops. a tile still on its way shows the last zoom's tiles stretched.
   brightness is now scaled to the loaded data (99th percentile) and not to what's on screen, `resamplingDebounce`
   doesn't touch the heatmap anymore and `heatmap:status` is true while tiles on screen are missing
+- Once the view stops, heatmap brightness follows what's on screen if that's 1.5x off the loaded data's,
+  so a quiet stretch you zoom into doesn't stay dim. it rebuilds behind the old tiles, nothing blinks
 
 ### Fixed
 - when the data landed before the symbol resolved (a slow pc, often safari) the matching engine got

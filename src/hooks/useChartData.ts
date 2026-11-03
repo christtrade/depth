@@ -981,6 +981,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                     p.eventBus.emit('plugin:scripted-recompute' as any, { id: ind.id });
                 }
             }
+            if (p.chartSettingsRef.current.showHeatmap) heatmapTilesRef.current?.settled();
         }, p.chartSettingsRef.current.resamplingDebounce);
     }, [p.chartSettingsRef.current.resamplingDebounce]);
 

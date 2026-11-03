@@ -340,6 +340,11 @@ export function rowNorm(levels: Snapshot[][], column: number, tickSize: number, 
     return Math.max(1, sizes[Math.min(sizes.length - 1, Math.floor(sizes.length * 0.99))]);
 }
 
+// the view's norm once it's 1.5x off either way, so a small pan doesn't flip brightness back and forth
+export function pickNorm(current: number, visible: number): number {
+    return visible > current * 1.5 || current > visible * 1.5 ? visible : current;
+}
+
 function applyEvent(book: BookState, event: MboEvent): void {
     if (event.action === 'R') {
         book.bids.clear();
