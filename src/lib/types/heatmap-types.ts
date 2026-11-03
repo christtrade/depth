@@ -10,7 +10,7 @@ export type TileConfig = {
     tickSize: number;
     ticks: number;
     contrast: number;
-    // 'heat', or the bid and ask colours as '#rrggbb,#rrggbb'
+    // 'heat', or the bid and ask colors as '#rrggbb,#rrggbb'
     palette: string;
 };
 

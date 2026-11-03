@@ -92,7 +92,7 @@ export type ChartSettings = {
     // Heatmap
     showHeatmap: boolean;
     heatmapContrast: number; // 0-100
-    /** 'heat' colours a level by its size, blue thin to red big. 'sides' paints bids and asks in their own colour */
+    /** 'heat' colors a level by its size, blue thin to red big. 'sides' paints bids and asks in their own color */
     heatmapColors: 'heat' | 'sides';
     heatmapColorBid: string;
     heatmapColorAsk: string;

@@ -313,7 +313,7 @@ export function paintColumns(cols: Col[], p: TileParams): Texels {
             if (row < lo || row > hi) continue;
             let alpha: number;
             if (heat) {
-                // linear, log pushed a 10 lot against a 40 norm into yellow. the colour says the size, so a
+                // linear, log pushed a 10 lot against a 40 norm into yellow. the color says the size, so a
                 // thin level still gets to be seen
                 const t = Math.min(1, side[j + 1] / norm);
                 if (t <= p.contrast) continue;
