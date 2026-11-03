@@ -31,7 +31,7 @@ const events = [
     ev(60, 'A', 'A', 100.1, 1, 4),
     ev(120, 'A', 'B', 99.8, 1, 5),
 ];
-const cfg = { column: 0, tickSize: 0.01, ticks: 1, contrast: 0 };
+const cfg = { column: 0, tickSize: 0.01, ticks: 1, contrast: 0, palette: 'heat' };
 const send = (msg: unknown) => worker.onmessage({ data: msg });
 const until = async (ok: () => boolean) => {
     for (let i = 0; i < 200 && !ok(); i++) await new Promise((r) => setTimeout(r, 5));

@@ -17,8 +17,9 @@ const view: TileView = {
     horizon: 0n,
     tickSize: 0.01,
     contrast: 0,
+    palette: 'heat',
 };
-const key = configKey({ column: COLUMN_NS.indexOf(COL), tickSize: 0.01, ticks: 1, contrast: 0 });
+const key = configKey({ column: COLUMN_NS.indexOf(COL), tickSize: 0.01, ticks: 1, contrast: 0, palette: 'heat' });
 
 function setup() {
     const asked: HeatmapRequest[] = [];

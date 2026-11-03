@@ -18,6 +18,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   doesn't touch the heatmap anymore and `heatmap:status` is true while tiles on screen are missing
 - Once the view stops, heatmap brightness follows what's on screen if that's 1.5x off the loaded data's,
   so a quiet stretch you zoom into doesn't stay dim. it rebuilds behind the old tiles, nothing blinks
+- The heatmap colors a level by its size now, blue thin to red big. `heatmapColors: 'sides'`
+  (Heat / Bid/Ask in the settings) keeps bids and asks in their own color, and `heatmapColorBid`/`heatmapColorAsk`
+  finally do something there, nothing read them. their defaults are the green and red it always drew.
 
 ### Fixed
 - When the data landed before the symbol resolved (a slow pc, often safari) the matching engine got

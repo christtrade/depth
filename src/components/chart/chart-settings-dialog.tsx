@@ -1133,6 +1133,34 @@ export function ChartSettingsDialog({
                                                 <span>100</span>
                                             </div>
                                         </div>
+                                        <div className="flex gap-1.5">
+                                            <ToggleChip
+                                                active={s.heatmapColors === 'heat'}
+                                                onClick={() => onUpdate({ heatmapColors: 'heat' })}
+                                            >
+                                                Heat
+                                            </ToggleChip>
+                                            <ToggleChip
+                                                active={s.heatmapColors === 'sides'}
+                                                onClick={() => onUpdate({ heatmapColors: 'sides' })}
+                                            >
+                                                Bid/Ask
+                                            </ToggleChip>
+                                        </div>
+                                        {s.heatmapColors === 'sides' && (
+                                            <div className="flex flex-col gap-2">
+                                                <ColorRow
+                                                    label="Bids"
+                                                    value={s.heatmapColorBid}
+                                                    onChange={(v) => onUpdate({ heatmapColorBid: v })}
+                                                />
+                                                <ColorRow
+                                                    label="Asks"
+                                                    value={s.heatmapColorAsk}
+                                                    onChange={(v) => onUpdate({ heatmapColorAsk: v })}
+                                                />
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </Section>
@@ -1221,6 +1249,7 @@ export function ChartSettingsDialog({
                                         showTradeDots: DEFAULT_CHART_SETTINGS.showTradeDots,
                                         tradeDotsSizeMult: DEFAULT_CHART_SETTINGS.tradeDotsSizeMult,
                                         heatmapContrast: DEFAULT_CHART_SETTINGS.heatmapContrast,
+                                        heatmapColors: DEFAULT_CHART_SETTINGS.heatmapColors,
                                         heatmapColorBid: DEFAULT_CHART_SETTINGS.heatmapColorBid,
                                         heatmapColorAsk: DEFAULT_CHART_SETTINGS.heatmapColorAsk,
                                         priceLineVisible: DEFAULT_CHART_SETTINGS.priceLineVisible,

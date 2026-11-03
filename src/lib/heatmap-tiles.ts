@@ -19,6 +19,7 @@ export type TileView = {
     horizon: bigint;
     tickSize: number;
     contrast: number;
+    palette: string;
 };
 
 export class HeatmapTiles {
@@ -103,6 +104,7 @@ export class HeatmapTiles {
             tickSize: v.tickSize,
             ticks: rowTicks((v.tickSize / pRange) * h, MIN_ROW_PX),
             contrast: v.contrast,
+            palette: v.palette,
         };
         const key = configKey(config);
         const colNs = COLUMN_NS[config.column];
@@ -239,6 +241,6 @@ export class HeatmapTiles {
 }
 
 function parseKey(key: string): TileConfig {
-    const [column, tickSize, ticks, contrast] = key.split(':').map(Number);
-    return { column, tickSize, ticks, contrast };
+    const [column, tickSize, ticks, contrast, palette] = key.split(':');
+    return { column: +column, tickSize: +tickSize, ticks: +ticks, contrast: +contrast, palette };
 }

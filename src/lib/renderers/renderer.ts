@@ -304,6 +304,10 @@ export function drawBaseLayer(
                         horizon,
                         tickSize: symbolInfo?.priceFormat?.minTick || 0.01,
                         contrast: chartSettings.heatmapContrast,
+                        palette:
+                            chartSettings.heatmapColors === 'sides'
+                                ? `${chartSettings.heatmapColorBid},${chartSettings.heatmapColorAsk}`
+                                : 'heat',
                     });
                 }
                 if (!isPluginChartType)

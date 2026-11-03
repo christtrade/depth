@@ -10,6 +10,8 @@ export type TileConfig = {
     tickSize: number;
     ticks: number;
     contrast: number;
+    // 'heat', or the bid and ask colours as '#rrggbb,#rrggbb'
+    palette: string;
 };
 
 export type HeatmapRequest =
@@ -38,4 +40,4 @@ export type HeatmapReply =
 
 export const normKey = (c: TileConfig) => `${c.column}:${c.tickSize}:${c.ticks}`;
 
-export const configKey = (c: TileConfig) => `${c.column}:${c.tickSize}:${c.ticks}:${c.contrast}`;
+export const configKey = (c: TileConfig) => `${c.column}:${c.tickSize}:${c.ticks}:${c.contrast}:${c.palette}`;

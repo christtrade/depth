@@ -234,6 +234,7 @@ export const CVARS: CvarSpec[] = [
     {"name":"tradeDotsSizeMult","type":{"kind":"number"},"group":"Overlays","doc":"1-5"},
     {"name":"showHeatmap","type":{"kind":"boolean"},"group":"Heatmap"},
     {"name":"heatmapContrast","type":{"kind":"number"},"group":"Heatmap","doc":"0-100"},
+    {"name":"heatmapColors","type":{"kind":"enum","values":["heat","sides"]},"group":"Heatmap","doc":"'heat' colours a level by its size, blue thin to red big. 'sides' paints bids and asks in their own colour"},
     {"name":"heatmapColorBid","type":{"kind":"string"},"group":"Heatmap"},
     {"name":"heatmapColorAsk","type":{"kind":"string"},"group":"Heatmap"},
     {"name":"resamplingDebounce","type":{"kind":"number"},"group":"Resampling"},

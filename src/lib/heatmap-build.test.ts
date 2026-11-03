@@ -111,12 +111,31 @@ describe('heatmap tiles', () => {
     });
     const every = (step: bigint) => Array.from({ length: Number((10n * SEC) / step) }, (_, i) => snap(BigInt(i) * step));
     const levels = LOD_INTERVALS_NS.map((step) => every(step));
-    const params = { tickSize: 0.01, ticks: 1, norm: 50, contrast: 0 };
-    const alpha = (t: Texels, price: number, col: number) => {
+    const params = { tickSize: 0.01, ticks: 1, norm: 50, contrast: 0, palette: '#14dc50,#ff1e32' };
+    const texel = (t: Texels, price: number, col: number) => {
         const row = Math.round(price / 0.01);
-        if (row < t.rowLo || row >= t.rowLo + t.rows) return 0;
-        return t.data[((t.rowLo + t.rows - 1 - row) * t.cols + col) * 4 + 3];
+        if (row < t.rowLo || row >= t.rowLo + t.rows) return [0, 0, 0, 0];
+        const i = ((t.rowLo + t.rows - 1 - row) * t.cols + col) * 4;
+        return [...t.data.slice(i, i + 4)];
     };
+    const alpha = (t: Texels, price: number, col: number) => texel(t, price, col)[3];
+
+    it('paint bids and asks in the colours set for them on the sides palette', () => {
+        const t = buildTile(levels, 0, { ...params, column: 0, palette: '#0000ff,#ffff00' });
+        assert.deepEqual(texel(t, 99.95, 0).slice(0, 3), [0, 0, 255]);
+        assert.deepEqual(texel(t, 100.05, 0).slice(0, 3), [255, 255, 0]);
+    });
+
+    it('colour by size on the heat palette, a thin level blue and a wall red', () => {
+        const t = buildTile(levels, 0, { ...params, column: 0, palette: 'heat' });
+        // 2s in, where the 50 lot wall rests next to a 1 lot
+        const [r1, , b1, a1] = texel(t, 100.05, 8);
+        const [r50, , b50, a50] = texel(t, 100.03, 8);
+        assert.ok(b1 > r1, `the 1 lot is blue, got ${texel(t, 100.05, 8)}`);
+        assert.ok(r50 > b50, `the wall is red, got ${texel(t, 100.03, 8)}`);
+        assert.ok(a1 >= 60 && a50 > a1, 'a thin level still shows, a wall shows more');
+        assert.deepEqual(texel(t, 99.95, 8).slice(0, 3), texel(t, 100.05, 8).slice(0, 3), 'same size, same colour either side');
+    });
 
     it('light a level that rested only part of a column, at its peak', () => {
         // 5s columns, built from the 1s snapshots

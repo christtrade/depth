@@ -207,7 +207,7 @@ export function sourceLevel(column: number): number {
     return lvl;
 }
 
-export type TileParams = { column: number; tickSize: number; ticks: number; norm: number; contrast: number };
+export type TileParams = { column: number; tickSize: number; ticks: number; norm: number; contrast: number; palette: string };
 
 export type Texels = {
     rowLo: number;
@@ -254,8 +254,30 @@ function peakColumn(snaps: Snapshot[], from: bigint, to: bigint): Col {
     return { bids: flat(bids, true), asks: flat(asks, false) };
 }
 
-const BID = [20, 220, 80];
-const ASK = [255, 30, 50];
+// thin to big, like bookmap
+const HEAT_STOPS: [number, number, number, number][] = [
+    [0, 10, 30, 120],
+    [0.25, 20, 110, 230],
+    [0.45, 30, 200, 220],
+    [0.65, 240, 225, 60],
+    [0.82, 245, 140, 30],
+    [1, 230, 40, 40],
+];
+const HEAT = new Uint8Array(256 * 3);
+for (let i = 0; i < 256; i++) {
+    const t = i / 255;
+    let s = 1;
+    while (s < HEAT_STOPS.length - 1 && HEAT_STOPS[s][0] < t) s++;
+    const [t0, ...a] = HEAT_STOPS[s - 1];
+    const [t1, ...b] = HEAT_STOPS[s];
+    const f = (t - t0) / (t1 - t0);
+    for (let c = 0; c < 3; c++) HEAT[i * 3 + c] = Math.round(a[c] + (b[c] - a[c]) * f);
+}
+
+const hexRgb = (hex: string) => {
+    const n = parseInt(hex.replace('#', '').slice(0, 6), 16);
+    return Number.isNaN(n) ? [128, 128, 128] : [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
 
 export function paintColumns(cols: Col[], p: TileParams): Texels {
     const rowCols = cols.map((c) =>
@@ -279,16 +301,30 @@ export function paintColumns(cols: Col[], p: TileParams): Texels {
     }
     const rows = hi - lo + 1;
     const data = new Uint8ClampedArray(cols.length * rows * 4);
-    const logMax = Math.log1p(Math.max(1, p.norm));
+    const norm = Math.max(1, p.norm);
+    const logMax = Math.log1p(norm);
     const cutoff = (p.contrast * 210 + 0.5) | 0;
     const scale = cutoff >= 210 ? 0 : 210 / (210 - cutoff);
+    const heat = p.palette === 'heat';
+    const [BID, ASK] = heat ? [[], []] : p.palette.split(',').map(hexRgb);
     const put = (x: number, side: Float64Array, rgb: number[]) => {
         for (let j = 0; j < side.length; j += 2) {
             const row = side[j];
             if (row < lo || row > hi) continue;
-            const raw = (Math.min(1, Math.log1p(side[j + 1]) / logMax) * 210 + 0.5) | 0;
-            if (raw <= cutoff) continue;
-            const alpha = Math.min(210, ((raw - cutoff) * scale + 0.5) | 0);
+            let alpha: number;
+            if (heat) {
+                // linear, log pushed a 10 lot against a 40 norm into yellow. the colour says the size, so a
+                // thin level still gets to be seen
+                const t = Math.min(1, side[j + 1] / norm);
+                if (t <= p.contrast) continue;
+                const h = (((t - p.contrast) / (1 - p.contrast)) * 255 + 0.5) | 0;
+                rgb = [HEAT[h * 3], HEAT[h * 3 + 1], HEAT[h * 3 + 2]];
+                alpha = 60 + ((h * 150) / 255) | 0;
+            } else {
+                const raw = (Math.min(1, Math.log1p(side[j + 1]) / logMax) * 210 + 0.5) | 0;
+                if (raw <= cutoff) continue;
+                alpha = Math.min(210, ((raw - cutoff) * scale + 0.5) | 0);
+            }
             const i = ((hi - row) * cols.length + x) * 4;
             if (data[i + 3] >= alpha) continue;
             data[i] = rgb[0];

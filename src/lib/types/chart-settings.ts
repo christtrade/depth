@@ -92,6 +92,8 @@ export type ChartSettings = {
     // Heatmap
     showHeatmap: boolean;
     heatmapContrast: number; // 0-100
+    /** 'heat' colours a level by its size, blue thin to red big. 'sides' paints bids and asks in their own colour */
+    heatmapColors: 'heat' | 'sides';
     heatmapColorBid: string;
     heatmapColorAsk: string;
     // Resampling
@@ -189,8 +191,9 @@ export const DEFAULT_CHART_SETTINGS: ChartSettings = {
     tradeDotsSizeMult: 1,
     showHeatmap: true,
     heatmapContrast: 0,
-    heatmapColorBid: '#3b82f6',
-    heatmapColorAsk: '#ef4444',
+    heatmapColors: 'heat',
+    heatmapColorBid: '#14dc50',
+    heatmapColorAsk: '#ff1e32',
     priceLineVisible: true,
     priceLineColor: '#758696',
     resamplingDebounce: 50,
