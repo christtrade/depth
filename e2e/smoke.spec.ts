@@ -71,7 +71,7 @@ async function visit(page: Page, url: string) {
 // adapter pages half an hour at a time
 async function visitLevel(page: Page, url: string) {
     const errors = watchErrors(page);
-    const firstTrade = () => page.evaluate(() => Number((window as any).__chart.getData().trades[0].ts / 1_000_000n));
+    const dataStart = () => page.evaluate(() => (window as any).__chart.getData().dataStart as number);
     const ordered = async () => {
         for (const from of ['pane', 'engine'] as const) expect((await footprints(page, from)).unordered, from).toBe(0);
     };
@@ -90,13 +90,13 @@ async function visitLevel(page: Page, url: string) {
     await settled(page);
     await wheel(page, 400, 6);
     await settled(page);
-    const before = await firstTrade();
+    const before = await dataStart();
     for (let i = 0; i < 6; i++) {
         await drag(page, 900, 0, 10);
         await page.waitForTimeout(150);
     }
     await settled(page);
-    expect(before - (await firstTrade()), 'paged history in').toBeGreaterThan(30 * 60_000);
+    expect(before - (await dataStart()), 'paged history in').toBeGreaterThan(30 * 60_000);
     await ordered();
 
     await pickTimeframe(page, '5s');
@@ -128,7 +128,7 @@ async function visitLevel(page: Page, url: string) {
     expect(errors).toEqual([]);
 }
 
-for (const level of ['tick', 'l3'] as const) {
+for (const level of ['tick', 'l3', 'l2', 'l2&trades=0'] as const) {
     test(`a visitor at ${level}`, async ({ page }) => {
         await visitLevel(page, `/?level=${level}`);
     });

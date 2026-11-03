@@ -11,12 +11,14 @@ import { ChartState, type ChartStateShape } from './ChartState';
 import { TypedEventBus } from './TypedEventBus';
 import type { FetchResponse, IDataAdapter } from '../interfaces/IDataAdapter';
 import { installInlineSliceWorker } from '../lib/inline-slice-worker';
-import { simMboEvents, simTicks } from '../lib/sim-levels';
+import { simL2Snapshots, simMboEvents, simTicks } from '../lib/sim-levels';
 import { BYTES_PER_EVENT, createCompactBuffer, getEvent, getTsNs } from '../lib/compact-buffer';
+import { applyEvent, createBook } from '../lib/book';
 
 installInlineSliceWorker();
 
-type Level = 'ohlcv' | 'tick' | 'l3';
+// l2book is l2 with no trades
+type Level = 'ohlcv' | 'tick' | 'l3' | 'l2' | 'l2book';
 
 const SEC_MS = 1000;
 const MIN_MS = 60_000;
@@ -30,13 +32,15 @@ const SEEDS = REPLAY
     ? [Number(process.env.FUZZ_SEED)]
     : Array.from({ length: Number(process.env.FUZZ_SEEDS ?? 3) }, (_, i) => BASE + i);
 const STEPS = Number(process.env.FUZZ_STEPS ?? 20);
-const LEVELS: Level[] = process.env.FUZZ_LEVEL ? [process.env.FUZZ_LEVEL as Level] : ['ohlcv', 'tick', 'l3'];
+const LEVELS: Level[] = process.env.FUZZ_LEVEL ? [process.env.FUZZ_LEVEL as Level] : ['ohlcv', 'tick', 'l3', 'l2', 'l2book'];
 
 const TIMEFRAMES_MS = [15 * SEC_MS, 30 * SEC_MS, MIN_MS, 5 * MIN_MS];
 const BUDGETS: Record<Level, number[]> = {
     ohlcv: [Infinity, 20_000, 60_000],
     tick: [Infinity, 1_500_000, 4_000_000],
     l3: [Infinity, 4_000_000, 10_000_000],
+    l2: [Infinity, 4_000_000, 10_000_000],
+    l2book: [Infinity, 4_000_000, 10_000_000],
 };
 
 function mulberry32(seed: number) {
@@ -73,6 +77,8 @@ function ohlcvBars(symbol: string, fromMs: number, toMs: number, periodMs: numbe
 function respond(level: Level, symbol: string, fromMs: number, toMs: number, periodMs: number): Partial<FetchResponse> {
     if (level === 'ohlcv') return { bars: ohlcvBars(symbol, fromMs, toMs, periodMs) };
     if (level === 'tick') return { ticks: simTicks(priceOf(symbol), fromMs, toMs) };
+    if (level === 'l2') return { depth: simL2Snapshots(priceOf(symbol), fromMs, toMs), ticks: simTicks(priceOf(symbol), fromMs, toMs) };
+    if (level === 'l2book') return { depth: simL2Snapshots(priceOf(symbol), fromMs, toMs) };
     return { mbo: simMboEvents(priceOf(symbol), fromMs, toMs) as never };
 }
 
@@ -93,7 +99,7 @@ function fuzzEngine(level: Level, maxBytes: number, timeframeMs: number) {
         resolveSymbol: async (symbol: string) => ({
             symbol,
             type: 'future',
-            dataLevel: level,
+            dataLevel: level === 'l2book' ? 'l2' : level,
             priceFormat: { minTick: 0.01, precision: 2 },
         }),
         getCapabilities: () => ({}),
@@ -201,6 +207,12 @@ function check(level: Level, f: ReturnType<typeof fuzzEngine>, view: View, deep:
     }
 
     if (level === 'ohlcv') return;
+    if (level === 'l2book') {
+        assert.equal(m.trades.length, 0, 'no trades');
+        assert.ok(m.midPrints.length > 0, 'some mid prints');
+        if (deep) checkL2Book(m, view.symbol);
+        return;
+    }
 
     // every tarde the generator created between the first and last held
     const trades = m.trades;
@@ -221,6 +233,7 @@ function check(level: Level, f: ReturnType<typeof fuzzEngine>, view: View, deep:
     for (let i = 1; i < fp.length; i++) assert.ok(fp[i].ts > fp[i - 1].ts, `footprint ${i} out of order`);
     assert.equal(fp.length, bars.length, 'a bar for every footprint');
 
+    if (level === 'l2' && deep) checkL2Book(m, view.symbol);
     if (level !== 'l3' || !deep) return;
     const cb = createCompactBuffer(0);
     cb._buf = m.compactBuf;
@@ -238,6 +251,32 @@ function check(level: Level, f: ReturnType<typeof fuzzEngine>, view: View, deep:
             ts === nsOf(Date.parse(events[i].ts_event)) && oid === events[i].order_id,
             `event ${i}: ${ts}/${oid}, expected ${events[i].ts_event}/${events[i].order_id}`,
         );
+    }
+}
+
+// the held events replay to every snapshot the feed sent in their span
+function checkL2Book(m: any, symbol: string) {
+    const cb = createCompactBuffer(0);
+    cb._buf = m.compactBuf;
+    cb._view = new DataView(m.compactBuf);
+    cb.length = cb.capacity = m.compactBuf.byteLength / BYTES_PER_EVENT;
+    assert.ok(cb.length > 0, 'some events');
+    const evFrom = msOf(getTsNs(cb, 0));
+    const evTo = msOf(getTsNs(cb, cb.length - 1)) + 1;
+    const side = (levels: { price: number; size: number }[]) => levels.map((l) => `${l.price.toFixed(6)}x${l.size}`).join(' ');
+    const top = (orders: Map<string, { price: number; size: number }>, desc: boolean) => {
+        const by = new Map<number, number>();
+        for (const o of orders.values()) by.set(o.price, (by.get(o.price) ?? 0) + o.size);
+        return side([...by].sort((a, b) => (desc ? b[0] - a[0] : a[0] - b[0])).map(([price, size]) => ({ price, size })));
+    };
+    const book = createBook();
+    let i = 0;
+    for (const snap of simL2Snapshots(priceOf(symbol), evFrom, evTo)) {
+        const at = nsOf(snap.time);
+        while (i < cb.length && getTsNs(cb, i) <= at) applyEvent(book, getEvent(cb, i++));
+        const got = `${top(book.bids as any, true)} | ${top(book.asks as any, false)}`;
+        const want = `${side(snap.bids)} | ${side(snap.asks)}`;
+        assert.ok(got === want, `book at ${snap.time}:\n  held ${got}\n  sent ${want}`);
     }
 }
 

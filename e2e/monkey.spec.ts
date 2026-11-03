@@ -9,15 +9,23 @@ import { chartBox, drawsSomething, footprints, inside, settled, watchErrors } fr
 const BASE = Number(process.env.MONKEY_BASE ?? 1000);
 const SEEDS = process.env.MONKEY_SEED
     ? [Number(process.env.MONKEY_SEED)]
-    : Array.from({ length: Number(process.env.MONKEY_SEEDS ?? 3) }, (_, i) => BASE + i);
+    : Array.from({ length: Number(process.env.MONKEY_SEEDS ?? 4) }, (_, i) => BASE + i);
 const RUN_MS = Number(process.env.MONKEY_MS ?? 15_000);
 
-// seed n runs at LEVELS[n % 3], so the default three cover each once
-const LEVELS = ['ohlcv', 'tick', 'l3'] as const;
+// seed n runs at LEVELS[n % 4], so the default four cover each once
+const LEVELS = ['ohlcv', 'tick', 'l3', 'l2'] as const;
 const URLS: Record<(typeof LEVELS)[number], string[]> = {
     ohlcv: ['/', '/?live=1', '/?live=1&budget=4000000'],
     tick: ['/?level=tick', '/?level=tick&live=1', '/?level=tick&live=1&budget=3000000'],
     l3: ['/?level=l3', '/?level=l3&live=1', '/?level=l3&live=1&budget=3000000', '/?sim=1&level=l3'],
+    l2: [
+        '/?level=l2',
+        '/?level=l2&trades=0',
+        '/?level=l2&live=1&budget=3000000',
+        '/?level=l2&trades=0&live=1',
+        '/?sim=1&level=l2',
+        '/?sim=1&level=l2&trades=0',
+    ],
 };
 const TIMEFRAMES = ['1s', '5s', '30s', '1m', '5m', '15m', '1h', '4h', '1d'];
 const SIZES = [
