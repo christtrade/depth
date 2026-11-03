@@ -32,6 +32,9 @@ import {
     PanelLeftClose,
     PanelLeftOpen,
     SlidersHorizontal,
+    Dot,
+    Circle,
+    Layers,
 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from './components/ui/popover';
 import { armTool, CURSOR_TOOL, type ActiveDrawingTool } from './lib/types/drawing-types';
@@ -1727,6 +1730,68 @@ export default function Depth({
                                                 : 'Magnet off'}
                                         </TooltipContent>
                                     </Tooltip>
+
+                                    {dataLevelRef.current !== 'ohlcv' && (
+                                        <>
+                                            <div className="w-px h-3 bg-border/50 mx-1 shrink-0" />
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <button
+                                                        onClick={() => {
+                                                            const next = !chartSettings.showTradeDots
+                                                            const patch = { showTradeDots: next };
+                                                            setChartSettings((p) => ({ ...p, ...patch }));
+                                                            chartRefs.current[
+                                                                focusedRef.current
+                                                            ]?.applySettings(patch);
+                                                        }}
+                                                        className={cn(
+                                                            'h-5 w-5 flex items-center justify-center rounded transition-colors',
+                                                            chartSettings.showTradeDots
+                                                                ? 'text-foreground/70 hover:text-foreground/90'
+                                                                : 'text-foreground/25 hover:text-foreground/55',
+                                                        )}
+                                                    >
+                                                        <Circle size={11} />
+                                                    </button>
+                                                </TooltipTrigger>
+                                                <TooltipContent
+                                                    side="top"
+                                                    className="text-xs border border-border bg-background"
+                                                >
+                                                    {chartSettings.showTradeDots ? 'Trade Bubbles on' : 'Trade Bubbles off'}
+                                                </TooltipContent>
+                                            </Tooltip>
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <button
+                                                        onClick={() => {
+                                                            const next = !chartSettings.showHeatmap
+                                                            const patch = { showHeatmap: next };
+                                                            setChartSettings((p) => ({ ...p, ...patch }));
+                                                            chartRefs.current[
+                                                                focusedRef.current
+                                                            ]?.applySettings(patch);
+                                                        }}
+                                                        className={cn(
+                                                            'h-5 w-5 flex items-center justify-center rounded transition-colors',
+                                                            chartSettings.showHeatmap
+                                                                ? 'text-foreground/70 hover:text-foreground/90'
+                                                                : 'text-foreground/25 hover:text-foreground/55',
+                                                        )}
+                                                    >
+                                                        <Layers size={11} />
+                                                    </button>
+                                                </TooltipTrigger>
+                                                <TooltipContent
+                                                    side="top"
+                                                    className="text-xs border border-border bg-background"
+                                                >
+                                                    {chartSettings.showHeatmap ? 'Heatmap on' : 'Heatmap off'}
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        </>
+                                    )}
                                 </div>
                             </QuickSettingsCluster>
 
