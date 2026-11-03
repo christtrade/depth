@@ -1,6 +1,6 @@
 // tick and l3, historical and live
 import { expect, test, type Page } from '@playwright/test';
-import { chartBox, drag, drawsSomething, footprints, pickTimeframe, settled, watchErrors } from './helpers';
+import { chartBox, drag, drawsSomething, footprints, pickTimeframe, settled, watchErrors, wheel } from './helpers';
 
 const appends = (page: Page) => page.evaluate(() => (window as any).__appends as number);
 const rebuilding = (page: Page) => page.evaluate(() => (window as any).__rebuilding ?? false);
@@ -53,6 +53,44 @@ test('l3 live: the heatmap keeps drawing when renders take longer than a chunk',
     await page.waitForTimeout(5000);
     expect(await appends(page), 'live chunks land').toBeGreaterThan(chunks + 10);
     expect(await heatmaps(), 'heatmaps drawn').toBeGreaterThan(before + 3);
+});
+
+test('l3 live: the heatmap at the playhead stays up while each chunk rebuilds it', async ({ page }) => {
+    // a slow machine, tiles land 100ms after they're asked for
+    await page.addInitScript(() => {
+        const d = Object.getOwnPropertyDescriptor(Worker.prototype, 'onmessage')!;
+        Object.defineProperty(Worker.prototype, 'onmessage', {
+            get() {
+                return d.get!.call(this);
+            },
+            set(fn) {
+                d.set!.call(this, (e: MessageEvent) => (e.data?.type === 'tile' ? setTimeout(() => fn(e), 100) : fn(e)));
+            },
+        });
+    });
+    await open(page, '/?sim=1&level=l3');
+    await pickTimeframe(page, 'None');
+    await page.evaluate(() => (window as any).__chart.eventBus.emit('chart:reset-view', undefined));
+    await wheel(page, 400, 12);
+    await page.waitForTimeout(2000);
+    // tiles each base layer draw put on screen, over 4s of live
+    const counts: number[] = await page.evaluate(
+        () =>
+            new Promise((done) => {
+                const counts: number[] = [];
+                let last: unknown = null;
+                const until = performance.now() + 4000;
+                const tick = () => {
+                    const drawn = (window as any).__chart.renderEngine.drawParams.heatmap.drawn;
+                    if (drawn !== last) counts.push((last = drawn).length);
+                    if (performance.now() < until) requestAnimationFrame(tick);
+                    else done(counts);
+                };
+                requestAnimationFrame(tick);
+            }),
+    );
+    expect(counts.length, 'redrawn as chunks land').toBeGreaterThan(8);
+    expect(Math.min(...counts), 'never a frame without the tile').toBeGreaterThan(0);
 });
 
 test('l3: an order placed on load is taken, not refused for having no price', async ({ page }) => {

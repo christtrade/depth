@@ -19,6 +19,7 @@ import { formatPrice, resolveTickSize } from '../priceFormat';
 import { PriceTransition } from '../priceTransition';
 import { hasHole } from '../view-edges';
 import { hasBook } from '../book';
+import type { HeatmapTiles } from '../heatmap-tiles';
 import {
     PricePoint,
     OrdinalModel,
@@ -195,11 +196,7 @@ export function drawBaseLayer(
     snapshots: BookSnapshot[],
     bounds: ViewBounds,
     footprintBars: FootprintBar[] = [],
-    heatmapBitmap: ImageBitmap | null,
-    bitmapOffsetX: number = 0,
-    bitmapOffsetY: number = 0,
-    bitmapOffsetW: number = 0,
-    bitmapOffsetH: number = 0,
+    heatmap: HeatmapTiles | null,
     barNs: bigint = 0n,
     chartSettings: ChartSettings,
     horizon: bigint = 0n,
@@ -297,14 +294,17 @@ export function drawBaseLayer(
                 ctx.rect(0, 0, chartW, rect.h);
                 ctx.clip();
 
-                if (chartSettings.showHeatmap && heatmapBitmap) {
-                    ctx.drawImage(
-                        heatmapBitmap,
-                        Math.round(bitmapOffsetX),
-                        Math.round(bitmapOffsetY),
-                        Math.round(bitmapOffsetW),
-                        Math.round(bitmapOffsetH),
-                    );
+                if (chartSettings.showHeatmap && heatmap && hasBook(dataLevel)) {
+                    heatmap.draw(ctx, {
+                        view: bounds,
+                        w: chartW,
+                        h: rect.h,
+                        tsToX: (ts) => transformer.tsToX(ts, chartW),
+                        priceToY: (price) => transformer.priceToY(price, rect.h),
+                        horizon,
+                        tickSize: symbolInfo?.priceFormat?.minTick || 0.01,
+                        contrast: chartSettings.heatmapContrast,
+                    });
                 }
                 if (!isPluginChartType)
                     drawPriceChart(

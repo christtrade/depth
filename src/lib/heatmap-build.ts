@@ -180,6 +180,166 @@ export function sumRows(pairs: Float64Array, tickSize: number, ticks: number): F
     return out.slice(0, n);
 }
 
+// tile column widths. the chart uses the narrowest thats at least a px wide
+export const COLUMN_NS: bigint[] = [
+    250_000_000n,
+    1_000_000_000n,
+    5_000_000_000n,
+    30_000_000_000n,
+    120_000_000_000n,
+    600_000_000_000n,
+    3_600_000_000_000n,
+];
+export const TILE_COLS = 256;
+// a book thousands of rows deep keeps these around its middle
+export const MAX_TILE_ROWS = 2048;
+
+export function columnFor(nsPerPx: number): number {
+    for (let i = 0; i < COLUMN_NS.length; i++) if (Number(COLUMN_NS[i]) >= nsPerPx) return i;
+    return COLUMN_NS.length - 1;
+}
+
+// the snapshots a column's peaks come from, a few per column at most
+export function sourceLevel(column: number): number {
+    const c = COLUMN_NS[column];
+    let lvl = 0;
+    for (let i = 0; i < LOD_INTERVALS_NS.length; i++) if (LOD_INTERVALS_NS[i] * 4n <= c) lvl = i;
+    return lvl;
+}
+
+export type TileParams = { column: number; tickSize: number; ticks: number; norm: number; contrast: number };
+
+export type Texels = {
+    rowLo: number;
+    rows: number;
+    cols: number;
+    data: Uint8ClampedArray;
+};
+
+type Col = { bids: Float64Array; asks: Float64Array } | null;
+
+export function firstAtOrAfter(snaps: Snapshot[], ts: bigint): number {
+    let lo = 0,
+        hi = snaps.length;
+    while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        if (snaps[mid].ts < ts) lo = mid + 1;
+        else hi = mid;
+    }
+    return lo;
+}
+
+// each price's peak over the snapshots in from, to
+function peakColumn(snaps: Snapshot[], from: bigint, to: bigint): Col {
+    const i0 = firstAtOrAfter(snaps, from);
+    if (i0 >= snaps.length || snaps[i0].ts >= to) return null;
+    if (i0 + 1 >= snaps.length || snaps[i0 + 1].ts >= to) return snaps[i0];
+    const bids = new Map<number, number>();
+    const asks = new Map<number, number>();
+    for (let i = i0; i < snaps.length && snaps[i].ts < to; i++) {
+        const s = snaps[i];
+        for (let j = 0; j < s.bids.length; j += 2) if (!(bids.get(s.bids[j])! >= s.bids[j + 1])) bids.set(s.bids[j], s.bids[j + 1]);
+        for (let j = 0; j < s.asks.length; j += 2) if (!(asks.get(s.asks[j])! >= s.asks[j + 1])) asks.set(s.asks[j], s.asks[j + 1]);
+    }
+    const flat = (m: Map<number, number>, highToLow: boolean) => {
+        const a = new Float64Array(m.size * 2);
+        let k = 0;
+        for (const [p, s] of m) {
+            a[k++] = p;
+            a[k++] = s;
+        }
+        sortPairs(a, highToLow);
+        return a;
+    };
+    return { bids: flat(bids, true), asks: flat(asks, false) };
+}
+
+const BID = [20, 220, 80];
+const ASK = [255, 30, 50];
+
+export function paintColumns(cols: Col[], p: TileParams): Texels {
+    const rowCols = cols.map((c) =>
+        c ? { bids: sumRows(c.bids, p.tickSize, p.ticks), asks: sumRows(c.asks, p.tickSize, p.ticks) } : null,
+    );
+    let lo = Infinity,
+        hi = -Infinity;
+    for (const c of rowCols) {
+        if (!c) continue;
+        for (const side of [c.bids, c.asks])
+            for (let j = 0; j < side.length; j += 2) {
+                if (side[j] < lo) lo = side[j];
+                if (side[j] > hi) hi = side[j];
+            }
+    }
+    if (lo > hi) return { rowLo: 0, rows: 0, cols: cols.length, data: new Uint8ClampedArray(0) };
+    if (hi - lo + 1 > MAX_TILE_ROWS) {
+        const mid = Math.round((lo + hi) / 2);
+        lo = mid - MAX_TILE_ROWS / 2;
+        hi = lo + MAX_TILE_ROWS - 1;
+    }
+    const rows = hi - lo + 1;
+    const data = new Uint8ClampedArray(cols.length * rows * 4);
+    const logMax = Math.log1p(Math.max(1, p.norm));
+    const cutoff = (p.contrast * 210 + 0.5) | 0;
+    const scale = cutoff >= 210 ? 0 : 210 / (210 - cutoff);
+    const put = (x: number, side: Float64Array, rgb: number[]) => {
+        for (let j = 0; j < side.length; j += 2) {
+            const row = side[j];
+            if (row < lo || row > hi) continue;
+            const raw = (Math.min(1, Math.log1p(side[j + 1]) / logMax) * 210 + 0.5) | 0;
+            if (raw <= cutoff) continue;
+            const alpha = Math.min(210, ((raw - cutoff) * scale + 0.5) | 0);
+            const i = ((hi - row) * cols.length + x) * 4;
+            if (data[i + 3] >= alpha) continue;
+            data[i] = rgb[0];
+            data[i + 1] = rgb[1];
+            data[i + 2] = rgb[2];
+            data[i + 3] = alpha;
+        }
+    };
+    rowCols.forEach((c, x) => {
+        if (!c) return;
+        put(x, c.bids, BID);
+        put(x, c.asks, ASK);
+    });
+    return { rowLo: lo, rows, cols: cols.length, data };
+}
+
+export function buildTile(levels: Snapshot[][], k: number, p: TileParams): Texels {
+    const snaps = levels[sourceLevel(p.column)] ?? [];
+    const c = COLUMN_NS[p.column];
+    const t0 = BigInt(k) * BigInt(TILE_COLS) * c;
+    const cols: Col[] = [];
+    for (let x = 0; x < TILE_COLS; x++) cols.push(peakColumn(snaps, t0 + BigInt(x) * c, t0 + BigInt(x + 1) * c));
+    return paintColumns(cols, p);
+}
+
+export function bookColumn(levels: Snapshot[][], ts: bigint, p: TileParams): Texels {
+    const snaps = levels[0] ?? [];
+    const i = firstAtOrAfter(snaps, ts + 1n) - 1;
+    return paintColumns([i >= 0 ? snaps[i] : null], p);
+}
+
+// brightness scale, the 99th percentile row over up to 512 snapshots spread over from, to
+export function rowNorm(levels: Snapshot[][], column: number, tickSize: number, ticks: number, from = 0n, to = -1n): number {
+    const snaps = levels[sourceLevel(column)] ?? [];
+    const i0 = firstAtOrAfter(snaps, from);
+    const i1 = to < 0n ? snaps.length : firstAtOrAfter(snaps, to);
+    const n = i1 - i0;
+    if (n <= 0) return 1;
+    const step = Math.max(1, Math.floor(n / 512));
+    const sizes: number[] = [];
+    for (let i = i0; i < i1; i += step) {
+        for (const side of [snaps[i].bids, snaps[i].asks]) {
+            const r = sumRows(side, tickSize, ticks);
+            for (let j = 1; j < r.length; j += 2) sizes.push(r[j]);
+        }
+    }
+    if (!sizes.length) return 1;
+    sizes.sort((a, b) => a - b);
+    return Math.max(1, sizes[Math.min(sizes.length - 1, Math.floor(sizes.length * 0.99))]);
+}
+
 function applyEvent(book: BookState, event: MboEvent): void {
     if (event.action === 'R') {
         book.bids.clear();

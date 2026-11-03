@@ -1,12 +1,3 @@
-import type { ViewBounds } from '.';
-
-export type SerializedBounds = {
-    tMin: string;
-    tMax: string;
-    pMin: number;
-    pMax: number;
-};
-
 // a copy of the charts compact buffer. the worker decodes it itself
 export type WorkerInitMessage = {
     type: 'init' | 'append';
@@ -14,29 +5,31 @@ export type WorkerInitMessage = {
     length: number;
 };
 
-// pan/zoom just sends view bounds - worker handles everything else internally
-export type HeatmapRequest = {
-    type: 'render';
-    requestId: number;
-    bounds: SerializedBounds;
-    chartW: number;
-    chartH: number;
-    /** Optional playback horizon (nanoseconds as string). When set, the worker
-     *  stops adding new snapshot columns at this timestamp but forward-fills the
-     *  last column to the right edge of the canvas - showing the last known book
-     *  state held flat into the future, matching trades/bid-ask line behaviour. */
-    horizonNs?: string;
-    /** 0 shows every level, 1 none. */
-    contrast: number;
+export type TileConfig = {
+    column: number;
     tickSize: number;
+    ticks: number;
+    contrast: number;
 };
 
-export type HeatmapResponse = {
-    requestId: number;
-    bitmap: ImageBitmap;
-    bounds: SerializedBounds;
+export type HeatmapRequest =
+    | ({ type: 'tiles'; tiles: number[] } & TileConfig)
+    // the book at the playhead, painted from there to the right edge
+    | ({ type: 'fill'; ts: string } & TileConfig);
+
+export type TileReply = {
+    type: 'tile';
+    key: string;
+    k: number;
+    rowLo: number;
+    rows: number;
+    bitmap: ImageBitmap | null;
 };
 
-export function serializeBounds(b: ViewBounds): SerializedBounds {
-    return { tMin: b.tMin.toString(), tMax: b.tMax.toString(), pMin: b.pMin, pMax: b.pMax };
-}
+export type HeatmapReply =
+    | TileReply
+    | { type: 'fill'; key: string; ts: string; rowLo: number; rows: number; bitmap: ImageBitmap | null }
+    // tiles from this time on are stale, all of them when '0'
+    | { type: 'data'; from: string };
+
+export const configKey = (c: TileConfig) => `${c.column}:${c.tickSize}:${c.ticks}:${c.contrast}`;

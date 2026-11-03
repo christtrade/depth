@@ -1,7 +1,21 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { feed, newBuild, rowTicks, seal, sumRows, unseal } from './heatmap-build';
+import {
+    COLUMN_NS,
+    LOD_INTERVALS_NS,
+    bookColumn,
+    buildTile,
+    feed,
+    newBuild,
+    rowNorm,
+    rowTicks,
+    seal,
+    sumRows,
+    unseal,
+    type Snapshot,
+    type Texels,
+} from './heatmap-build';
 import { simMboEvents } from './sim-levels';
 
 const T0 = Date.UTC(2026, 0, 1);
@@ -71,5 +85,48 @@ describe('heatmap rows', () => {
     it('put a price off by float noise in its own tick', () => {
         const asks = new Float64Array([0.1 + 0.2, 3, 0.31, 1]);
         assert.deepEqual([...sumRows(asks, 0.01, 1)], [30, 3, 31, 1]);
+    });
+});
+
+describe('heatmap tiles', () => {
+    const SEC = 1_000_000_000n;
+    // one 1 lot ask at 100.05 throughout, and a 50 lot at 100.03 that rests from 2s to 3s
+    const snap = (ts: bigint): Snapshot => ({
+        ts,
+        bids: new Float64Array([99.95, 1]),
+        asks: new Float64Array(ts >= 2n * SEC && ts < 3n * SEC ? [100.03, 50, 100.05, 1] : [100.05, 1]),
+    });
+    const every = (step: bigint) => Array.from({ length: Number((10n * SEC) / step) }, (_, i) => snap(BigInt(i) * step));
+    const levels = LOD_INTERVALS_NS.map((step) => every(step));
+    const params = { tickSize: 0.01, ticks: 1, norm: 50, contrast: 0 };
+    const alpha = (t: Texels, price: number, col: number) => {
+        const row = Math.round(price / 0.01);
+        if (row < t.rowLo || row >= t.rowLo + t.rows) return 0;
+        return t.data[((t.rowLo + t.rows - 1 - row) * t.cols + col) * 4 + 3];
+    };
+
+    it('light a level that rested only part of a column, at its peak', () => {
+        // 5s columns, built from the 1s snapshots
+        const t = buildTile(levels, 0, { ...params, column: COLUMN_NS.indexOf(5n * SEC) });
+        assert.ok(alpha(t, 100.03, 0) > 150, 'the wall in the first 5s');
+        assert.equal(alpha(t, 100.03, 1), 0, 'gone by the second');
+        assert.ok(alpha(t, 100.05, 1) > 0 && alpha(t, 99.95, 1) > 0);
+    });
+
+    it('show the book at the playhead as it stood then, nothing that came after', () => {
+        const c = { ...params, column: 0 };
+        assert.equal(alpha(bookColumn(levels, 2n * SEC - 1n, c), 100.03, 0), 0);
+        assert.ok(alpha(bookColumn(levels, 2n * SEC, c), 100.03, 0) > 0);
+    });
+
+    it('scale brightness to a high percentile of the rows, not a one off spike', () => {
+        // 400 snapshots, the 50 lot wall in a tenth of them and a 1000 lot in one
+        const long = Array.from({ length: 400 }, (_, i) => {
+            const s = snap(BigInt(i % 10) * SEC);
+            const asks = i === 7 ? new Float64Array([...s.asks, 100.2, 1000]) : s.asks;
+            return { ...s, ts: BigInt(i) * 250_000_000n, asks };
+        });
+        assert.equal(rowNorm([long], 0, 0.01, 1), 50);
+        assert.equal(rowNorm([long], 0, 0.01, 1, 0n, 2n * SEC), 1000, 'over a span the spike is most of, it counts');
     });
 });

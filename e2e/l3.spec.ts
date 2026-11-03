@@ -230,17 +230,20 @@ test('l3: raising the heatmap contrast hides the thin levels', async ({ page }) 
     await settled(page);
     await expect.poll(() => heatmaps(page), { timeout: 15_000 }).toBeGreaterThan(0);
 
-    // pixels the heatmap bitmap actually covers
+    // texels lit in the tiles the last frame drew
     const lit = () =>
         page.evaluate(() => {
-            const bm: ImageBitmap | null = (window as any).__chart.renderEngine.drawParams.heatmapBitmap;
-            if (!bm) return 0;
-            const c = new OffscreenCanvas(bm.width, bm.height);
-            const ctx = c.getContext('2d')!;
-            ctx.drawImage(bm, 0, 0);
-            const d = ctx.getImageData(0, 0, bm.width, bm.height).data;
+            const tiles: ImageBitmap[] = (window as any).__chart.renderEngine.drawParams.heatmap?.drawn ?? [];
             let n = 0;
-            for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++;
+            for (const bm of tiles) {
+                // replaced and closed since that frame
+                if (!bm.width) continue;
+                const c = new OffscreenCanvas(bm.width, bm.height);
+                const ctx = c.getContext('2d')!;
+                ctx.drawImage(bm, 0, 0);
+                const d = ctx.getImageData(0, 0, bm.width, bm.height).data;
+                for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++;
+            }
             return n;
         });
     const before = await lit();

@@ -18,6 +18,7 @@ import { SessionMapper } from './SessionMapper';
 import type { BarStore } from './BarStore';
 import { AccountSnapshot, DataLevel, SymbolInfo } from '.';
 import type { CrosshairSync } from '../lib/types/layout-sync';
+import type { HeatmapTiles } from '../lib/heatmap-tiles';
 
 /** Layout of the frame a draw hook runs in. Everything in css px */
 export interface DrawInfo {
@@ -74,8 +75,7 @@ export interface DrawParams {
     trades: TradePoint[];
     priceHistory: PriceHistory[];
     footprintBars: FootprintBar[];
-    heatmapBitmap: ImageBitmap | null;
-    bitmapOffsets: { x: number; y: number; w: number; h: number };
+    heatmap: HeatmapTiles | null;
     barNs: bigint;
     chartSettings: ChartSettings;
     horizon: bigint;
@@ -447,25 +447,8 @@ export class RenderEngine {
         const canvas = this.baseCanvas;
         const view = this.view;
         const dpr = getEffectiveDpr();
-        const cssW = canvas.width / dpr; // exact inverse of how we sized it
         const cssH = canvas.height / dpr;
-        const chartW = cssW - p.priceScaleWidth;
         const layouts = p.layouts;
-        const mainRect = layouts['main'];
-        const mainH = mainRect ? mainRect.h : cssH - (p.hideTimeScale ? 0 : X_AXIS_HEIGHT);
-
-        let bitmapOffsetX = 0,
-            bitmapOffsetY = 0;
-        let bitmapOffsetW = chartW,
-            bitmapOffsetH = mainH;
-
-        if (p.heatmapBitmap && p.bitmapOffsets) {
-            bitmapOffsetX = p.bitmapOffsets.x;
-            bitmapOffsetY = p.bitmapOffsets.y;
-            bitmapOffsetW = p.bitmapOffsets.w;
-            bitmapOffsetH = p.bitmapOffsets.h;
-        }
-
         drawBaseLayer(
             canvas,
             p.panes,
@@ -476,11 +459,7 @@ export class RenderEngine {
             [],
             view,
             p.footprintBars,
-            p.heatmapBitmap,
-            bitmapOffsetX,
-            bitmapOffsetY,
-            bitmapOffsetW,
-            bitmapOffsetH,
+            p.heatmap,
             p.barNs,
             p.chartSettings,
             p.horizon,

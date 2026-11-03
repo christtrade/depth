@@ -27,7 +27,6 @@ export interface UseChartSettingsParams {
     horizonRef: MutableRefObject<bigint>;
     selectedDrawingIdRef: MutableRefObject<string | null>;
     renderEngineRef: MutableRefObject<RenderEngine | null>;
-    scheduleResample: () => void;
     rebuildFootprints: () => void;
     pushDrawParams: () => void;
     updateSettingsBarPos: (id: string | null) => void;
@@ -86,7 +85,6 @@ export function useChartSettings(p: UseChartSettingsParams): UseChartSettingsRes
         horizonRef,
         selectedDrawingIdRef,
         renderEngineRef,
-        scheduleResample,
         rebuildFootprints,
         pushDrawParams,
         updateSettingsBarPos,
@@ -141,11 +139,11 @@ export function useChartSettings(p: UseChartSettingsParams): UseChartSettingsRes
             isYAxisAutoRef.current = chartSettings.autoScale;
         }
 
-        if (chartSettings.showHeatmap !== prev.showHeatmap) scheduleResample();
+        if (chartSettings.showHeatmap !== prev.showHeatmap) renderEngineRef.current?.markDirty('base');
 
         if (chartSettings.heatmapContrast !== prev.heatmapContrast) {
-            scheduleResample();
             pushDrawParams();
+            renderEngineRef.current?.markDirty('base');
             renderEngineRef.current?.markDirty('ui');
             return;
         }

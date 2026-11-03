@@ -36,9 +36,9 @@ import {
     prependAggregatedOhlcvBars,
 } from '../lib/bar-aggregate';
 import { getSessionStatus, type SessionStatus } from '../core/SessionUtils';
-import { type HeatmapRequest, type WorkerInitMessage } from '../lib/types/heatmap-types';
-import { serializeBounds } from '../lib/types/heatmap-types';
-import { X_AXIS_HEIGHT, type LiveEdge } from '../lib/renderers/renderer';
+import { type HeatmapReply, type WorkerInitMessage } from '../lib/types/heatmap-types';
+import { HeatmapTiles } from '../lib/heatmap-tiles';
+import { type LiveEdge } from '../lib/renderers/renderer';
 import { followsEdge as followsDataEdge, loadedHorizon } from '../lib/view-edges';
 
 // Local types
@@ -258,22 +258,13 @@ export interface ChartDataResult {
         { open: number; high: number; low: number; close: number; volume: number; delta: number }
     > | null>;
     supplementalBarsRef: MutableRefObject<any>;
-    heatmapBitmapRef: MutableRefObject<ImageBitmap | null>;
-    heatmapBitmapOffsetsRef: MutableRefObject<{
-        x: number;
-        y: number;
-        w: number;
-        h: number;
-    } | null>;
-    cacheBoundsRef: MutableRefObject<ViewBounds | null>;
+    heatmapTilesRef: MutableRefObject<HeatmapTiles | null>;
     prevHorizonBarRef: MutableRefObject<bigint>;
     lastBarAdvanceTimeRef: MutableRefObject<number>;
     horizonScrollAnimRef: MutableRefObject<any>;
     // Worker refs (needed by ChartInner for worker-related logic)
     workerRef: MutableRefObject<Worker | null>;
     indicatorWorkerRef: MutableRefObject<Worker | null>;
-    workerReadyRef: MutableRefObject<boolean>;
-    workerRequestIdRef: MutableRefObject<number>;
     // Key functions needed by ChartInner
     seekHorizon: (
         horizon: bigint,
@@ -306,7 +297,6 @@ export interface ChartDataResult {
         absorptionMult: number;
         absorptionDeltaFrac: number;
     };
-    cancelAndRestartWorker: () => void;
     runHorizonAdvance: (horizon: bigint) => void;
     updatePriceHistoryToRawIdx: (rawIdx: number) => void;
     findPriceHistoryIdx: (horizon: bigint) => number;
@@ -357,11 +347,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         { open: number; high: number; low: number; close: number; volume: number; delta: number }
     > | null>(null);
     const supplementalBarsRef = useRef<any>(null);
-    const heatmapBitmapRef = useRef<ImageBitmap | null>(null);
-    const heatmapBitmapOffsetsRef = useRef<{ x: number; y: number; w: number; h: number } | null>(
-        null,
-    );
-    const cacheBoundsRef = useRef<ViewBounds | null>(null);
+    const heatmapTilesRef = useRef<HeatmapTiles | null>(null);
     const prevHorizonBarRef = useRef(0n);
     const lastBarAdvanceTimeRef = useRef<number>(0);
     const horizonScrollAnimRef = useRef<any>(null);
@@ -373,8 +359,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
     const workerRef = useRef<Worker | null>(null);
     // the engine never writes into a buffer it handed out, so holding it costs nothing
     const heatmapSentRef = useRef<{ buf: ArrayBuffer; length: number } | null>(null);
-    const workerRequestIdRef = useRef(0);
-    const workerReadyRef = useRef(false);
     const indicatorWorkerRef = useRef<Worker | null>(null);
     const indicatorRequestIdRef = useRef(0);
     const dataLoadedRef = useRef(false);
@@ -746,28 +730,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
     }, []);
 
     // Workers
-    const onWorkerMessage = (e: MessageEvent) => {
-        // draw it even if a newer one is asked for, it has its own bounds. dropping those starved a slow
-        // machine, every live chunk asks again before the last one is back
-        const { bitmap, bounds } = e.data;
-        heatmapBitmapRef.current?.close();
-        heatmapBitmapRef.current = bitmap;
-        cacheBoundsRef.current = {
-            tMin: BigInt(bounds.tMin),
-            tMax: BigInt(bounds.tMax),
-            pMin: bounds.pMin,
-            pMax: bounds.pMax,
-        };
-        p.pushDrawParamsRef.current();
-        p.renderEngineRef.current?.markDirty('base');
-        p.renderEngineRef.current?.markDirty('drawings');
-        p.updateSettingsBarPosRef.current(p.selectedDrawingIdRef.current);
-        p.eventBus.emit('heatmap:status', { recalculating: false, cellId: p.cellId });
-    };
-
-    const cancelAndRestartWorker = useCallback(() => {
-        workerRequestIdRef.current++;
-    }, []);
+    const onWorkerMessage = (e: MessageEvent<HeatmapReply>) => heatmapTilesRef.current?.onReply(e.data);
 
     // send a copy so the charts own buffer stays usable while the worker builds
     const sendHeatmapInit = useCallback(() => {
@@ -1018,29 +981,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                     p.eventBus.emit('plugin:scripted-recompute' as any, { id: ind.id });
                 }
             }
-            if (!workerReadyRef.current || !p.chartSettingsRef.current.showHeatmap) return;
-            if (dataLevelRef.current === 'tick') return;
-            const bitmapW = canvas.width - p.priceScaleWidthRef.current;
-            const mainLayout = p.layoutsCacheRef.current['main'];
-            const bitmapH = mainLayout
-                ? mainLayout.h
-                : canvas.height - (p.hideTimeScale ? 0 : X_AXIS_HEIGHT);
-            if (bitmapW <= 0 || bitmapH <= 0) return;
-            cancelAndRestartWorker();
-            const requestId = ++workerRequestIdRef.current;
-            const horizon = p.horizonRef.current;
-            const msg: HeatmapRequest = {
-                type: 'render',
-                requestId,
-                bounds: serializeBounds(view),
-                chartW: bitmapW,
-                chartH: bitmapH,
-                horizonNs: horizon > 0n ? horizon.toString() : undefined,
-                contrast: p.chartSettingsRef.current.heatmapContrast,
-                tickSize: p.resolvedSymbolInfoRef.current?.priceFormat?.minTick || 0.01,
-            };
-            p.eventBus.emit('heatmap:status', { recalculating: true, cellId: p.cellId });
-            workerRef.current!.postMessage(msg);
         }, p.chartSettingsRef.current.resamplingDebounce);
     }, [p.chartSettingsRef.current.resamplingDebounce]);
 
@@ -1345,9 +1285,11 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             }
             // the ingest buckets trades and book only l2 has none
             if (candleSrc(newTrades) !== newTrades) rebuildCandleCache(newTrades, activeTfBarNs);
+            // again, the cache changed after the push above
+            p.pushDrawParamsRef.current();
+            p.renderEngineRef.current?.markDirty('base');
             if (workerRef.current) {
                 sendHeatmapInit();
-                workerReadyRef.current = true;
                 scheduleResample();
             }
         } catch (e) {
@@ -2220,6 +2162,12 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         workerRef.current = new Worker(new URL('../lib/heatmap.worker.ts', import.meta.url));
         heatmapSentRef.current = null;
         workerRef.current.onmessage = onWorkerMessage;
+        const worker = workerRef.current;
+        heatmapTilesRef.current = new HeatmapTiles(
+            (req) => worker.postMessage(req),
+            () => p.renderEngineRef.current?.markDirty('base'),
+            (recalculating) => p.eventBus.emit('heatmap:status', { recalculating, cellId: p.cellId }),
+        );
         indicatorWorkerRef.current = new Worker(
             new URL('../lib/indicator-worker.ts', import.meta.url),
         );
@@ -2233,6 +2181,8 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             // second mount holding terminated workers and the chart stuck
             // forever on "Getting market data...".
             workerRef.current = null;
+            heatmapTilesRef.current?.clear();
+            heatmapTilesRef.current = null;
             indicatorWorkerRef.current = null;
             dataLoadedRef.current = false;
         };
@@ -2329,16 +2279,12 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         prevSessionStatusRef,
         candleCacheRef,
         supplementalBarsRef,
-        heatmapBitmapRef,
-        heatmapBitmapOffsetsRef,
-        cacheBoundsRef,
+        heatmapTilesRef,
         prevHorizonBarRef,
         lastBarAdvanceTimeRef,
         horizonScrollAnimRef,
         workerRef,
         indicatorWorkerRef,
-        workerReadyRef,
-        workerRequestIdRef,
         seekHorizon,
         gotoRange,
         applyHorizon,
@@ -2352,7 +2298,6 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         mergeOpenBar,
         resetPlayhead,
         fpSettingsFromRef,
-        cancelAndRestartWorker,
         runHorizonAdvance,
         updatePriceHistoryToRawIdx,
         findPriceHistoryIdx,
