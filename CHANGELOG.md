@@ -17,6 +17,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   brightness is now scaled to the loaded data (99th percentile) and not to what's on screen, `resamplingDebounce`
   doesn't touch the heatmap anymore and `heatmap:status` is true while tiles on screen are missing
 
+### Fixed
+- when the data landed before the symbol resolved (a slow pc, often safari) the matching engine got
+  rebuilt empty, so it had no book and no price and refused every order. a rebuilt engine gets the data
+  the chart already holds now
+
 ## [0.23.0] - 2026-11-03
 
 ### Added

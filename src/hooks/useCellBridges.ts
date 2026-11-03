@@ -32,8 +32,11 @@ export function useTradingBridge(
     externalEngine?: ExecutionEngine,
     eventBus?: TypedEventBus,
     chart?: DepthChart,
+    onEngine?: (symbol: string) => void,
 ) {
     const executionEngine = useRef(externalEngine ?? new ExecutionEngine()).current;
+    const onEngineRef = useRef(onEngine);
+    onEngineRef.current = onEngine;
     const tradingEvents = useRef<any[]>([]);
 
     const eventBusRef = useRef(eventBus);
@@ -161,6 +164,8 @@ export function useTradingBridge(
             trading.syncPositions(positions);
             trading.syncOrders(orders);
         }
+        // the data can land before the symbol resolves and this engine replaces the one that got it
+        onEngineRef.current?.(symbol);
 
         return () => {
             engine.destroy();
@@ -183,8 +188,9 @@ function useCellTrading(
     eventBus: TypedEventBus,
     chart?: DepthChart,
     engine?: ExecutionEngine,
+    onEngine?: (symbol: string) => void,
 ) {
-    return useTradingBridge(cellSymbol, engine, eventBus, chart);
+    return useTradingBridge(cellSymbol, engine, eventBus, chart, onEngine);
 }
 
 /**
@@ -247,6 +253,8 @@ export function useCellBridges(
      * holding an engine with no books in it.
      */
     engine?: ExecutionEngine,
+    /** a book was (re)built for this symbol and has none of the data yet */
+    onEngine?: (symbol: string) => void,
 ): CellBridges {
     // Derived from the symbols, but carrying its previous self so a symbol can
     // keep the slot it already has. Recomputed every render rather than memoised:
@@ -256,14 +264,14 @@ export function useCellBridges(
     const slotSymbols = assignSymbolSlots(symbols, slotsRef.current);
     slotsRef.current = slotSymbols;
 
-    const b0 = useCellTrading(slotSymbols[0], eventBus, chart, engine);
-    const b1 = useCellTrading(slotSymbols[1], eventBus, chart, engine);
-    const b2 = useCellTrading(slotSymbols[2], eventBus, chart, engine);
-    const b3 = useCellTrading(slotSymbols[3], eventBus, chart, engine);
-    const b4 = useCellTrading(slotSymbols[4], eventBus, chart, engine);
-    const b5 = useCellTrading(slotSymbols[5], eventBus, chart, engine);
-    const b6 = useCellTrading(slotSymbols[6], eventBus, chart, engine);
-    const b7 = useCellTrading(slotSymbols[7], eventBus, chart, engine);
+    const b0 = useCellTrading(slotSymbols[0], eventBus, chart, engine, onEngine);
+    const b1 = useCellTrading(slotSymbols[1], eventBus, chart, engine, onEngine);
+    const b2 = useCellTrading(slotSymbols[2], eventBus, chart, engine, onEngine);
+    const b3 = useCellTrading(slotSymbols[3], eventBus, chart, engine, onEngine);
+    const b4 = useCellTrading(slotSymbols[4], eventBus, chart, engine, onEngine);
+    const b5 = useCellTrading(slotSymbols[5], eventBus, chart, engine, onEngine);
+    const b6 = useCellTrading(slotSymbols[6], eventBus, chart, engine, onEngine);
+    const b7 = useCellTrading(slotSymbols[7], eventBus, chart, engine, onEngine);
     const slots = [b0, b1, b2, b3, b4, b5, b6, b7];
 
     // Every cell index resolves to a bridge, including cells with no symbol yet

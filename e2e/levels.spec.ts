@@ -271,6 +271,26 @@ test('l2 without trades: the candles follow the playhead both ways, and live', a
     expect(errors).toEqual([]);
 });
 
+for (const q of ['level=l2&trades=0', 'level=l3'])
+    test(`${q}: a book rebuilt after the data came still gets it`, async ({ page }) => {
+        await open(page, `/?${q}`);
+        const engine = () =>
+            page.evaluate(() => {
+                const c = (window as any).__chart;
+                return { levels: c.executionEngine.getDepth(5)?.bids.length ?? 0, priced: c.executionEngine.hasPrice() };
+            });
+        expect((await engine()).levels).toBeGreaterThan(1);
+        // what a slow resolve does, the symbol info lands after the data and the bridge builds a new book
+        await page.evaluate(() => {
+            const c = (window as any).__chart;
+            c.eventBus.emit('data:symbol-resolved', { symbolInfo: { ...c.getSymbolInfo(c.getSymbol()) } });
+        });
+        await page.waitForTimeout(500);
+        const after = await engine();
+        expect(after.levels, 'the new book has the data').toBeGreaterThan(1);
+        expect(after.priced, 'and a price, so orders are taken').toBe(true);
+    });
+
 test('l2 without trades: orders fill off the book the chart holds, after a page back too', async ({ page }) => {
     const errors = watchErrors(page);
     await open(page, '/?level=l2&trades=0');

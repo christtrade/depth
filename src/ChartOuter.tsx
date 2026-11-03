@@ -391,11 +391,16 @@ export default function Depth({
     // instead and those two are left holding an empty engine - silently, since
     // every call on it is a no-op that returns undefined.
     const execEngine = externalExecutionEngine ?? _chart.executionEngine;
+    const reingestRef = useRef<(symbol: string) => void>(() => {});
+    const heldRef = useRef(
+        new Map<string, ChartEvents['data:load'] | ChartEvents['data:append'] | ChartEvents['data:prepend']>(),
+    );
     const { byCell: cellBridges, bySymbol: symbolBridges } = useCellBridges(
         cellSymbols,
         eventBus,
         _chart,
         execEngine,
+        (symbol) => reingestRef.current(symbol),
     );
 
     // Calls that don't name an instrument (a plugin's placeOrder, say) go to the
@@ -603,6 +608,8 @@ export default function Depth({
         ) => {
             const eng = execEngineRef.current;
             const sym = payload.symbol;
+            
+            if (payload.dataLevel !== 'ohlcv' || mode !== 'append') heldRef.current.set(sym, payload);
             if (!symbolBridgesRef.current.some((b) => b.symbol === sym)) return;
 
             switch (payload.dataLevel) {
@@ -677,6 +684,10 @@ export default function Depth({
         },
         [],
     );
+    reingestRef.current = (symbol) => {
+        const held = heldRef.current.get(symbol);
+        if (held) ingestForExecution(held, 'load');
+    };
 
     // Playback
     // Seeded from the chart's horizon rather than left at 0n until the first
