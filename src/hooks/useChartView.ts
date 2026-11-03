@@ -159,10 +159,12 @@ export function useChartView(p: UseChartViewParams): UseChartViewResult {
         } else {
             const timeSpan = activeTimeframeRef.current.barNs * 270n;
             const offset = 20n * activeTimeframeRef.current.barNs;
+            // mult for none tf
+            const multiplier = activeTimeframeRef.current.barNs <= 1_000_000n ? 1_000n : 1n;
             const last = horizonRef.current;
             if (!last) return;
-            view.tMin = last - timeSpan + offset;
-            view.tMax = last + offset;
+            view.tMin = last - (timeSpan + offset) * multiplier;
+            view.tMax = last + offset * multiplier;
         }
         scheduleResample();
         pushDrawParams();

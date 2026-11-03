@@ -46,6 +46,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A jump or step back past the loaded data could land on nothing (a blank chart). When the adapter returned
   less than the jump's window (it may, an initial fetch hands back the newest part) nothing paged back to
   the target. It pages back until the target's in now.
+- Resetting the view on None revealed way too little of the chart. shows 1000x now.
 
 ## [0.23.0] - 2026-11-03
 
