@@ -41,7 +41,7 @@ export class HeatmapTiles {
         private status: (recalculating: boolean) => void,
     ) {}
 
-    onReply(r: HeatmapReply): void {
+    onReply(r: Exclude<HeatmapReply, { type: 'held' }>): void {
         if (r.type === 'data') {
             this.invalidate(BigInt(r.from));
             return;

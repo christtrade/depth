@@ -420,6 +420,7 @@ export class DataEngine {
         number,
         { symbol: string; barNs: bigint; viewFrom: bigint | null; viewTo: bigint | null }
     >();
+    private readonly paneHeld = new Map<number, { symbol: string; bytes: number }>();
     private fpOptions: FootprintOptions;
     private initialLoad: { start: string; end: string };
     private horizonIso: string;
@@ -1951,6 +1952,11 @@ export class DataEngine {
             this.eventBus.on('data:pane-resolution', ({ id, symbol, barNs, viewFrom, viewTo }) =>
                 this._onPaneResolution(id, symbol, barNs, viewFrom, viewTo),
             ),
+            this.eventBus.on('data:pane-held', ({ id, symbol, bytes }) => {
+                if (bytes > 0) this.paneHeld.set(id, { symbol, bytes });
+                else this.paneHeld.delete(id);
+                this._scheduleBudget();
+            }),
             this.eventBus.on('data:rebuild-footprint', ({ fpOptions }) => this.rebuildFootprint(fpOptions)),
             this.eventBus.on('data:prefetch', ({ spanNs, symbol }) => {
                 // a named symbol paginates only itself. an unnamed one is the
@@ -2127,6 +2133,12 @@ export class DataEngine {
 
     // Memory budget
 
+    private _paneHeld(symbol: string): number {
+        let n = 0;
+        for (const h of this.paneHeld.values()) if (h.symbol === symbol) n += h.bytes;
+        return n;
+    }
+
     private _scheduleBudget(): void {
         if (this.budgetTimer !== null || !Number.isFinite(this.maxBytes)) return;
         this.budgetTimer = setTimeout(() => {
@@ -2139,7 +2151,7 @@ export class DataEngine {
     private _enforceBudget(): void {
         if (this.destroyed) return;
         const held = [...this._states].filter(([, st]) => BUDGETED.has(st.master?.dataLevel as DataLevel));
-        const bytes = new Map(held.map(([, st]) => [st, heldBytes(st.master!)]));
+        const bytes = new Map(held.map(([symbol, st]) => [st, heldBytes(st.master!) + this._paneHeld(symbol)]));
         let total = 0;
         for (const n of bytes.values()) total += n;
         if (total <= this.maxBytes) {

@@ -612,6 +612,33 @@ function assertMidBars(p: any, fromMs: number, toMs: number) {
     }
 }
 
+describe('l3 level, a pane holding its own copy for the heatmap', () => {
+    it('counts the copy against the budget, and stops once the pane lets it go', async () => {
+        const { bus, de, next, announce, settle } = levelEngine('l3', { maxBytes: 8_000_000 });
+        const loaded = next('data:load');
+        await de.load('NQ');
+        const first = await loaded;
+        announce(MIN, T0 - 10 * MIN_MS, T0);
+        await settle();
+        const loads: any[] = [];
+        bus.on('data:load', (p: any) => loads.push(p));
+
+        bus.emit('data:pane-held', { id: 0, symbol: 'NQ', bytes: 1000 });
+        await settle();
+        assert.equal(loads.length, 0, 'under the budget with a small copy');
+
+        const cut = next('data:load');
+        bus.emit('data:pane-held', { id: 0, symbol: 'NQ', bytes: 7_000_000 });
+        const p = await cut;
+        assert.equal(p.replaced, true);
+        assert.ok(p.dataStart > first.dataStart, 'history far from the view dropped');
+
+        bus.emit('data:pane-held', { id: 0, symbol: 'NQ', bytes: 0 });
+        await settle();
+        assert.equal(loads.length, 1, 'nothing more dropped');
+    });
+});
+
 describe('l2 level, bar source', () => {
     it('a feed with trades keeps trade bars through a chunk with none', async () => {
         const { de, next, announce, subs, settle } = levelEngine('l2');

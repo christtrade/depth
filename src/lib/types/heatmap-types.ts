@@ -36,7 +36,8 @@ export type HeatmapReply =
     // tiles from this time on are stale, all of them when '0'
     | { type: 'data'; from: string }
     // brightness changed for the configs starting with normKey
-    | { type: 'norm'; normKey: string };
+    | { type: 'norm'; normKey: string }
+    | { type: 'held'; bytes: number };
 
 export const normKey = (c: TileConfig) => `${c.column}:${c.tickSize}:${c.ticks}`;
 

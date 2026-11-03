@@ -730,7 +730,12 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
     }, []);
 
     // Workers
-    const onWorkerMessage = (e: MessageEvent<HeatmapReply>) => heatmapTilesRef.current?.onReply(e.data);
+    const onWorkerMessage = (e: MessageEvent<HeatmapReply>) => {
+        const r = e.data;
+        if (r.type !== 'held') return heatmapTilesRef.current?.onReply(r);
+        const symbol = cellSymbolRef.current;
+        if (symbol) p.eventBus.emit('data:pane-held', { id: p.cellId, symbol, bytes: r.bytes });
+    };
 
     // send a copy so the charts own buffer stays usable while the worker builds
     const sendHeatmapInit = useCallback(() => {
@@ -2175,6 +2180,8 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         indicatorWorkerRef.current.onmessage = onIndicatorWorkerMessage;
         return () => {
             workerRef.current?.terminate();
+            const symbol = cellSymbolRef.current;
+            if (symbol) p.eventBus.emit('data:pane-held', { id: p.cellId, symbol, bytes: 0 });
             indicatorWorkerRef.current?.terminate();
             // Clear the guard so a remount rebuilds the workers. React
             // StrictMode mounts, unmounts and remounts in development; refs

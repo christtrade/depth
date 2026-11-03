@@ -47,6 +47,12 @@ export function newReplay(every = 50_000): Replay {
 
 export const tsAt = (r: Replay, i: number) => r.view.getBigInt64(i * BYTES_PER_EVENT, true);
 
+export function heldBytes(r: Replay): number {
+    let n = r.buf.byteLength;
+    for (const c of r.checkpoints) n += c.lo.length * 25;
+    return n;
+}
+
 // first event at or after ts
 export function indexAt(r: Replay, ts: bigint): number {
     let lo = 0,

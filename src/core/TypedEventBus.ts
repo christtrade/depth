@@ -336,6 +336,8 @@ export interface ChartEvents {
      * engine fetch at the finest resolution anyone needs, over the span they
      * actually look at.
      */
+    /** What a pane holds of a symbol's data on top of the engine's, its heatmap's copy. Counts against the budget. */
+    'data:pane-held': { id: number; symbol: string; bytes: number };
     'data:pane-resolution': {
         id: number;
         symbol: string;

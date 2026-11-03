@@ -91,6 +91,12 @@ export async function feed(b: Build, events: MboEvent[], stale?: () => boolean):
     return !stale?.();
 }
 
+export function snapBytes(b: Build): number {
+    let n = 0;
+    for (const level of b.snaps) for (const s of level) n += s.bids.byteLength + s.asks.byteLength;
+    return n;
+}
+
 export function seal(b: Build): void {
     if (b.sealed || b.nextSnapTimes[0] === null) return;
     for (const level of b.snaps) level.push(snapshotToArrays(b.book, b.lastEventTs));

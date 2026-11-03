@@ -28,6 +28,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (32 B an event, ~32 MB an hour of l3), the 250ms snapshots are gone (~19 MB an hour)
 - `heatmapFinestColumnNs` (Finest column in the settings, 1ns to 1ms, default 1ms) sets how narrow a heatmap
   column gets. None zooms in as far as 3 of them, it stopped at 3ms before whatever the data had in it
+- The heatmap's copy of the events (and its snapshots) counts against `dataBudget` now, it's a second copy of
+  the l3/l2 data per pane and the budget didn't know. panes report it with `data:pane-held`
 
 ### Fixed
 - When the data landed before the symbol resolved (a slow pc, often safari) the matching engine got

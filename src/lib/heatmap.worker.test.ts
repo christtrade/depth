@@ -44,6 +44,8 @@ describe('the heatmap worker once a view settles', () => {
         appendEvents(cb, events, isoToNs);
         send({ type: 'init', buf: cb._buf.slice(0, cb.length * BYTES_PER_EVENT), length: cb.length });
         await until(() => replies.some((r) => r.type === 'data'));
+        const held = replies.find((r) => r.type === 'held');
+        assert.ok(held && held.bytes >= cb.length * BYTES_PER_EVENT, `says it holds its copy, got ${JSON.stringify(held)}`);
 
         const quiet = { type: 'settle', from: (61n * SEC).toString(), to: (120n * SEC).toString(), ...cfg };
         send(quiet);

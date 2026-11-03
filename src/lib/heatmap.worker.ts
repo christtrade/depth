@@ -8,8 +8,8 @@ import {
 } from './types/heatmap-types';
 import type { MboEvent } from './types';
 import { createCompactBuffer, sliceToMboEvents } from './compact-buffer';
-import { type Build, type Texels, bookColumn, buildTile, feed, newBuild, pickNorm, rowNorm, seal, unseal } from './heatmap-build';
-import { type Replay, extend, newReplay } from './heatmap-replay';
+import { type Build, type Texels, bookColumn, buildTile, feed, newBuild, pickNorm, rowNorm, seal, snapBytes, unseal } from './heatmap-build';
+import { type Replay, extend, heldBytes, newReplay } from './heatmap-replay';
 
 let build: Build | null = null;
 let replay: Replay | null = null;
@@ -61,6 +61,7 @@ self.onmessage = (e: MessageEvent<WorkerInitMessage | HeatmapRequest>) => {
             }
             seal(build);
             post({ type: 'data', from: from.toString() });
+            post({ type: 'held', bytes: heldBytes(replay!) + snapBytes(build) });
             pump();
         });
         return;
