@@ -1,7 +1,8 @@
 import type { MboEvent, BookState } from './types';
+import { type Replay, levelsAt, peakColumns } from './heatmap-replay';
 
+// for the columns too wide to replay
 export const LOD_INTERVALS_NS: bigint[] = [
-    250_000_000n, // 250ms
     1_000_000_000n, // 1s
     5_000_000_000n, // 5s
     30_000_000_000n, // 30s
@@ -182,6 +183,10 @@ export function sumRows(pairs: Float64Array, tickSize: number, ticks: number): F
 
 // tile column widths. the chart uses the narrowest thats at least a px wide
 export const COLUMN_NS: bigint[] = [
+    1_000_000n,
+    5_000_000n,
+    25_000_000n,
+    100_000_000n,
     250_000_000n,
     1_000_000_000n,
     5_000_000_000n,
@@ -206,6 +211,12 @@ export function sourceLevel(column: number): number {
     for (let i = 0; i < LOD_INTERVALS_NS.length; i++) if (LOD_INTERVALS_NS[i] * 4n <= c) lvl = i;
     return lvl;
 }
+
+// a 1s tile is 256s of events, a few ms to replay
+const REPLAY_MAX_NS = 1_000_000_000n;
+export const replayed = (column: number) => COLUMN_NS[column] <= REPLAY_MAX_NS;
+
+export type Source = { snaps: Snapshot[][]; replay: Replay | null };
 
 export type TileParams = { column: number; tickSize: number; ticks: number; norm: number; contrast: number; palette: string };
 
@@ -341,17 +352,19 @@ export function paintColumns(cols: Col[], p: TileParams): Texels {
     return { rowLo: lo, rows, cols: cols.length, data };
 }
 
-export function buildTile(levels: Snapshot[][], k: number, p: TileParams): Texels {
-    const snaps = levels[sourceLevel(p.column)] ?? [];
+export function buildTile(src: Source, k: number, p: TileParams): Texels {
     const c = COLUMN_NS[p.column];
     const t0 = BigInt(k) * BigInt(TILE_COLS) * c;
+    if (src.replay && replayed(p.column)) return paintColumns(peakColumns(src.replay, t0, c, TILE_COLS), p);
+    const snaps = src.snaps[sourceLevel(p.column)] ?? [];
     const cols: Col[] = [];
     for (let x = 0; x < TILE_COLS; x++) cols.push(peakColumn(snaps, t0 + BigInt(x) * c, t0 + BigInt(x + 1) * c));
     return paintColumns(cols, p);
 }
 
-export function bookColumn(levels: Snapshot[][], ts: bigint, p: TileParams): Texels {
-    const snaps = levels[0] ?? [];
+export function bookColumn(src: Source, ts: bigint, p: TileParams): Texels {
+    if (src.replay) return paintColumns([levelsAt(src.replay, ts)], p);
+    const snaps = src.snaps[0] ?? [];
     const i = firstAtOrAfter(snaps, ts + 1n) - 1;
     return paintColumns([i >= 0 ? snaps[i] : null], p);
 }

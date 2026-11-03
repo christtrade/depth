@@ -9,8 +9,10 @@ import {
 import type { MboEvent } from './types';
 import { createCompactBuffer, sliceToMboEvents } from './compact-buffer';
 import { type Build, type Texels, bookColumn, buildTile, feed, newBuild, pickNorm, rowNorm, seal, unseal } from './heatmap-build';
+import { type Replay, extend, newReplay } from './heatmap-replay';
 
 let build: Build | null = null;
+let replay: Replay | null = null;
 let buildGen = 0;
 // a norm stays put until the data is rebuilt, or the tiles of one config would disagree
 const norms = new Map<string, number>();
@@ -44,14 +46,18 @@ self.onmessage = (e: MessageEvent<WorkerInitMessage | HeatmapRequest>) => {
             let from = 0n;
             if (msg.type === 'init') {
                 const fresh = newBuild();
+                const freshReplay = newReplay();
                 if (!(await feed(fresh, decode(msg), () => gen !== buildGen))) return;
+                if (!(await extend(freshReplay, msg.buf, msg.length, () => gen !== buildGen))) return;
                 build = fresh;
+                replay = freshReplay;
                 norms.clear();
             } else {
                 if (!build) return;
                 from = build.lastEventTs;
                 unseal(build);
                 await feed(build, decode(msg));
+                await extend(replay!, msg.buf, msg.length);
             }
             seal(build);
             post({ type: 'data', from: from.toString() });
@@ -93,7 +99,7 @@ async function pump(): Promise<void> {
             if (fillWanted?.type === 'fill') {
                 const req = fillWanted;
                 fillWanted = null;
-                const t = bookColumn(build.snaps, BigInt(req.ts), { ...req, norm: normOf(req) });
+                const t = bookColumn({ snaps: build.snaps, replay }, BigInt(req.ts), { ...req, norm: normOf(req) });
                 const bitmap = await bitmapOf(t);
                 post({ type: 'fill', key: configKey(req), ts: req.ts, rowLo: t.rowLo, rows: t.rows, bitmap }, bitmap ? [bitmap] : []);
                 continue;
@@ -106,7 +112,7 @@ async function pump(): Promise<void> {
             const k = req.tiles[0];
             // the rest stay wanted unless a newer ask replaces them
             wanted = { ...req, tiles: req.tiles.slice(1) };
-            const t = buildTile(build.snaps, k, { ...req, norm: normOf(req) });
+            const t = buildTile({ snaps: build.snaps, replay }, k, { ...req, norm: normOf(req) });
             const bitmap = await bitmapOf(t);
             post({ type: 'tile', key: configKey(req), k, rowLo: t.rowLo, rows: t.rows, bitmap }, bitmap ? [bitmap] : []);
         }

@@ -45,7 +45,7 @@ describe('the heatmap worker once a view settles', () => {
         send({ type: 'init', buf: cb._buf.slice(0, cb.length * BYTES_PER_EVENT), length: cb.length });
         await until(() => replies.some((r) => r.type === 'data'));
 
-        const quiet = { type: 'settle', from: (60n * SEC).toString(), to: (120n * SEC).toString(), ...cfg };
+        const quiet = { type: 'settle', from: (61n * SEC).toString(), to: (120n * SEC).toString(), ...cfg };
         send(quiet);
         assert.deepEqual(
             replies.filter((r) => r.type === 'norm'),

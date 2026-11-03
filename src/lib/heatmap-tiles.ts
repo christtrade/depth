@@ -202,7 +202,8 @@ export class HeatmapTiles {
     }
 
     private drawFill(ctx: CanvasRenderingContext2D, key: string, c: TileConfig, cut: bigint, v: TileView): void {
-        const ts = (v.horizon / FILL_STEP_NS) * FILL_STEP_NS;
+        const step = COLUMN_NS[c.column] < FILL_STEP_NS ? COLUMN_NS[c.column] : FILL_STEP_NS;
+        const ts = (v.horizon / step) * step;
         const f = this.fill;
         if (!f || f.key !== key || f.ts !== ts || f.stale) {
             const ask = key + '|' + ts;

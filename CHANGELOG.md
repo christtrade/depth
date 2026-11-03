@@ -21,6 +21,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The heatmap colors a level by its size now, blue thin to red big. `heatmapColors: 'sides'`
   (Heat / Bid/Ask in the settings) keeps bids and asks in their own color, and `heatmapColorBid`/`heatmapColorAsk`
   finally do something there, nothing read them. their defaults are the green and red it always drew.
+- The heatmap zooms down to 1ms columns. at 1s columns and under it replays the book from the events
+  (checkpoints every 50k events) instead of reading a snapshot every 250ms, so a column shows the biggest
+  each price got at any instant in it, and a level that sat there for 3ms between two marks shows up instead
+  of never existing. the book at the playhead is exact too. the worker keeps its copy of the events for it
+  (32 B an event, ~32 MB an hour of l3), the 250ms snapshots are gone (~19 MB an hour)
 
 ### Fixed
 - When the data landed before the symbol resolved (a slow pc, often safari) the matching engine got

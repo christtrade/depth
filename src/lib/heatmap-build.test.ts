@@ -60,7 +60,7 @@ describe('the heatmap build', () => {
     it('seals an empty build to nothing', () => {
         const b = newBuild();
         seal(b);
-        assert.deepEqual(b.snaps.map((s) => s.length), [0, 0, 0, 0]);
+        assert.deepEqual(b.snaps.map((s) => s.length), [0, 0, 0]);
     });
 });
 
@@ -110,7 +110,8 @@ describe('heatmap tiles', () => {
         asks: new Float64Array(ts >= 2n * SEC && ts < 3n * SEC ? [100.03, 50, 100.05, 1] : [100.05, 1]),
     });
     const every = (step: bigint) => Array.from({ length: Number((10n * SEC) / step) }, (_, i) => snap(BigInt(i) * step));
-    const levels = LOD_INTERVALS_NS.map((step) => every(step));
+    const levels = { snaps: LOD_INTERVALS_NS.map((step) => every(step)), replay: null };
+    const Q = COLUMN_NS.indexOf(250_000_000n);
     const params = { tickSize: 0.01, ticks: 1, norm: 50, contrast: 0, palette: '#14dc50,#ff1e32' };
     const texel = (t: Texels, price: number, col: number) => {
         const row = Math.round(price / 0.01);
@@ -121,13 +122,13 @@ describe('heatmap tiles', () => {
     const alpha = (t: Texels, price: number, col: number) => texel(t, price, col)[3];
 
     it('paint bids and asks in the colours set for them on the sides palette', () => {
-        const t = buildTile(levels, 0, { ...params, column: 0, palette: '#0000ff,#ffff00' });
+        const t = buildTile(levels, 0, { ...params, column: Q, palette: '#0000ff,#ffff00' });
         assert.deepEqual(texel(t, 99.95, 0).slice(0, 3), [0, 0, 255]);
         assert.deepEqual(texel(t, 100.05, 0).slice(0, 3), [255, 255, 0]);
     });
 
     it('colour by size on the heat palette, a thin level blue and a wall red', () => {
-        const t = buildTile(levels, 0, { ...params, column: 0, palette: 'heat' });
+        const t = buildTile(levels, 0, { ...params, column: Q, palette: 'heat' });
         // 2s in, where the 50 lot wall rests next to a 1 lot
         const [r1, , b1, a1] = texel(t, 100.05, 8);
         const [r50, , b50, a50] = texel(t, 100.03, 8);
@@ -146,7 +147,7 @@ describe('heatmap tiles', () => {
     });
 
     it('show the book at the playhead as it stood then, nothing that came after', () => {
-        const c = { ...params, column: 0 };
+        const c = { ...params, column: Q };
         assert.equal(alpha(bookColumn(levels, 2n * SEC - 1n, c), 100.03, 0), 0);
         assert.ok(alpha(bookColumn(levels, 2n * SEC, c), 100.03, 0) > 0);
     });
