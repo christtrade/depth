@@ -237,6 +237,7 @@ export const CVARS: CvarSpec[] = [
     {"name":"heatmapColors","type":{"kind":"enum","values":["heat","sides"]},"group":"Heatmap","doc":"'heat' colors a level by its size, blue thin to red big. 'sides' paints bids and asks in their own color"},
     {"name":"heatmapColorBid","type":{"kind":"string"},"group":"Heatmap"},
     {"name":"heatmapColorAsk","type":{"kind":"string"},"group":"Heatmap"},
+    {"name":"heatmapFinestColumnNs","type":{"kind":"number"},"group":"Heatmap","doc":"Narrowest heatmap column in ns, 1 (1ns) up, default 1_000_000 (1ms). Rounded up to the next column width the heatmap has. None zooms in as far as 3 of them."},
     {"name":"resamplingDebounce","type":{"kind":"number"},"group":"Resampling"},
     {"name":"priceLineVisible","type":{"kind":"boolean"},"group":"Price line"},
     {"name":"priceLineColor","type":{"kind":"color"},"group":"Price line"},

@@ -145,7 +145,8 @@ export function useChartSettings(p: UseChartSettingsParams): UseChartSettingsRes
             chartSettings.heatmapContrast !== prev.heatmapContrast ||
             chartSettings.heatmapColors !== prev.heatmapColors ||
             chartSettings.heatmapColorBid !== prev.heatmapColorBid ||
-            chartSettings.heatmapColorAsk !== prev.heatmapColorAsk
+            chartSettings.heatmapColorAsk !== prev.heatmapColorAsk ||
+            chartSettings.heatmapFinestColumnNs !== prev.heatmapFinestColumnNs
         ) {
             pushDrawParams();
             renderEngineRef.current?.markDirty('base');

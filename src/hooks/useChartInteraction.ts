@@ -421,9 +421,9 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
             const maxCols = Math.min(3400, Math.max(10, ord.length + 20));
             return { min: 3n, max: BigInt(maxCols) };
         }
-        const barNs = activeTimeframeRef.current.barNs;
-        if (barNs <= 0n) return { min: MIN_TIME_SPAN, max: MAX_TIME_SPAN };
-        return zoomSpanLimits(barNs);
+        const tf = activeTimeframeRef.current;
+        if (tf.barNs <= 0n) return { min: MIN_TIME_SPAN, max: MAX_TIME_SPAN };
+        return zoomSpanLimits(tf, chartSettingsRef.current.heatmapFinestColumnNs);
     }
 
     function lastBarTs(): bigint | null {

@@ -304,6 +304,7 @@ export function drawBaseLayer(
                         horizon,
                         tickSize: symbolInfo?.priceFormat?.minTick || 0.01,
                         contrast: chartSettings.heatmapContrast,
+                        finestNs: chartSettings.heatmapFinestColumnNs,
                         palette:
                             chartSettings.heatmapColors === 'sides'
                                 ? `${chartSettings.heatmapColorBid},${chartSettings.heatmapColorAsk}`

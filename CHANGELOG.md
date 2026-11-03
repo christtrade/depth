@@ -26,6 +26,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   each price got at any instant in it, and a level that sat there for 3ms between two marks shows up instead
   of never existing. the book at the playhead is exact too. the worker keeps its copy of the events for it
   (32 B an event, ~32 MB an hour of l3), the 250ms snapshots are gone (~19 MB an hour)
+- `heatmapFinestColumnNs` (Finest column in the settings, 1ns to 1ms, default 1ms) sets how narrow a heatmap
+  column gets. None zooms in as far as 3 of them, it stopped at 3ms before whatever the data had in it
 
 ### Fixed
 - When the data landed before the symbol resolved (a slow pc, often safari) the matching engine got

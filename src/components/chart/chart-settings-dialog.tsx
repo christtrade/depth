@@ -42,6 +42,15 @@ export { DEFAULT_CHART_SETTINGS } from '../../lib/types/chart-settings';
 
 
 const DIALOG_W = 480;
+const FINEST_COLUMNS: [string, number][] = [
+    ['1ns', 1],
+    ['10ns', 10],
+    ['100ns', 100],
+    ['1µs', 1_000],
+    ['10µs', 10_000],
+    ['100µs', 100_000],
+    ['1ms', 1_000_000],
+];
 const VIEWPORT_PADDING = 12;
 
 const DASH_PRESETS: { label: string; dash: number[] }[] = [
@@ -1146,6 +1155,20 @@ export function ChartSettingsDialog({
                                             >
                                                 Bid/Ask
                                             </ToggleChip>
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] text-white/40 mb-1">Finest column</label>
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {FINEST_COLUMNS.map(([label, ns]) => (
+                                                    <ToggleChip
+                                                        key={ns}
+                                                        active={s.heatmapFinestColumnNs === ns}
+                                                        onClick={() => onUpdate({ heatmapFinestColumnNs: ns })}
+                                                    >
+                                                        {label}
+                                                    </ToggleChip>
+                                                ))}
+                                            </div>
                                         </div>
                                         {s.heatmapColors === 'sides' && (
                                             <div className="flex flex-col gap-2">

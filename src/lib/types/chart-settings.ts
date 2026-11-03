@@ -96,6 +96,11 @@ export type ChartSettings = {
     heatmapColors: 'heat' | 'sides';
     heatmapColorBid: string;
     heatmapColorAsk: string;
+    /**
+     * Narrowest heatmap column in ns, 1 (1ns) up, default 1_000_000 (1ms). Rounded up to the next column width
+     * the heatmap has. None zooms in as far as 3 of them.
+     */
+    heatmapFinestColumnNs: number;
     // Resampling
     resamplingDebounce: number;
     // Price line
@@ -194,6 +199,7 @@ export const DEFAULT_CHART_SETTINGS: ChartSettings = {
     heatmapColors: 'heat',
     heatmapColorBid: '#14dc50',
     heatmapColorAsk: '#ff1e32',
+    heatmapFinestColumnNs: 1_000_000,
     priceLineVisible: true,
     priceLineColor: '#758696',
     resamplingDebounce: 50,

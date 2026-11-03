@@ -6,6 +6,7 @@ import {
     LOD_INTERVALS_NS,
     bookColumn,
     buildTile,
+    columnFor,
     feed,
     newBuild,
     pickNorm,
@@ -61,6 +62,25 @@ describe('the heatmap build', () => {
         const b = newBuild();
         seal(b);
         assert.deepEqual(b.snaps.map((s) => s.length), [0, 0, 0]);
+    });
+});
+
+describe('heatmap columns', () => {
+    const at = (ns: bigint) => COLUMN_NS.indexOf(ns);
+
+    it('stop at the finest set, 1ms by default', () => {
+        assert.equal(columnFor(1), at(1_000_000n));
+        assert.equal(columnFor(1, 1), at(1n));
+        assert.equal(columnFor(1, 100), at(100n));
+    });
+
+    it('take the narrowest at least a px wide above that', () => {
+        assert.equal(columnFor(7, 1), at(10n));
+        assert.equal(columnFor(2_000_000, 1), at(5_000_000n));
+    });
+
+    it('round a finest between widths up to the next one', () => {
+        assert.equal(columnFor(1, 3_000), at(5_000n));
     });
 });
 

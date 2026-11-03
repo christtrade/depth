@@ -20,6 +20,7 @@ export type TileView = {
     tickSize: number;
     contrast: number;
     palette: string;
+    finestNs: number;
 };
 
 export class HeatmapTiles {
@@ -100,7 +101,7 @@ export class HeatmapTiles {
         if (w <= 0 || h <= 0 || tRange <= 0 || pRange <= 0) return;
 
         const config: TileConfig = {
-            column: columnFor(tRange / w),
+            column: columnFor(tRange / w, v.finestNs),
             tickSize: v.tickSize,
             ticks: rowTicks((v.tickSize / pRange) * h, MIN_ROW_PX),
             contrast: v.contrast,

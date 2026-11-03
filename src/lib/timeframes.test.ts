@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { PRESET_TIMEFRAMES, servableBarNs, unsupportedReason } from './timeframes';
+import { PRESET_TIMEFRAMES, servableBarNs, unsupportedReason, zoomSpanLimits } from './timeframes';
 
 const SEC = 1_000_000_000n;
 const MIN = 60n * SEC;
@@ -49,5 +49,19 @@ describe('unsupportedReason', () => {
         const none = PRESET_TIMEFRAMES.find((t) => t.label === 'None')!;
         for (const level of [undefined, 'ohlcv']) assert.notEqual(unsupportedReason(none, undefined, level), null);
         for (const level of ['tick', 'l3', 'l2']) assert.equal(unsupportedReason(none, undefined, level), null);
+    });
+});
+
+describe('zoomSpanLimits', () => {
+    const tf = (label: string) => PRESET_TIMEFRAMES.find((t) => t.label === label)!;
+
+    it('lets None zoom in to 3 of the heatmap finest columns', () => {
+        assert.equal(zoomSpanLimits(tf('None')).min, 3_000_000n, '3ms at the 1ms default');
+        assert.equal(zoomSpanLimits(tf('None'), 1).min, 3n);
+        assert.equal(zoomSpanLimits(tf('None'), 1_000).min, 3_000n);
+    });
+
+    it('keeps 3 bars for the rest', () => {
+        assert.equal(zoomSpanLimits(tf('1s'), 1).min, 3_000_000_000n);
     });
 });

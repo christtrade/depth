@@ -18,6 +18,7 @@ const view: TileView = {
     tickSize: 0.01,
     contrast: 0,
     palette: 'heat',
+    finestNs: 1_000_000,
 };
 const key = configKey({ column: COLUMN_NS.indexOf(COL), tickSize: 0.01, ticks: 1, contrast: 0, palette: 'heat' });
 

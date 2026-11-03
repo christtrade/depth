@@ -183,6 +183,18 @@ export function sumRows(pairs: Float64Array, tickSize: number, ticks: number): F
 
 // tile column widths. the chart uses the narrowest thats at least a px wide
 export const COLUMN_NS: bigint[] = [
+    1n,
+    5n,
+    10n,
+    50n,
+    100n,
+    500n,
+    1_000n,
+    5_000n,
+    10_000n,
+    50_000n,
+    100_000n,
+    500_000n,
     1_000_000n,
     5_000_000n,
     25_000_000n,
@@ -199,8 +211,9 @@ export const TILE_COLS = 256;
 // a book thousands of rows deep keeps these around its middle
 export const MAX_TILE_ROWS = 2048;
 
-export function columnFor(nsPerPx: number): number {
-    for (let i = 0; i < COLUMN_NS.length; i++) if (Number(COLUMN_NS[i]) >= nsPerPx) return i;
+export function columnFor(nsPerPx: number, finestNs = 1_000_000): number {
+    const want = Math.max(nsPerPx, finestNs);
+    for (let i = 0; i < COLUMN_NS.length; i++) if (Number(COLUMN_NS[i]) >= want) return i;
     return COLUMN_NS.length - 1;
 }
 

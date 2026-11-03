@@ -125,9 +125,11 @@ export function tfViewSpan(tf: Timeframe, bars?: number): bigint {
 
 const SEC_NS = 1_000_000_000n;
 
-// 3 to 3400 bars. sub-second ones zoom out as far as 1s, or 'none' stops at 3.4 s
-export function zoomSpanLimits(barNs: bigint): { min: bigint; max: bigint } {
-    return { min: barNs * 3n, max: (barNs > SEC_NS ? barNs : SEC_NS) * 3400n };
+// 3 to 3400 bars. sub-second ones zoom out as far as 1s. None zooms in to 3 of the heatmap's finest columns
+export function zoomSpanLimits(tf: Timeframe, finestNs = 1_000_000): { min: bigint; max: bigint } {
+    const barNs = tf.barNs;
+    const min = tf.label === 'None' ? BigInt(Math.max(1, Math.round(finestNs))) * 3n : barNs * 3n;
+    return { min, max: (barNs > SEC_NS ? barNs : SEC_NS) * 3400n };
 }
 
 // Resolution a timeframe can be built from

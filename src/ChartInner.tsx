@@ -2025,8 +2025,11 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
     const zoomTime = (factor: number) => {
         const view = viewRef.current;
         if (!view) return;
-        const barNs = activeTimeframeRef.current.barNs;
-        const limits = barNs > 0n ? zoomSpanLimits(barNs) : { min: MIN_TIME_SPAN, max: MAX_TIME_SPAN };
+        const tf = activeTimeframeRef.current;
+        const limits =
+            tf.barNs > 0n
+                ? zoomSpanLimits(tf, chartSettingsRef.current.heatmapFinestColumnNs)
+                : { min: MIN_TIME_SPAN, max: MAX_TIME_SPAN };
         const minSpan = Number(limits.min);
         const maxSpan = Number(limits.max);
         const sm = transformer.getSessionMapper();

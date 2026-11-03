@@ -51,7 +51,7 @@ describe('the heatmap replay', () => {
         ev(2000n * MS, 'C', 'A', 100.04, 80, 4),
         ev(10n * SEC, 'A', 'B', 99.9, 1, 5),
     ];
-    const params = { column: 0, tickSize: 0.01, ticks: 1, norm: 50, contrast: 0, palette: 'heat' };
+    const params = { column: COLUMN_NS.indexOf(MS), tickSize: 0.01, ticks: 1, norm: 50, contrast: 0, palette: 'heat' };
     const alpha = (t: Texels, price: number, col: number) => {
         const row = Math.round(price / 0.01);
         if (row < t.rowLo || row >= t.rowLo + t.rows) return 0;
@@ -60,7 +60,6 @@ describe('the heatmap replay', () => {
 
     it('lights a level that rested 3 ms between two 250 ms marks, in the 1 ms columns it was there', async () => {
         const replay = await replayOf(flash);
-        assert.equal(COLUMN_NS[0], MS);
         // 1.024s to 1.280s
         const t = buildTile({ snaps: [], replay }, 4, params);
         assert.equal(alpha(t, 100.03, 75), 0, '1.099s, not yet');
