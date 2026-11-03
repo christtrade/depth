@@ -46,6 +46,9 @@ function levelEngine(
         quietFrom?: number;
         preProcessed?: boolean;
         maxBytes?: number;
+        /** a fetch returns at most this much, the newest of it unless it's a forward one */
+        pageMs?: number;
+        initialMs?: number;
     } = {},
 ) {
     let edge = opts.liveEdge ?? T0;
@@ -64,8 +67,10 @@ function levelEngine(
         }),
         getCapabilities: () => ({}),
         fetchBars: async (req: any) => {
-            const fromMs = Math.max(START, Number(req.range.fromNs / 1_000_000n));
-            const toMs = Math.min(edge, Number(req.range.toNs / 1_000_000n));
+            let fromMs = Math.max(START, Number(req.range.fromNs / 1_000_000n));
+            let toMs = Math.min(edge, Number(req.range.toNs / 1_000_000n));
+            if (opts.pageMs && req.direction === 'forward') toMs = Math.min(toMs, fromMs + opts.pageMs);
+            else if (opts.pageMs) fromMs = Math.max(fromMs, toMs - opts.pageMs);
             fetches.push({ direction: req.direction, fromMs, toMs });
             const hasMore = req.direction === 'forward' ? toMs < edge : fromMs > START;
             // nothing printed from quietFrom on
@@ -84,7 +89,7 @@ function levelEngine(
 
     const de = new DataEngine(bus, state, {
         initialLoad: {
-            start: new Date(edge - 30 * MIN_MS).toISOString(),
+            start: new Date(edge - (opts.initialMs ?? 30 * MIN_MS)).toISOString(),
             end: new Date(edge).toISOString(),
         },
         horizon: new Date(edge).toISOString(),
@@ -714,3 +719,22 @@ describe('l2 level, book only', () => {
         assertBookIs(p, 'NQ', T0 - 30 * MIN_MS, T0 + 75_000);
     });
 });
+
+for (const level of ['tick', 'l3', 'l2'] as const) {
+    describe(`${level} level, an adapter that returns less than asked`, () => {
+        it('a jump back lands on data, paging back to it when the window came back short', async () => {
+            const { de, latest, fetches } = levelEngine(level, { pageMs: 30 * MIN_MS, initialMs: 3 * HOUR_MS });
+            await de.load('NQ');
+            const target = T0 - 100 * MIN_MS;
+            await de.seekLoad(nsOf(target));
+            for (let i = 0; i < 100 && !(latest.get('NQ')?.dataStart <= target); i++) await new Promise((r) => setTimeout(r, 20));
+            const p = latest.get('NQ');
+            const lastMs = Number(p.trades.at(-1).ts / 1_000_000n);
+            assert.ok(
+                p.dataStart <= target && lastMs >= target,
+                `held ${p.dataStart - T0}..${lastMs - T0}, the target is ${target - T0}. fetched ${JSON.stringify(fetches.map((x) => [x.direction, x.fromMs - T0, x.toMs - T0]))}`,
+            );
+            assertTradesAre(p, 'NQ', firstMs(p), lastMs + 1);
+        });
+    });
+}

@@ -20,9 +20,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   so a quiet stretch you zoom into doesn't stay dim. it rebuilds behind the old tiles, nothing blinks
 
 ### Fixed
-- when the data landed before the symbol resolved (a slow pc, often safari) the matching engine got
+- When the data landed before the symbol resolved (a slow pc, often safari) the matching engine got
   rebuilt empty, so it had no book and no price and refused every order. a rebuilt engine gets the data
   the chart already holds now
+- A jump or step back past the loaded data could land on nothing (a blank chart). When the adapter returned
+  less than the jump's window (it may, an initial fetch hands back the newest part) nothing paged back to
+  the target. It pages back until the target's in now.
 
 ## [0.23.0] - 2026-11-03
 

@@ -334,6 +334,8 @@ interface SymbolState {
     forwardInFlight: boolean;
     backwardInFlight: boolean;
     pendingBackwardViewMin: bigint | null;
+    // a jump landed before what its window loaded, pages go back till they reach it
+    seekTarget: bigint | null;
     /** Resolution the loaded window is at. 0n when nothing is loaded. */
     fetchBarNs: bigint;
     /** Bumped by anything that replaces the window, so a late fetch knows to drop its answer. */
@@ -514,6 +516,7 @@ export class DataEngine {
                 forwardInFlight: false,
                 backwardInFlight: false,
                 pendingBackwardViewMin: null,
+                seekTarget: null,
                 fetchBarNs: 0n,
                 stageToken: 0,
                 staging: null,
@@ -736,6 +739,7 @@ export class DataEngine {
         st.hasMoreForward = true;
         st.reachesLive = true;
         st.pendingForwardViewMax = null;
+        st.seekTarget = null;
         recovered(st.retry.backward);
         recovered(st.retry.forward);
         this._dropMaster(st);
@@ -871,6 +875,11 @@ export class DataEngine {
                     targetNs,
                     /* announceLoading */ false,
                 );
+                // an adapter can return less than the window, the newest of it for an initial fetch
+                if (st.loadedFrom !== null && st.loadedFrom > targetNs) {
+                    st.seekTarget = targetNs;
+                    this._fetchBackward(st.symbolInfo!.symbol, targetNs);
+                }
             }),
         );
     }
@@ -1307,6 +1316,11 @@ export class DataEngine {
 
                 st.loadedFrom = BigInt(processed.dataStart) * 1_000_000n;
                 st.hasMoreHistory = response.hasMore;
+                // a jump's target keeps paging till it's in. a pan doesn't, zoomed out its edge can be hours back
+                if (st.seekTarget !== null) {
+                    if (response.hasMore && st.loadedFrom > st.seekTarget) st.pendingBackwardViewMin ??= st.seekTarget;
+                    else st.seekTarget = null;
+                }
                 this._prependMaster(st, processed);
                 // a throwing listener isn't a failed fetch
                 try {

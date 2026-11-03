@@ -271,6 +271,34 @@ test('l2 without trades: the candles follow the playhead both ways, and live', a
     expect(errors).toEqual([]);
 });
 
+// the harness loads a day and serves 30 min a fetch, so the jump's window comes back short of the target
+for (const level of ['tick', 'l3'])
+    test(`${level}: a jump back past the loaded start lands on data`, async ({ page }) => {
+        const errors = watchErrors(page);
+        await open(page, `/?level=${level}`);
+        await pickTimeframe(page, '5s');
+        await settled(page);
+        const start = await page.evaluate(() => (window as any).__chart.getData().dataStart as number);
+        await page.evaluate(() => {
+            const c = (window as any).__chart;
+            c.eventBus.emit('playback:goto', { tNs: BigInt(c.horizon() - 40 * 60_000) * 1_000_000n });
+        });
+        await expect.poll(() => page.evaluate(() => (window as any).__chart.horizon() as number)).toBeLessThan(start);
+        const horizon = await page.evaluate(() => (window as any).__chart.horizon() as number);
+        await expect
+            .poll(() => page.evaluate(() => (window as any).__chart.getData().dataStart as number), {
+                message: 'history paged in behind the playhead',
+            })
+            .toBeLessThanOrEqual(horizon);
+        await settled(page);
+        expect(
+            await page.evaluate(() => (window as any).__chart.renderEngine.drawParams.candleCache?.size ?? 0),
+            'candles up to the playhead',
+        ).toBeGreaterThan(10);
+        expect(await drawsSomething(page)).toBe(true);
+        expect(errors).toEqual([]);
+    });
+
 for (const q of ['level=l2&trades=0', 'level=l3'])
     test(`${q}: a book rebuilt after the data came still gets it`, async ({ page }) => {
         await open(page, `/?${q}`);
