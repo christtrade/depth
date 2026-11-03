@@ -32,6 +32,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the l3/l2 data per pane and the budget didn't know. panes report it with `data:pane-held`
 - With the heatmap off a pane doesn't send its worker the events anymore and the worker lets its copy go,
   it held the whole thing (and now counted against the budget) for nothing drawn
+- Trade dots are bubbles now, one per 8px column (rounded to a power of 2 ns so panning keeps the same
+  groups) at the volume weighted price. buys fill it green from the bottom up to their share, the rest red,
+  rimmed in the chart's bg so it sits in the heatmap. it drew every trade, flat neon dots piled on each other
+- Bubble size is fixed per symbol, from half the median column (smallest) to the 99th percentile (full, 10px)
+  over everything loaded, so the usual column stays small and big prints stand out. it was the biggest on
+  screen, so sizes jumped as you panned. `tradeDotsSizeMult` 1-5 takes full size to 1x-3x
 
 ### Fixed
 - When the data landed before the symbol resolved (a slow pc, often safari) the matching engine got

@@ -28,6 +28,7 @@ import {
     buildOrdinalModel,
 } from '../series/japaneseCharts';
 import type { CrosshairSync } from '../types/layout-sync';
+import { cachedRefSize, columnNs, sizeT, tradeDots } from './trade-dots';
 
 const LABEL_H = 20;
 
@@ -344,7 +345,6 @@ export function drawBaseLayer(
                         bounds,
                         chartW,
                         rect.h,
-                        barNs,
                         chartSettings,
                         shown,
                         transformer,
@@ -2459,51 +2459,50 @@ function drawTrades(
     bounds: ViewBounds,
     w: number,
     h: number,
-    barNs: bigint = 0n,
     chartSettings: ChartSettings,
     horizon: bigint = 0n,
     transformer: LiveTransformer,
 ) {
-    if (trades.length === 0) return;
+    if (trades.length === 0 || w <= 0) return;
     const tsToXFn = transformer.makeTsToXFn(w);
     const priceToYFn = transformer.makePriceToYFn(h);
-    const cutTs = horizon > 0n ? horizon : bounds.tMax;
+    const cutTs = horizon > 0n && horizon < bounds.tMax ? horizon : bounds.tMax;
+    const colNs = columnNs(Number(bounds.tMax - bounds.tMin) / w);
+    const dots = tradeDots(trades, bounds.tMin, cutTs, tsToXFn, colNs);
+    const ref = cachedRefSize(trades, colNs);
+    // big first so the small ones stay on top
+    dots.sort((a, b) => b.size - a.size);
 
-    // Compute per-bar max size for scaling
-    // We bucket by bar purely to find how large the biggest trade cluster is
-    // within each bar - this gives stable radius scaling as you pan.
-    // X position always uses the real trade timestamp, never the bar boundary.
-    const barMax = new Map<bigint, number>();
-    for (const trade of trades) {
-        if (trade.ts > cutTs) break;
-        if (trade.ts < bounds.tMin || trade.ts > bounds.tMax) continue;
-        const barTs = barNs > 0n ? (trade.ts / barNs) * barNs : 0n;
-        const cur = barMax.get(barTs) ?? 0;
-        if (trade.size > cur) barMax.set(barTs, trade.size);
-    }
-    // Global max across all visible bars for normalization
-    let maxSize = 1;
-    for (const v of barMax.values()) if (v > maxSize) maxSize = v;
-
+    const maxR = MAX_DOT_RADIUS * (1 + ((chartSettings.tradeDotsSizeMult ?? 1) - 1) / 2);
     const PI2 = Math.PI * 2;
+    const BUY = '22,190,128';
+    const SELL = '226,58,82';
 
-    for (const trade of trades) {
-        if (trade.ts > cutTs) break;
-        if (trade.ts < bounds.tMin || trade.ts > bounds.tMax) continue;
-
-        const x = tsToXFn(trade.ts);
-        const y = priceToYFn(trade.price);
-
-        // Radius scaled by sqrt for perceptual area scaling, then multiplied by user size pref
-        const t = Math.sqrt(trade.size / maxSize);
-        const sizeScale = (chartSettings.tradeDotsSizeMult ?? 3) / 3;
-        const radius = (MIN_DOT_RADIUS + t * (MAX_DOT_RADIUS - MIN_DOT_RADIUS)) * sizeScale;
-
+    ctx.save();
+    // the chart's own bg as the rim cuts it into the heat
+    ctx.strokeStyle = chartSettings.backgroundColor;
+    ctx.lineWidth = 0.5;
+    for (const d of dots) {
+        const r = MIN_DOT_RADIUS + sizeT(d.size, ref) * (maxR - MIN_DOT_RADIUS);
+        const x = d.x;
+        const y = priceToYFn(d.price);
+        const buy = d.size > 0 ? d.buySize / d.size : 0.5;
+        ctx.save();
         ctx.beginPath();
-        ctx.arc(x, y, radius, 0, PI2);
-        ctx.fillStyle = trade.side === 'B' ? '#00e676cc' : '#ff1744cc';
-        ctx.fill();
+        ctx.arc(x, y, r, 0, PI2);
+        ctx.clip();
+        ctx.fillStyle = `rgba(${SELL},0.85)`;
+        ctx.fillRect(x - r, y - r, 2 * r, 2 * r);
+        // buys fill up from the bottom like a level
+        const lvl = 2 * r * buy;
+        ctx.fillStyle = `rgba(${BUY},0.85)`;
+        ctx.fillRect(x - r, y + r - lvl, 2 * r, lvl);
+        ctx.restore();
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, PI2);
+        ctx.stroke();
     }
+    ctx.restore();
 }
 
 function drawTradeSelectionRing(

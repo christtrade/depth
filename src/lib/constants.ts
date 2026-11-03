@@ -4,7 +4,7 @@
 export const MIN_TRADE_SIZE = 1;
 
 // How large a dot can get at maximum (pixels)
-export const MAX_DOT_RADIUS = 8;
+export const MAX_DOT_RADIUS = 10;
 
 // How small a dot can get at minimum (pixels)
 export const MIN_DOT_RADIUS = 1.5;
