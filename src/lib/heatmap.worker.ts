@@ -66,6 +66,18 @@ self.onmessage = (e: MessageEvent<WorkerInitMessage | HeatmapRequest>) => {
         });
         return;
     }
+    if (msg.type === 'drop') {
+        const gen = ++buildGen;
+        chain = chain.then(() => {
+            if (gen !== buildGen) return;
+            build = null;
+            replay = null;
+            norms.clear();
+            wanted = fillWanted = null;
+            post({ type: 'held', bytes: 0 });
+        });
+        return;
+    }
     if (msg.type === 'settle') {
         if (!build) return;
         const current = normOf(msg);

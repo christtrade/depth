@@ -56,4 +56,14 @@ describe('the heatmap worker once a view settles', () => {
         send(quiet);
         assert.equal(replies.filter((r) => r.type === 'norm').length, 1, 'the same view again changes nothing');
     });
+
+    it('lets its copy go when the heatmap is turned off, and builds nothing from it', async () => {
+        send({ type: 'drop' });
+        await until(() => replies.at(-1)?.type === 'held');
+        assert.deepEqual(replies.at(-1), { type: 'held', bytes: 0 });
+        const n = replies.length;
+        send({ type: 'tiles', tiles: [0], ...cfg });
+        await new Promise((r) => setTimeout(r, 20));
+        assert.equal(replies.length, n);
+    });
 });

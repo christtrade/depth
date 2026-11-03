@@ -28,6 +28,7 @@ export interface UseChartSettingsParams {
     selectedDrawingIdRef: MutableRefObject<string | null>;
     renderEngineRef: MutableRefObject<RenderEngine | null>;
     rebuildFootprints: () => void;
+    setHeatmapOn: (on: boolean) => void;
     pushDrawParams: () => void;
     updateSettingsBarPos: (id: string | null) => void;
     hidePriceScale: boolean;
@@ -86,6 +87,7 @@ export function useChartSettings(p: UseChartSettingsParams): UseChartSettingsRes
         selectedDrawingIdRef,
         renderEngineRef,
         rebuildFootprints,
+        setHeatmapOn,
         pushDrawParams,
         updateSettingsBarPos,
     } = p;
@@ -139,7 +141,10 @@ export function useChartSettings(p: UseChartSettingsParams): UseChartSettingsRes
             isYAxisAutoRef.current = chartSettings.autoScale;
         }
 
-        if (chartSettings.showHeatmap !== prev.showHeatmap) renderEngineRef.current?.markDirty('base');
+        if (chartSettings.showHeatmap !== prev.showHeatmap) {
+            setHeatmapOn(chartSettings.showHeatmap);
+            renderEngineRef.current?.markDirty('base');
+        }
 
         if (
             chartSettings.heatmapContrast !== prev.heatmapContrast ||

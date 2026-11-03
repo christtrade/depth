@@ -36,7 +36,7 @@ import {
     prependAggregatedOhlcvBars,
 } from '../lib/bar-aggregate';
 import { getSessionStatus, type SessionStatus } from '../core/SessionUtils';
-import { type HeatmapReply, type WorkerInitMessage } from '../lib/types/heatmap-types';
+import { type HeatmapReply, type HeatmapRequest, type WorkerInitMessage } from '../lib/types/heatmap-types';
 import { HeatmapTiles } from '../lib/heatmap-tiles';
 import { type LiveEdge } from '../lib/renderers/renderer';
 import { followsEdge as followsDataEdge, loadedHorizon } from '../lib/view-edges';
@@ -280,6 +280,7 @@ export interface ChartDataResult {
     runIndicatorWorker: (trades: SerialTrade[], barNs: bigint) => void;
     getTradesUpToHorizon: (horizon: bigint) => TradePoint[];
     rebuildFootprints: () => void;
+    setHeatmapOn: (on: boolean) => void;
     syncOhlcvOpenBar: (horizon: bigint) => void;
     rebuildCandleCache: (trades: TradePoint[], barNs: bigint) => void;
     foldEventsIntoOpenBar: (
@@ -741,7 +742,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
     const sendHeatmapInit = useCallback(() => {
         const cb = compactBufRef.current;
         const worker = workerRef.current;
-        if (!worker || !cb.length) return;
+        if (!worker || !cb.length || !p.chartSettingsRef.current.showHeatmap) return;
         const buf = cb._buf.slice(0, cb.length * BYTES_PER_EVENT);
         const msg: WorkerInitMessage = { type: 'init', buf, length: cb.length };
         worker.postMessage(msg, [buf]);
@@ -753,6 +754,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         const cb = compactBufRef.current;
         const worker = workerRef.current;
         const sent = heatmapSentRef.current;
+        if (!p.chartSettingsRef.current.showHeatmap) return;
         if (!worker || !sent || !cb.length || cb.length < sent.length) return sendHeatmapInit();
         if (!sameEvent(sent.buf, cb._buf, 0) || !sameEvent(sent.buf, cb._buf, sent.length - 1)) {
             return sendHeatmapInit();
@@ -763,6 +765,14 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             worker.postMessage(msg, [buf]);
         }
         heatmapSentRef.current = { buf: cb._buf, length: cb.length };
+    }, []);
+
+    // the worker keeps a whole copy of the events, no point while nothing draws it
+    const setHeatmapOn = useCallback((on: boolean) => {
+        if (on) return sendHeatmapInit();
+        workerRef.current?.postMessage({ type: 'drop' } satisfies HeatmapRequest);
+        heatmapSentRef.current = null;
+        heatmapTilesRef.current?.clear();
     }, []);
 
     const runIndicatorWorker = useCallback((trades: SerialTrade[], barNs: bigint) => {
@@ -2300,6 +2310,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         runIndicatorWorker,
         getTradesUpToHorizon,
         rebuildFootprints,
+        setHeatmapOn,
         syncOhlcvOpenBar,
         rebuildCandleCache,
         foldEventsIntoOpenBar,

@@ -30,6 +30,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   column gets. None zooms in as far as 3 of them, it stopped at 3ms before whatever the data had in it
 - The heatmap's copy of the events (and its snapshots) counts against `dataBudget` now, it's a second copy of
   the l3/l2 data per pane and the budget didn't know. panes report it with `data:pane-held`
+- With the heatmap off a pane doesn't send its worker the events anymore and the worker lets its copy go,
+  it held the whole thing (and now counted against the budget) for nothing drawn
 
 ### Fixed
 - When the data landed before the symbol resolved (a slow pc, often safari) the matching engine got

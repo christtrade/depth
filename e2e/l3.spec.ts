@@ -269,6 +269,29 @@ test('l3: the heatmap draws, and draws again after a pan', async ({ page }) => {
     expect(errors).toEqual([]);
 });
 
+test('l3: the heatmap off lets its copy of the data go, back on it draws again', async ({ page }) => {
+    const errors = watchErrors(page);
+    await page.goto('/?level=l3');
+    await page.evaluate(() => {
+        const w = window as any;
+        w.__held = [];
+        w.__chart.eventBus.on('data:pane-held', (e: any) => w.__held.push(e.bytes));
+    });
+    await settled(page);
+    await expect.poll(() => heatmaps(page), { timeout: 15_000 }).toBeGreaterThan(0);
+    const held = () => page.evaluate(() => (window as any).__held.at(-1) as number | undefined);
+
+    await page.evaluate(() => (window as any).__chart.setChartSettings({ showHeatmap: false }));
+    await expect.poll(held, { message: 'gave its copy up' }).toBe(0);
+
+    const before = await heatmaps(page);
+    await page.evaluate(() => (window as any).__chart.setChartSettings({ showHeatmap: true }));
+    await expect.poll(held, { message: 'holds a copy again' }).toBeGreaterThan(0);
+    await expect.poll(() => heatmaps(page), { message: 'and draws' }).toBeGreaterThan(before);
+    expect(await drawsSomething(page)).toBe(true);
+    expect(errors).toEqual([]);
+});
+
 test('l3: picking a timeframe that needs new data switches to it, and stays', async ({ page }) => {
     const errors = watchErrors(page);
     await page.goto('/?level=l3');
