@@ -44,6 +44,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - The heatmap flashed a blank column at the horizon on every live chunk, the tile with the new data comes a
   frame later. the book at the horizon covers it now
+- Zooming blanked the heatmap for a frame right of the horizon and in strips left of it. the old book and
+  whatever tiles are held draw till the new ones land
 - When the data landed before the symbol resolved (a slow pc, often safari) the matching engine got
   rebuilt empty, so it had no book and no price and refused every order. a rebuilt engine gets the data
   the chart already holds now

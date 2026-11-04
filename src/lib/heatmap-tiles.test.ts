@@ -90,6 +90,67 @@ describe('heatmap tiles on screen', () => {
     });
 });
 
+describe('what draws while a zoom waits on its tiles', () => {
+    const bm = (name: string) => ({ name, width: 256, height: 10, close() {} }) as unknown as ImageBitmap;
+    const reply = (k: number, column: bigint, bitmap: ImageBitmap) => ({
+        type: 'tile' as const,
+        key: configKey({ column: COLUMN_NS.indexOf(column), tickSize: 0.01, ticks: 1, contrast: 0, palette: 'heat' }),
+        k,
+        rowLo: 9990,
+        rows: 10,
+        bitmap,
+        until: (SPAN * 100n).toString(),
+    });
+    const coarser = COL * 4n;
+    // a view at each column, the same price range
+    const at = (column: bigint, cols: bigint, to: bigint): TileView => ({ ...view, view: { ...view.view, tMin: to - column * cols, tMax: to }, w: Number(cols) });
+
+    it('the last complete zoom alone when it has all of it', () => {
+        const { tiles, ctx, drawn } = setup();
+        tiles.onReply(reply(0, coarser, bm('coarse')));
+        tiles.draw(ctx, view);
+        drawn.length = 0;
+        // 25ms columns
+        tiles.draw(ctx, at(COL / 10n, BigInt(TILE_COLS), COL * 100n));
+        assert.deepEqual([...new Set(drawn.map((b: any) => b.name ?? 'last'))], ['last']);
+    });
+
+    it('under the blank tail of a tile held since before the data got that far', () => {
+        const { tiles, ctx, drawn, bitmap } = setup();
+        tiles.onReply({ type: 'tile', key, k: 0, rowLo: 9990, rows: 10, bitmap, until: (90n * COL).toString() });
+        tiles.onReply(reply(0, coarser, bm('coarse')));
+        tiles.onReply({ type: 'data', from: (90n * COL).toString() });
+        tiles.draw(ctx, view);
+        assert.deepEqual(drawn.map((b: any) => b.name ?? 'tile'), ['coarse', 'tile']);
+    });
+
+    it('not while the tile is up to date, a tile past the end of the data is just short', () => {
+        const { tiles, ctx, drawn, bitmap } = setup();
+        tiles.onReply({ type: 'tile', key, k: 0, rowLo: 9990, rows: 10, bitmap, until: (90n * COL).toString() });
+        tiles.onReply(reply(0, coarser, bm('coarse')));
+        tiles.draw(ctx, view);
+        assert.deepEqual(drawn.map((b: any) => b.name ?? 'tile'), ['tile']);
+    });
+
+    it('zooming out past it, the other zooms held fill in, coarse under fine', () => {
+        const { tiles, ctx, drawn } = setup();
+        tiles.onReply(reply(0, coarser, bm('coarse')));
+        tiles.draw(ctx, view);
+        drawn.length = 0;
+        // 5s columns reach past the only tile of the last zoom
+        tiles.draw(ctx, at(COL * 20n, BigInt(TILE_COLS), SPAN * 20n));
+        assert.deepEqual(drawn.map((b: any) => b.name ?? 'last'), ['coarse', 'last']);
+    });
+
+    it('never another tick sizes tiles', () => {
+        const { tiles, ctx, drawn } = setup();
+        tiles.draw(ctx, view);
+        drawn.length = 0;
+        tiles.draw(ctx, { ...view, tickSize: 0.25 });
+        assert.deepEqual(drawn, []);
+    });
+});
+
 describe('the book past the data a tile has', () => {
     const cutCol = 100n;
     const live: TileView = { ...view, horizon: cutCol * COL };
@@ -140,6 +201,14 @@ describe('the book past the data a tile has', () => {
         assert.deepEqual(xs, [TILE_COLS - 4]);
     });
 
+    it('a tile only paints up to its own end, however far the data went when it was built', () => {
+        const { tiles, ctx, xs, bitmap } = liveSetup();
+        tiles.onReply(fill(past.horizon));
+        tiles.onReply(tile(0, SPAN + 5n * COL, bitmap));
+        tiles.draw(ctx, past);
+        assert.deepEqual(xs, [TILE_COLS]);
+    });
+
     it('goes back past a tile built before any data got to it', () => {
         const { tiles, ctx, xs, bitmap } = liveSetup();
         tiles.onReply(fill(past.horizon));
@@ -147,6 +216,47 @@ describe('the book past the data a tile has', () => {
         tiles.onReply(tile(1, SPAN - 5n * COL + 1n, bitmap));
         tiles.draw(ctx, past);
         assert.deepEqual(xs, [TILE_COLS - 4]);
+    });
+
+    // twice the price range, so rows of 2 ticks and every tile and the fill are from another config
+    const zoomed: TileView = { ...live, view: { ...view.view, pMin: 97 } };
+    const zoomedKey = configKey({ column: COLUMN_NS.indexOf(COL), tickSize: 0.01, ticks: 2, contrast: 0, palette: 'heat' });
+
+    it('keeps drawing the old book through a zoom, on its own rows, till the new one lands', () => {
+        const { tiles, ctx, asked, bitmap } = liveSetup();
+        tiles.onReply(tile(0, 100n * COL, bitmap));
+        tiles.draw(ctx, live);
+        const at: number[][] = [];
+        ctx.drawImage = ((bm: unknown, x: number, y: number, _w: number, h: number) => {
+            if (bm === fillBitmap) at.push([x, y, h]);
+        }) as never;
+        asked.length = 0;
+        tiles.draw(ctx, zoomed);
+        const top = zoomed.priceToY((9990 + 10 - 0.5) * 0.01);
+        const bottom = zoomed.priceToY((9990 - 0.5) * 0.01);
+        assert.deepEqual(at, [[100, top, bottom - top]]);
+        assert.ok(asked.some((r) => r.type === 'fill' && r.ticks === 2), 'and asks for the new one');
+        at.length = 0;
+        tiles.onReply({ ...fill(live.horizon), key: zoomedKey, rowLo: 1000, rows: 5 });
+        tiles.draw(ctx, zoomed);
+        const top2 = zoomed.priceToY((1005 * 2 - 0.5) * 0.01);
+        assert.deepEqual(at.map((a) => a[1]), [top2]);
+    });
+
+    it('doesnt draw another symbols book when the tick size changed', () => {
+        const { tiles, ctx, xs } = liveSetup();
+        tiles.draw(ctx, { ...live, tickSize: 0.25 });
+        assert.deepEqual(xs, []);
+    });
+
+    it('covers past the data of the old tiles a zoom falls back on', () => {
+        const { tiles, ctx, xs, bitmap } = liveSetup();
+        tiles.onReply(tile(0, 100n * COL, bitmap));
+        tiles.draw(ctx, live);
+        tiles.onReply(tile(0, 90n * COL + 1n, bitmap));
+        xs.length = 0;
+        tiles.draw(ctx, zoomed);
+        assert.deepEqual(xs, [91]);
     });
 
     it('with no tile on screen yet, zooming, the book still starts at the playhead', () => {

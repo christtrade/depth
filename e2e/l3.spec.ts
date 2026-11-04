@@ -164,8 +164,7 @@ test('l3: None zoomed in draws its bid and ask from the replay', async ({ page }
     expect(errors).toEqual([]);
 });
 
-test('l3 live: no blank strip at the horizon when a chunk lands', async ({ page, browserName }) => {
-    test.skip(browserName === 'webkit', 'frames too slow to see one frame');
+async function noneOnTheHorizon(page: Page) {
     await page.setViewportSize({ width: 1400, height: 800 });
     await page.goto('/?sim=1&level=l3');
     await settled(page);
@@ -182,62 +181,105 @@ test('l3 live: no blank strip at the horizon when a chunk lands', async ({ page,
         .toBe(30_000);
     await page.locator('button:has(svg.lucide-rotate-ccw)').first().click();
     await page.waitForTimeout(500);
-    // a chunk is 250ms, ~6px at this zoom
-    const zoom = () =>
-        page.evaluate(() => {
-            const c = (window as any).__chart;
+}
+
+const AXIS_PX = 64;
+
+const onHorizon = (page: Page) =>
+    page.evaluate((axis) => {
+        const c = (window as any).__chart;
+        const v = c.renderEngine.view;
+        const canvas = c.renderEngine.baseCanvas;
+        const w = canvas.width - axis;
+        const span = Number(v.tMax - v.tMin);
+        const r = canvas.getBoundingClientRect();
+        const hx = (Number(BigInt(c.horizon()) * 1_000_000n - v.tMin) / span) * w;
+        return { msPerPx: span / w / 1e6, x: r.x + Math.max(60, Math.min(w - 150, hx - 80)), y: r.y + 300 };
+    }, AXIS_PX);
+
+// strips of the chart that go blank from one frame to the next, inside the data. nothing's there before it
+const watchBlanks = (page: Page) =>
+    page.evaluate((axis) => {
+        const win = window as any;
+        const c = win.__chart;
+        const canvas: HTMLCanvasElement = c.renderEngine.baseCanvas;
+        const ctx = canvas.getContext('2d')!;
+        const W = canvas.width;
+        const w = W - axis;
+        const h = Math.floor(canvas.height * 0.85);
+        const blank = () => {
+            const d = ctx.getImageData(0, 40, W, h).data;
+            const out = new Uint8Array(w);
+            for (let x = 0; x < w; x++) {
+                let n = 0;
+                for (let y = 0; y < h; y += 3) if (d[(y * W + x) * 4 + 3] < 30) n++;
+                out[x] = n / Math.ceil(h / 3) > 0.97 ? 1 : 0;
+            }
+            return out;
+        };
+        const seen = (win.__blanks = { on: true, count: 0 });
+        let prev = blank();
+        const frame = () => {
+            if (!seen.on) return;
+            const cur = blank();
             const v = c.renderEngine.view;
-            const canvas = c.renderEngine.baseCanvas;
-            const span = Number(v.tMax - v.tMin);
-            const r = canvas.getBoundingClientRect();
-            return { msPerPx: span / canvas.width / 1e6, x: r.x + (Number(BigInt(c.horizon()) * 1_000_000n - v.tMin) / span) * canvas.width - 150, y: r.y + 300 };
-        });
+            const first = c.renderEngine.drawParams.priceHistory[0]?.ts ?? v.tMin;
+            const startX = Math.ceil((Number(first - v.tMin) / Number(v.tMax - v.tMin)) * w) + 3;
+            let run = 0;
+            for (let x = Math.max(0, startX); x <= w; x++) {
+                if (x < w && cur[x] && !prev[x]) run++;
+                else {
+                    if (run >= 2) seen.count++;
+                    run = 0;
+                }
+            }
+            prev = cur;
+            requestAnimationFrame(frame);
+        };
+        requestAnimationFrame(frame);
+    }, AXIS_PX);
+
+const blanksSeen = (page: Page) =>
+    page.evaluate(() => {
+        const seen = (window as any).__blanks;
+        seen.on = false;
+        return seen.count as number;
+    });
+
+test('l3 live: no blank strip at the horizon when a chunk lands', async ({ page, browserName }) => {
+    test.skip(browserName === 'webkit', 'frames too slow to see one frame');
+    await noneOnTheHorizon(page);
+    // a chunk is 250ms, ~6px at this zoom
     for (let i = 0; i < 80; i++) {
-        const z = await zoom();
+        const z = await onHorizon(page);
         if (z.msPerPx < 45) break;
         await page.mouse.move(z.x, z.y);
         await page.mouse.wheel(0, z.msPerPx > 90 ? -300 : -100);
         await page.waitForTimeout(40);
     }
     await page.waitForTimeout(1500);
-    const flashes = await page.evaluate(
-        () =>
-            new Promise<number>((resolve) => {
-                const canvas: HTMLCanvasElement = (window as any).__chart.renderEngine.baseCanvas;
-                const ctx = canvas.getContext('2d')!;
-                const w = canvas.width;
-                const h = Math.floor(canvas.height * 0.85);
-                const blank = () => {
-                    const d = ctx.getImageData(0, 40, w, h).data;
-                    const out = new Uint8Array(w);
-                    for (let x = 0; x < w; x++) {
-                        let n = 0;
-                        for (let y = 0; y < h; y += 3) if (d[(y * w + x) * 4 + 3] < 30) n++;
-                        out[x] = n / Math.ceil(h / 3) > 0.97 ? 1 : 0;
-                    }
-                    return out;
-                };
-                let prev = blank();
-                let count = 0;
-                const start = performance.now();
-                const frame = () => {
-                    const cur = blank();
-                    let run = 0;
-                    for (let x = 0; x <= w; x++) {
-                        if (x < w && cur[x] && !prev[x]) run++;
-                        else {
-                            if (run >= 2) count++;
-                            run = 0;
-                        }
-                    }
-                    prev = cur;
-                    if (performance.now() - start < 4000) requestAnimationFrame(frame);
-                    else resolve(count);
-                };
-                requestAnimationFrame(frame);
-            }),
-    );
-    expect(flashes).toBe(0);
+    await watchBlanks(page);
+    await page.waitForTimeout(4000);
+    expect(await blanksSeen(page)).toBe(0);
+});
+
+test('l3 live: zooming doesnt blank the heatmap, either side of the horizon', async ({ page, browserName }) => {
+    test.skip(browserName === 'webkit', 'frames too slow to see one frame');
+    await noneOnTheHorizon(page);
+    await page.waitForTimeout(1000);
+    await watchBlanks(page);
+    // a wheel notch. flicked much harder a strip no tile has yet can still show for a few frames
+    for (let round = 0; round < 3; round++) {
+        for (const dy of [-120, 120]) {
+            for (let i = 0; i < 14; i++) {
+                const z = await onHorizon(page);
+                await page.mouse.move(z.x, z.y);
+                await page.mouse.wheel(0, dy);
+                await page.waitForTimeout(50);
+            }
+        }
+    }
+    expect(await blanksSeen(page)).toBe(0);
 });
 
 test('None is in the timeframe list at tick, l2 and l3 only', async ({ page }) => {

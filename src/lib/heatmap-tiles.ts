@@ -139,7 +139,13 @@ export class HeatmapTiles {
         const kTo = Number((end - 1n) / span);
         for (let k = kFrom; k <= kTo && end > view.tMin; k++) {
             const t = tiles?.get(k);
+            const tileEnd = BigInt(k + 1) * span;
             if (t) {
+                // held since before the data got this far, zoom away and back and its tail is blank
+                if (t.stale && t.until < tileEnd) {
+                    const start = BigInt(k) * span;
+                    this.fallback(ctx, t.until > start ? t.until : start, tileEnd, key, config.tickSize, v);
+                }
                 this.paint(ctx, t, span, config, v);
                 // keeps it last in line for eviction
                 tiles!.delete(k);
@@ -147,20 +153,18 @@ export class HeatmapTiles {
                 if (t.stale) missing.push(k);
             } else {
                 missing.push(k);
-                this.fallback(ctx, k, span, v);
+                this.fallback(ctx, BigInt(k) * span, tileEnd, key, config.tickSize, v);
             }
         }
         ctx.restore();
 
         if (cut !== null) {
             // the horizon moves when a live chunk lands, the tile that has it comes later. blank strip every chunk
+            const until = this.paintedUntil(tiles, kFrom, kTo, span, key, config.tickSize);
             let from = cut;
-            for (let k = kTo; k >= kFrom; k--) {
-                const t = tiles?.get(k);
-                if (!t || t.until <= BigInt(k) * span) continue;
-                const until = ((t.until + colNs - 1n) / colNs) * colNs;
-                if (until < from) from = until;
-                break;
+            if (until !== null) {
+                const end = ((until + colNs - 1n) / colNs) * colNs;
+                if (end < from) from = end;
             }
             if (from < view.tMax) this.drawFill(ctx, key, config, from, v);
         }
@@ -202,25 +206,40 @@ export class HeatmapTiles {
         this.drawn.push(t.bitmap);
     }
 
-    // what the last complete zoom drew there, scaled, until the tile comes
-    private fallback(ctx: CanvasRenderingContext2D, k: number, span: bigint, v: TileView): void {
-        if (!this.lastDrawn) return;
-        const tiles = this.byConfig.get(this.lastDrawn);
-        if (!tiles) return;
-        const c = parseKey(this.lastDrawn);
-        const oldSpan = COLUMN_NS[c.column] * BigInt(TILE_COLS);
-        const from = BigInt(k) * span;
-        const to = from + span;
+    // what's held for there, scaled, until the tile comes. the last complete zoom when it has all of it,
+    // zooming out goes past that, then every other zoom held too, coarse first so the finer ones end up on top
+    private fallback(ctx: CanvasRenderingContext2D, from: bigint, to: bigint, key: string, tickSize: number, v: TileView): void {
+        const keys = this.fallbacks(key, tickSize, from, to);
         ctx.save();
         ctx.beginPath();
         const x0 = v.tsToX(from);
         ctx.rect(x0, 0, v.tsToX(to) - x0, v.h);
         ctx.clip();
-        for (const t of tiles.values()) {
-            if (BigInt(t.k + 1) * oldSpan <= from || BigInt(t.k) * oldSpan >= to) continue;
-            this.paint(ctx, t, oldSpan, c, v);
+        for (const old of keys) {
+            const c = parseKey(old);
+            const oldSpan = COLUMN_NS[c.column] * BigInt(TILE_COLS);
+            for (const t of this.byConfig.get(old)!.values()) {
+                if (BigInt(t.k + 1) * oldSpan <= from || BigInt(t.k) * oldSpan >= to) continue;
+                this.paint(ctx, t, oldSpan, c, v);
+            }
         }
         ctx.restore();
+    }
+
+    private covers(key: string, from: bigint, to: bigint): boolean {
+        const tiles = this.byConfig.get(key);
+        if (!tiles) return false;
+        const span = this.spanOf(key);
+        for (let k = from / span; k * span < to; k++) if (!tiles.has(Number(k))) return false;
+        return true;
+    }
+
+    private fallbacks(key: string, tickSize: number, from: bigint, to: bigint): string[] {
+        const held = [...this.byConfig.keys()]
+            .filter((o) => o !== key && parseKey(o).tickSize === tickSize)
+            .sort((a, b) => Number(this.spanOf(b) - this.spanOf(a)));
+        const last = this.lastDrawn;
+        return last && held.includes(last) && this.covers(last, from, to) ? [last] : held;
     }
 
     private drawFill(ctx: CanvasRenderingContext2D, key: string, c: TileConfig, from: bigint, v: TileView): void {
@@ -234,13 +253,47 @@ export class HeatmapTiles {
                 this.post({ type: 'fill', ts: ts.toString(), ...c });
             }
         }
-        // a stale fill beats a gap while the new one is on its way
-        if (!f?.bitmap || f.key !== key) return;
+        // a stale fill beats a gap while the new one is on its way, a zoom changes the key
+        if (!f?.bitmap) return;
+        const own = parseKey(f.key);
+        if (own.tickSize !== c.tickSize) return;
         const x0 = Math.max(0, v.tsToX(from));
-        const top = v.priceToY(((f.rowLo + f.rows) * c.ticks - 0.5) * c.tickSize);
-        const bottom = v.priceToY((f.rowLo * c.ticks - 0.5) * c.tickSize);
+        const top = v.priceToY(((f.rowLo + f.rows) * own.ticks - 0.5) * own.tickSize);
+        const bottom = v.priceToY((f.rowLo * own.ticks - 0.5) * own.tickSize);
         ctx.drawImage(f.bitmap, x0, top, v.w - x0, bottom - top);
         this.drawn.push(f.bitmap);
+    }
+
+    // how far the data goes in what this frame painted, the tile at the end or what fell back for it
+    private paintedUntil(
+        tiles: Map<number, Tile> | undefined,
+        kFrom: number,
+        kTo: number,
+        span: bigint,
+        key: string,
+        tickSize: number,
+    ): bigint | null {
+        let until: bigint | null = null;
+        for (let k = kTo; k >= kFrom; k--) {
+            const t = tiles?.get(k);
+            if (!t || t.until <= BigInt(k) * span) continue;
+            if (k === kTo) return t.until;
+            const end = BigInt(k + 1) * span;
+            until = t.until < end ? t.until : end;
+            break;
+        }
+        const from = BigInt(kTo) * span;
+        const to = from + span;
+        for (const old of this.fallbacks(key, tickSize, from, to)) {
+            const oldSpan = this.spanOf(old);
+            for (const t of this.byConfig.get(old)!.values()) {
+                const end = BigInt(t.k + 1) * oldSpan;
+                if (end <= from || BigInt(t.k) * oldSpan >= to) continue;
+                const reach = t.until < end ? t.until : end;
+                if (until === null || reach > until) until = reach;
+            }
+        }
+        return until;
     }
 
     private spanOf(key: string): bigint {
