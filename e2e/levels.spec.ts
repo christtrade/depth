@@ -648,6 +648,11 @@ test('ohlcv live at 1m: the view steps per bar, not with the clock', async ({ pa
     await settled(page);
     const before = await appends(page);
     await expect.poll(() => appends(page)).toBeGreaterThan(before);
+    // a new bar is the one thing that moves it, not across a minute. the step animates, so some room either side
+    const fromMinute = () => Date.now() % 60_000;
+    if (fromMinute() > 57_000 || fromMinute() < 1_500) {
+        await page.waitForTimeout(((1_500 - fromMinute()) + 60_000) % 60_000);
+    }
     expect((await viewOverASecond(page)).movedMs).toBe(0);
 });
 

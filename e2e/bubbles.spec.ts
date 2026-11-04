@@ -212,14 +212,23 @@ test('l3 live: hover and a pinned bubble hold up as chunks land', async ({ page 
     const errors = watchErrors(page);
     await open(page, '/?sim=1&level=l3');
     await page.waitForTimeout(1500);
-    const b = await biggest(page);
-    await page.mouse.click(b.cx, b.cy);
+    // the view steps a whole bar each minute, one landing right here moves the bubble out from under the click
+    let b = await biggest(page);
+    await expect
+        .poll(async () => {
+            b = await biggest(page);
+            await page.mouse.click(b.cx, b.cy);
+            await page.waitForTimeout(50);
+            // the pin, the card would show for the hover alone
+            return page.evaluate(() => (window as any).__chart.renderEngine.drawParams.selectedDotTs !== null);
+        })
+        .toBe(true);
     await page.mouse.move(b.other.cx, b.other.cy);
-    expect((await card(page))?.Trades).toBeTruthy();
+    expect((await card(page))?.Trades, 'moved to another bubble').toBeTruthy();
     await page.waitForTimeout(1000);
-    expect((await card(page))?.Trades).toBeTruthy();
+    expect((await card(page))?.Trades, 'a second of chunks later').toBeTruthy();
     await page.mouse.move(b.cx, b.cy + 220);
-    expect((await card(page))?.Trades).toBeTruthy();
+    expect((await card(page))?.Trades, 'off every bubble, the pin').toBeTruthy();
     expect(errors).toEqual([]);
 });
 
