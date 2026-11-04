@@ -260,6 +260,56 @@ for (const [tool, y1, y2, grabX] of [
         expect(errors).toEqual([]);
     });
 
+test('log: a channel is parallel on screen and its third click sits on the top line', async ({ page }) => {
+    const errors = watchErrors(page);
+    await openLog(page, { chartType: 'candles', autoScale: false });
+    await page.waitForTimeout(300);
+    const v = await page.evaluate(() => {
+        const c = (window as any).__chart;
+        const box = c.renderEngine.baseCanvas.getBoundingClientRect();
+        const main = c.renderEngine.drawParams.layouts.main;
+        return { pMin: c.renderEngine.view.pMin, pMax: c.renderEngine.view.pMax, h: main.h, x: box.x + main.x, y: box.y + main.y };
+    });
+    await page.evaluate(() => (window as any).__chart.setActiveTool({ name: 'parallel-channel', id: '', state: {} }));
+    const click = async (x: number, y: number) => {
+        await page.mouse.move(v.x + x, v.y + y);
+        await page.mouse.click(v.x + x, v.y + y);
+    };
+    await click(200, 200);
+    await click(600, 350);
+    await click(600, 150);
+    await page.waitForTimeout(200);
+
+    // the lines a redraw strokes, from where they start to where they end
+    await page.evaluate(() => {
+        const w = window as any;
+        const proto = CanvasRenderingContext2D.prototype as any;
+        const moveTo = proto.moveTo;
+        const lineTo = proto.lineTo;
+        w.__lines = [];
+        let from: number[] | null = null;
+        proto.moveTo = function (x: number, y: number) {
+            from = [x, y];
+            return moveTo.call(this, x, y);
+        };
+        proto.lineTo = function (x: number, y: number) {
+            if (from) w.__lines.push([...from, x, y]);
+            from = null;
+            return lineTo.call(this, x, y);
+        };
+        w.__chart.renderEngine.markDirty('drawings');
+    });
+    await page.waitForTimeout(300);
+    const lines = await page.evaluate(() => (window as any).__lines as number[][]);
+    const channel = lines.filter((l) => Math.abs(l[0] - 200) < 2 && Math.abs(l[2] - 600) < 2);
+    // base, top and the default levels between
+    expect(channel.length).toBeGreaterThanOrEqual(2);
+    const rise = channel.map((l) => l[3] - l[1]);
+    for (const r of rise) expect(Math.abs(r - 150), `rises ${rise}`).toBeLessThan(2);
+    expect(channel.some((l) => Math.abs(l[3] - 150) < 2), 'through the third click').toBe(true);
+    expect(errors).toEqual([]);
+});
+
 const geometry = (page: Page) =>
     page.evaluate(() => {
         const c = (window as any).__chart;

@@ -58,6 +58,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   land on what's drawing now, the new build takes them when it's done
 - Footprint rows on a log price axis were all one height, they overlapped up high (28px on a 10x range) and left
   gaps down low. each row is as tall as its prices now
+- A parallel channel wasn't parallel on a log price axis, it is now, the stored height reads as a ratio there. a channel
+  saved on log can come back a different width, linear is untouched
 - Dragging a drawing on a log price axis bent it (40px down moved one end 7px) and could take a price under 0,
   every point moves the same pixels now. plugin tools with their own `onMove` get `shiftPrice` for it
 - Switching to log kept the view's linear margins till the next zoom, the candles sat squashed up top. it fits

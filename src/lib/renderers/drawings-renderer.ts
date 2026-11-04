@@ -1329,6 +1329,25 @@ function renderHRay(
     if (selected || hovered) drawHandle(ctx, x, y, d.color, hotAnchor === 'body');
 }
 
+// `height` is stored as a price offset at `a`. on log the same offset is fewer pixels up high, so a ratio
+// is what keeps the lines parallel
+export function channelPrice(
+    d: { a: { price: number }; height: number },
+    price: number,
+    frac: number,
+    log: boolean,
+): number {
+    const top = d.a.price + d.height;
+    if (!log || d.a.price <= 0 || top <= 0) return price + frac * d.height;
+    return price * (top / d.a.price) ** frac;
+}
+
+// the height that puts the parallel line through `through` at `at`
+export function channelHeight(aPrice: number, at: number, through: number, log: boolean): number {
+    if (!log || at <= 0 || through <= 0) return through - at;
+    return aPrice * (through / at - 1);
+}
+
 function renderParallelChannel(
     ctx: CanvasRenderingContext2D,
     d: ParallelChannelDrawing,
@@ -1347,16 +1366,17 @@ function renderParallelChannel(
         y2 = transformer.priceToY(d.b.price, h) + oy;
     // The parallel ("top") line is the base offset by `height` in PRICE units, so the
     // channel stays pinned to prices across zoom/scroll.
-    const yT1 = transformer.priceToY(d.a.price + d.height, h) + oy;
-    const yT2 = transformer.priceToY(d.b.price + d.height, h) + oy;
+    const log = transformer.getScaleMode() === 'log';
+    const yT1 = transformer.priceToY(channelPrice(d, d.a.price, 1, log), h) + oy;
+    const yT2 = transformer.priceToY(channelPrice(d, d.b.price, 1, log), h) + oy;
     const extL = d.extendLeft ?? false;
     const extR = d.extendRight ?? false;
 
     // Endpoints of the line parallel to the base, offset by `frac` of the channel
     // height (in price), extended to the chart edges when requested.
     const levelEndpoints = (frac: number) => {
-        const ly1 = transformer.priceToY(d.a.price + frac * d.height, h) + oy;
-        const ly2 = transformer.priceToY(d.b.price + frac * d.height, h) + oy;
+        const ly1 = transformer.priceToY(channelPrice(d, d.a.price, frac, log), h) + oy;
+        const ly2 = transformer.priceToY(channelPrice(d, d.b.price, frac, log), h) + oy;
         return extendedEndpoints(x1, ly1, x2, ly2, w, extL, extR);
     };
 
@@ -2947,7 +2967,15 @@ export function drawDrawingsLayer(
                 case 'parallel-channel':
                     renderBuiltIn(
                         draft.b
-                            ? { ...ghost, height: price - draft.b.price }
+                            ? {
+                                  ...ghost,
+                                  height: channelHeight(
+                                      draft.a.price,
+                                      draft.b.price,
+                                      price,
+                                      transformer.getScaleMode() === 'log',
+                                  ),
+                              }
                             : { ...ghost, b: cursor, height: 0 },
                         false,
                         false,
@@ -3187,8 +3215,9 @@ export function hitTestDrawings(
                 const x2 = transformer.tsToX(d.b.ts, chartW),
                     y2 = transformer.priceToY(d.b.price, mainH) + mainOY;
                 // Parallel line endpoints (height is a PRICE offset - convert like render).
-                const yT1 = transformer.priceToY(d.a.price + d.height, mainH) + mainOY;
-                const yT2 = transformer.priceToY(d.b.price + d.height, mainH) + mainOY;
+                const log = transformer.getScaleMode() === 'log';
+                const yT1 = transformer.priceToY(channelPrice(d, d.a.price, 1, log), mainH) + mainOY;
+                const yT2 = transformer.priceToY(channelPrice(d, d.b.price, 1, log), mainH) + mainOY;
                 const cxp = (x1 + x2) / 2;
 
                 // Anchor handles take priority
@@ -3209,10 +3238,10 @@ export function hitTestDrawings(
                 for (const lvl of d.levels ?? DEFAULT_CHANNEL_LEVELS) {
                     if (!lvl.enabled) continue;
                     const ly1 =
-                        transformer.priceToY(d.a.price + Number(lvl.value) * d.height, mainH) +
+                        transformer.priceToY(channelPrice(d, d.a.price, Number(lvl.value), log), mainH) +
                         mainOY;
                     const ly2 =
-                        transformer.priceToY(d.b.price + Number(lvl.value) * d.height, mainH) +
+                        transformer.priceToY(channelPrice(d, d.b.price, Number(lvl.value), log), mainH) +
                         mainOY;
                     const [lsx, lsy, lex, ley] = extendedEndpoints(
                         x1,
@@ -3523,6 +3552,7 @@ export function moveDrawingAnchorDelta(
     curTs: bigint, // absolute cursor position (for individual anchor snap)
     curPrice: number,
     holdingShift: boolean,
+    log = false,
 ): { drawing: Drawing; anchor: DrawingAnchorId } {
     const ret = (drawing: Drawing, newAnchor: DrawingAnchorId = anchor) => ({
         drawing,
@@ -3608,33 +3638,42 @@ export function moveDrawingAnchorDelta(
                 ts: d.ts + dts,
             });
 
-        case 'parallel-channel':
-            if (anchor === 'a')
-                return ret({
-                    ...d,
-                    a: { ts: curTs, price: holdingShift && d?.b?.price ? d.b.price : curPrice },
-                });
+        case 'parallel-channel': {
+            // the height for a new `a` that keeps the parallel line the same pixels off the base
+            const keepRatio = (a: number) => (log ? channelPrice(d, a, 1, true) - a : d.height);
+            if (anchor === 'a') {
+                const price = holdingShift && d?.b?.price ? d.b.price : curPrice;
+                return ret({ ...d, a: { ts: curTs, price }, height: keepRatio(price) });
+            }
             if (anchor === 'b')
                 return ret({ ...d, b: { ts: curTs, price: holdingShift ? d.a.price : curPrice } });
 
-            if (anchor === 'a2')
-                return ret({
-                    ...d,
-                    a: {
-                        ts: curTs,
-                        price: holdingShift && d?.b?.price ? d.b.price : curPrice - d.height,
-                    },
-                });
+            // the cursor is on the parallel line, the base is where it would sit
+            const under = (price: number) => (log ? channelPrice(d, price, -1, true) : price - d.height);
+            if (anchor === 'a2') {
+                const price = holdingShift && d?.b?.price ? d.b.price : under(curPrice);
+                return ret({ ...d, a: { ts: curTs, price }, height: keepRatio(price) });
+            }
             if (anchor === 'a3')
-                return ret({
-                    ...d,
-                    b: { ts: curTs, price: holdingShift ? d.a.price : curPrice - d.height },
-                });
+                return ret({ ...d, b: { ts: curTs, price: holdingShift ? d.a.price : under(curPrice) } });
+
+            // the handles sit halfway in pixels, on log that's the geometric mean
+            const mid = log ? Math.sqrt(d.a.price * d.b.price) : (d.a.price + d.b.price) / 2;
 
             // Base-line midpoint: move the base boundary to the cursor and pin the
             // parallel boundary (channel resizes from the base side).
             if (anchor === 'mt') {
-                const delta = curPrice - (d.a.price + d.b.price) / 2;
+                if (log) {
+                    const r = curPrice / mid;
+                    const a = d.a.price * r;
+                    return ret({
+                        ...d,
+                        a: { ...d.a, price: a },
+                        b: { ...d.b, price: d.b.price * r },
+                        height: channelPrice(d, d.a.price, 1, true) - a,
+                    });
+                }
+                const delta = curPrice - mid;
                 return ret({
                     ...d,
                     a: { ...d.a, price: d.a.price + delta },
@@ -3643,8 +3682,7 @@ export function moveDrawingAnchorDelta(
                 });
             }
             // Parallel-line midpoint: set height so that boundary follows the cursor.
-            if (anchor === 'mb')
-                return ret({ ...d, height: curPrice - (d.a.price + d.b.price) / 2 });
+            if (anchor === 'mb') return ret({ ...d, height: channelHeight(d.a.price, mid, curPrice, log) });
 
             // body - translate both anchors by delta
             return ret({
@@ -3656,6 +3694,7 @@ export function moveDrawingAnchorDelta(
                 },
                 height: shift(d.a.price + d.height) - shift(d.a.price),
             });
+        }
 
         case 'rect': {
             // `a` and `b` are the two defining corners; we don't care which is TL/BR -

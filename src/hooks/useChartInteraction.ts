@@ -24,7 +24,7 @@ import {
 } from '../lib/types/indicator-types';
 import { findTradeDot, type Crosshair, X_AXIS_HEIGHT } from '../lib/renderers/renderer';
 import { autoFitPriceAxis } from './useChartData';
-import { hitTestDrawings, moveDrawingAnchorDelta } from '../lib/renderers/drawings-renderer';
+import { channelHeight, hitTestDrawings, moveDrawingAnchorDelta } from '../lib/renderers/drawings-renderer';
 import { getEffectiveDpr } from '../lib/dpr';
 import { pointerLock } from '../lib/pointer-lock';
 import { TOOL_SHORTCUTS } from '../components/drawings/drawing-toolbar';
@@ -1174,7 +1174,12 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                                         ...base,
                                         a,
                                         b,
-                                        height: price - b.price,
+                                        height: channelHeight(
+                                            a.price,
+                                            b.price,
+                                            price,
+                                            transformer.getScaleMode() === 'log',
+                                        ),
                                     } as Drawing);
                                 else draftRef.current = { ...draft, b: anchor } as DraftDrawing;
                                 break;
@@ -1816,10 +1821,10 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                     const dprice = curPrice - prev.price;
                     // same pixels for every point, adding a price on log bends the shape and can go under 0
                     const ratio = curPrice / prev.price;
-                    const shift =
-                        transformer.getScaleMode() === 'log' && viewRef.current.pMin > 0 && ratio > 0
-                            ? (price: number) => price * ratio
-                            : (price: number) => price + dprice;
+                    const logAxis = transformer.getScaleMode() === 'log' && viewRef.current.pMin > 0 && ratio > 0;
+                    const shift = logAxis
+                        ? (price: number) => price * ratio
+                        : (price: number) => price + dprice;
 
                     drawingsRef.current = drawingsRef.current.map((d) => {
                         if (d.id !== drawingId) return d;
@@ -1845,6 +1850,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                             curTs,
                             curPrice,
                             isHoldingShiftRef.current,
+                            logAxis,
                         );
                         if (newAnchor !== anchor && draggingAnchorRef.current) {
                             draggingAnchorRef.current = { drawingId, anchor: newAnchor };
