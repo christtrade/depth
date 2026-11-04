@@ -407,6 +407,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
             hoveringLegend: hoveringLegend.current,
             showTooltip: showTooltipRef.current,
             selectedDotTs: selectedDotTsRef.current,
+            isDragging: isDragging.current,
             activeTool: activeToolRef.current,
             draggingAnchor: draggingAnchorRef.current,
             isHoldingCtrl: isHoldingCtrlRef.current,

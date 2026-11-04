@@ -1,7 +1,19 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { cachedRefSize, columnNs, dotAt, dotRows, pickDot, refSize, sizeT, tradeDots, type TradeDot } from './trade-dots';
+import {
+    cachedRefSize,
+    columnNs,
+    dotAt,
+    dotRows,
+    drawnDots,
+    pickDot,
+    refSize,
+    rememberDots,
+    sizeT,
+    tradeDots,
+    type TradeDot,
+} from './trade-dots';
 
 const tr = (ts: number, price: number, size: number, side = 'B') => ({ ts: BigInt(ts), price, size, side });
 // 1 px per ns
@@ -43,6 +55,20 @@ describe('trade dots', () => {
         assert.equal(dotAt(trades, 0n, 0n, 3n, x, 8n)?.size, 3);
         assert.equal(dotAt(trades, 0n, 8n, 100n, x, 8n), null);
         assert.equal(dotAt(trades, 16n, 0n, 8n, x, 8n), null);
+    });
+
+    it('drawn dots only count for the view and data they were drawn at', () => {
+        const trades = [tr(0, 100, 1)];
+        const dots = tradeDots(trades, 0n, 100n, x, 8n);
+        assert.equal(drawnDots(trades, 0n, 100n, 800), null);
+        rememberDots(trades, 0n, 100n, 800, dots);
+        assert.equal(drawnDots(trades, 0n, 100n, 800), dots);
+        assert.equal(drawnDots(trades, 1n, 100n, 800), null);
+        assert.equal(drawnDots(trades, 0n, 101n, 800), null);
+        assert.equal(drawnDots(trades, 0n, 100n, 801), null);
+        assert.equal(drawnDots([tr(0, 100, 1)], 0n, 100n, 800), null);
+        trades.push(tr(1, 100, 1));
+        assert.equal(drawnDots(trades, 0n, 100n, 800), null);
     });
 
     describe('pickDot', () => {

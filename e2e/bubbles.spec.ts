@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { dotRadius, refSize, columnNs } from '../src/lib/renderers/trade-dots';
 import { settled, watchErrors } from './helpers';
 
-const open = async (page: Page) => {
+const open = async (page: Page, url = '/?level=l3') => {
     await page.addInitScript(() => {
         const w = window as any;
         w.__text = [];
@@ -13,7 +13,7 @@ const open = async (page: Page) => {
             return fillText.call(this, s, x, y);
         };
     });
-    await page.goto('/?level=l3');
+    await page.goto(url);
     await settled(page);
     await page.evaluate(() => (window as any).__chart.setChartSettings({ chartType: 'line', showTradeDots: true }));
     await page.waitForTimeout(500);
@@ -63,7 +63,17 @@ const biggest = (page: Page) =>
         for (const d of cols.values()) if (!best || d.size > best.size) best = d;
         const sx = best.sx / best.size;
         const sy = p.transformer.priceToY(best.sp / best.size, h);
+        // the biggest one well clear of it
+        let far: any = null;
+        for (const d of cols.values()) {
+            if (Math.abs(d.sx / d.size - sx) > 120 && d.size !== best.size && (!far || d.size > far.size)) far = d;
+        }
         return {
+            other: {
+                size: far.size as number,
+                cx: box.left + far.sx / far.size,
+                cy: box.top + p.transformer.priceToY(far.sp / far.size, h),
+            },
             n: best.n as number,
             size: best.size as number,
             buy: best.buy as number,
@@ -146,6 +156,80 @@ test('l3: the card goes when the bubble is panned off, clicked away or turned of
     await page.waitForTimeout(200);
     const gone = await page.evaluate((first) => BigInt(first) < (window as any).__chart.renderEngine.view.tMin, b.first);
     expect(gone).toBe(true);
+    expect(await card(page)).toBeNull();
+});
+
+test('l3: hovering a bubble shows its card, moving off drops it', async ({ page }) => {
+    const errors = watchErrors(page);
+    await open(page);
+    const b = await biggest(page);
+    await page.mouse.move(b.cx, b.cy);
+    expect((await card(page))?.Total).toBe(b.size.toLocaleString('en-US'));
+    await page.mouse.move(b.cx, b.cy + 220);
+    expect(await card(page)).toBeNull();
+    expect(errors).toEqual([]);
+});
+
+test('l3: hovering another bubble swaps the card, a pinned one comes back after', async ({ page }) => {
+    await open(page);
+    const b = await biggest(page);
+    await page.mouse.click(b.cx, b.cy);
+    await page.mouse.move(b.cx, b.cy + 220);
+    expect((await card(page))?.Total).toBe(b.size.toLocaleString('en-US'));
+    await page.mouse.move(b.other.cx, b.other.cy);
+    expect((await card(page))?.Total).toBe(b.other.size.toLocaleString('en-US'));
+    await page.mouse.move(b.cx, b.cy + 220);
+    expect((await card(page))?.Total).toBe(b.size.toLocaleString('en-US'));
+});
+
+test('l3: a pan over the bubbles shows no hover card', async ({ page }) => {
+    await open(page);
+    const b = await biggest(page);
+    await page.mouse.move(b.cx, b.cy);
+    await page.mouse.down();
+    await page.mouse.move(b.cx + 6, b.cy, { steps: 3 });
+    expect(await card(page)).toBeNull();
+    await page.mouse.up();
+});
+
+test('l3: a hover follows a zoom without a mouse move', async ({ page }) => {
+    await open(page);
+    const b = await biggest(page);
+    await page.mouse.move(b.cx, b.cy);
+    const before = await card(page);
+    expect(before).not.toBeNull();
+    for (let i = 0; i < 6; i++) {
+        await page.mouse.wheel(0, 300);
+        await page.waitForTimeout(16);
+    }
+    await page.waitForTimeout(400);
+    const after = await card(page);
+    expect(after?.Total).not.toBe(before!.Total);
+});
+
+test('l3 live: hover and a pinned bubble hold up as chunks land', async ({ page }) => {
+    const errors = watchErrors(page);
+    await open(page, '/?sim=1&level=l3');
+    await page.waitForTimeout(1500);
+    const b = await biggest(page);
+    await page.mouse.click(b.cx, b.cy);
+    await page.mouse.move(b.other.cx, b.other.cy);
+    expect((await card(page))?.Trades).toBeTruthy();
+    await page.waitForTimeout(1000);
+    expect((await card(page))?.Trades).toBeTruthy();
+    await page.mouse.move(b.cx, b.cy + 220);
+    expect((await card(page))?.Trades).toBeTruthy();
+    expect(errors).toEqual([]);
+});
+
+test('l3: a drawing tool gets no hover card', async ({ page }) => {
+    await open(page);
+    const b = await biggest(page);
+    await page.mouse.move(b.cx, b.cy);
+    expect(await card(page)).not.toBeNull();
+    await page.evaluate(() => (window as any).__chart.setActiveTool({ name: 'line', id: '', state: {} }));
+    await page.waitForTimeout(100);
+    await page.mouse.move(b.cx + 1, b.cy);
     expect(await card(page)).toBeNull();
 });
 

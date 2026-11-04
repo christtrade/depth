@@ -74,6 +74,18 @@ export function dotAt(
     return tradeDots(trades, lo, hi, xOf, colNs)[0] ?? null;
 }
 
+const drawn = new WeakMap<Trade[], { tMin: bigint; tMax: bigint; w: number; len: number; dots: TradeDot[] }>();
+
+export function rememberDots(trades: Trade[], tMin: bigint, tMax: bigint, w: number, dots: TradeDot[]): void {
+    drawn.set(trades, { tMin, tMax, w, len: trades.length, dots });
+}
+
+// a hover can't walk every visible trade per move, 40-100 ms at 1M on screen
+export function drawnDots(trades: Trade[], tMin: bigint, tMax: bigint, w: number): TradeDot[] | null {
+    const d = drawn.get(trades);
+    return d && d.tMin === tMin && d.tMax === tMax && d.w === w && d.len === trades.length ? d.dots : null;
+}
+
 // dots in draw order, the last one covering the cursor is the one on top
 export function pickDot(
     dots: TradeDot[],

@@ -42,6 +42,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   stand out. `tradeDotsSizeMult` 1-5 takes full size to 1x-3x
 - A click picks the bubble now and not one trade in it. The card shows its total, buy/sell split, vwap and trade
   count, and regroups on zoom
+- Hovering a bubble rings it and shows its card, a click pins it. 0.013 ms a move at 1M trades on screen, it
+  reads the bubbles the last draw made
 
 ### Fixed
 - The heatmap flashed a blank column at the horizon on every live chunk, the tile with the new data comes a

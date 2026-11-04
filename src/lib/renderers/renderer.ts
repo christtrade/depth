@@ -27,7 +27,18 @@ import {
     buildOrdinalModel,
 } from '../series/japaneseCharts';
 import type { CrosshairSync } from '../types/layout-sync';
-import { cachedRefSize, columnNs, dotAt, dotRadius, dotRows, pickDot, tradeDots, type TradeDot } from './trade-dots';
+import {
+    cachedRefSize,
+    columnNs,
+    dotAt,
+    dotRadius,
+    dotRows,
+    drawnDots,
+    pickDot,
+    rememberDots,
+    tradeDots,
+    type TradeDot,
+} from './trade-dots';
 
 const LABEL_H = 20;
 
@@ -441,6 +452,7 @@ export function drawUILayer(
     priceTransition?: PriceTransition,
     syncCrosshair?: CrosshairSync | null,
     isRequestingSelectBar?: boolean,
+    isDragging?: boolean,
 ) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -676,10 +688,21 @@ export function drawUILayer(
         } catch {}
     }
 
-    if (selectedDotTs !== null && chartSettings.showTradeDots) {
-        drawDotSelection(
+    const hoverDots =
+        ownsPointer &&
+        crosshair!.y < mainPaneH &&
+        !isDragging &&
+        activeTool?.name === 'cursor' &&
+        !draggingAnchor &&
+        !hoveredLineId &&
+        !draggingLineId &&
+        !suspendCrosshair &&
+        !isRequestingSelectBar;
+    if (chartSettings.showTradeDots && (selectedDotTs !== null || hoverDots)) {
+        drawDotMarks(
             ctx,
             selectedDotTs,
+            hoverDots ? crosshair : null,
             trades,
             bounds,
             chartW,
@@ -1646,8 +1669,13 @@ export function findTradeDot(
     if (trades.length === 0 || chartW <= 0) return null;
     const ref = cachedRefSize(trades, dotColumn(bounds, chartW));
     const mult = chartSettings.tradeDotsSizeMult ?? 1;
+    let dots = drawnDots(trades, bounds.tMin, bounds.tMax, chartW);
+    if (!dots) {
+        dots = visibleDots(trades, bounds, chartW, horizon, transformer);
+        rememberDots(trades, bounds.tMin, bounds.tMax, chartW, dots);
+    }
     return pickDot(
-        visibleDots(trades, bounds, chartW, horizon, transformer),
+        dots,
         clickX,
         clickY,
         transformer.makePriceToYFn(chartH),
@@ -2475,6 +2503,7 @@ function drawTrades(
     if (trades.length === 0 || w <= 0) return;
     const priceToYFn = transformer.makePriceToYFn(h);
     const dots = visibleDots(trades, bounds, w, horizon, transformer);
+    rememberDots(trades, bounds.tMin, bounds.tMax, w, dots);
     const ref = cachedRefSize(trades, dotColumn(bounds, w));
     const mult = chartSettings.tradeDotsSizeMult ?? 1;
     const PI2 = Math.PI * 2;
@@ -2506,9 +2535,10 @@ function drawTrades(
     ctx.restore();
 }
 
-function drawDotSelection(
+function drawDotMarks(
     ctx: CanvasRenderingContext2D,
-    selectedTs: bigint,
+    selectedTs: bigint | null,
+    hoverAt: Crosshair,
     trades: TradePoint[],
     bounds: ViewBounds,
     chartW: number,
@@ -2519,26 +2549,32 @@ function drawDotSelection(
     symbolInfo?: SymbolInfo,
 ) {
     const colNs = dotColumn(bounds, chartW);
-    const dot = dotAt(
-        trades,
-        selectedTs,
-        bounds.tMin,
-        dotCut(bounds, horizon),
-        transformer.makeTsToXFn(chartW),
-        colNs,
-    );
-    if (!dot) return;
-    const y = transformer.priceToY(dot.price, chartH);
-    if (y < 0 || y > chartH) return;
-    const r = dotRadius(dot.size, cachedRefSize(trades, colNs), chartSettings.tradeDotsSizeMult ?? 1);
+    const pinned =
+        selectedTs === null
+            ? null
+            : dotAt(trades, selectedTs, bounds.tMin, dotCut(bounds, horizon), transformer.makeTsToXFn(chartW), colNs);
+    const hovered = hoverAt
+        ? findTradeDot(hoverAt.x, hoverAt.y, trades, bounds, chartW, chartH, chartSettings, horizon, transformer)
+        : null;
 
-    ctx.beginPath();
-    ctx.arc(dot.x, y, r + 2, 0, Math.PI * 2);
-    ctx.strokeStyle = chartSettings.axisTextColor;
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-
-    drawDotDetail(ctx, dot, y, r, chartW, chartH, chartSettings, symbolInfo);
+    const ref = cachedRefSize(trades, colNs);
+    const mult = chartSettings.tradeDotsSizeMult ?? 1;
+    const ring = (dot: TradeDot | null) => {
+        if (!dot) return null;
+        const y = transformer.priceToY(dot.price, chartH);
+        if (y < 0 || y > chartH) return null;
+        const r = dotRadius(dot.size, ref, mult);
+        ctx.beginPath();
+        ctx.arc(dot.x, y, r + 2, 0, Math.PI * 2);
+        ctx.strokeStyle = chartSettings.axisTextColor;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        return { dot, y, r };
+    };
+    const a = ring(pinned);
+    const b = hovered && hovered.ts !== pinned?.ts ? ring(hovered) : null;
+    const card = b ?? a;
+    if (card) drawDotDetail(ctx, card.dot, card.y, card.r, chartW, chartH, chartSettings, symbolInfo);
 }
 
 function drawDotDetail(

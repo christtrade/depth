@@ -91,6 +91,7 @@ export interface DrawParams {
     hoveringLegend: boolean;
     showTooltip: boolean;
     selectedDotTs: bigint | null;
+    isDragging: boolean;
     activeTool: ActiveDrawingTool;
     draggingAnchor: any;
     isHoldingCtrl: boolean;
@@ -626,7 +627,8 @@ export class RenderEngine {
             p.priceScaleWidth,
             this.priceTransition,
             p.syncCrosshair,
-            p.isRequestingSelectBar
+            p.isRequestingSelectBar,
+            p.isDragging,
         );
 
         this.eventBus.emit('hitmap:update', { id: this.chartId, hitMap });
