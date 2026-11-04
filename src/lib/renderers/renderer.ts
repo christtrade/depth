@@ -380,7 +380,7 @@ export function drawBaseLayer(
                 barNs,
                 chartSettings,
                 transformer,
-                transformer.getScaleMode() === 'log',
+                false,
                 symbolInfo
             );
         }
@@ -3016,12 +3016,9 @@ function drawCrosshair(
         const yMin = activePaneEntry.isMain ? bounds.pMin : activePaneEntry.yMin;
         const yMax = activePaneEntry.isMain ? bounds.pMax : activePaneEntry.yMax;
         const localY = _y - activeRect.y;
-        const valueAtCursor = yMin + ((activeRect.h - localY) / activeRect.h) * (yMax - yMin);
-        // const valueStr = activePaneEntry.isMain
-        //     ? (Math.round(valueAtCursor * 4) / 4).toFixed(precision)
-        //     : Math.abs(valueAtCursor) >= 1000
-        //       ? `${(valueAtCursor / 1000).toFixed(1)}k`
-        //       : valueAtCursor.toFixed(0);
+        const valueAtCursor = activePaneEntry.isMain
+            ? transformer.yToPrice(localY, activeRect.h)
+            : yMin + ((activeRect.h - localY) / activeRect.h) * (yMax - yMin);
         const valueStr = formatPrice(
             Math.round(valueAtCursor / crosshairTick) * crosshairTick,
             symbolInfo,

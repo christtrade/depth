@@ -1264,9 +1264,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                     const fraction = Math.max(0, Math.min(1, x / chartWInner));
                     const ts = viewRef.current.tMin + BigInt(Math.round(fraction * tRange));
 
-                    const priceRange = viewRef.current.pMax - viewRef.current.pMin;
-                    const priceFrac = 1 - Math.max(0, Math.min(1, (y - mainOY) / mainH));
-                    const price = viewRef.current.pMin + priceRange * priceFrac;
+                    const price = transformer.yToPrice(Math.max(0, Math.min(mainH, y - mainOY)), mainH);
                     shiftAnchor2Ref.current = { ts, price, x, y };
 
                     pushDrawParams();
@@ -1296,9 +1294,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                 const fraction = Math.max(0, Math.min(1, x / chartWInner));
                 const ts = viewRef.current.tMin + BigInt(Math.round(fraction * tRange));
 
-                const priceRange = viewRef.current.pMax - viewRef.current.pMin;
-                const priceFrac = 1 - Math.max(0, Math.min(1, (y - mainOY) / mainH));
-                const price = viewRef.current.pMin + priceRange * priceFrac;
+                const price = transformer.yToPrice(Math.max(0, Math.min(mainH, y - mainOY)), mainH);
 
                 showShiftInfo.current = true;
                 shiftAnchorRef.current = { ts, price, x, y };

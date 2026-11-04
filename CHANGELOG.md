@@ -51,6 +51,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reads the bubbles the last draw made
 
 ### Fixed
+- On a log price axis the crosshair pill read a linear price (162.99 where the axis said ~22), the shift measure
+  anchored on one too, ~160px off the click, and a sub pane's grid took log rows off its linear labels
 - Overlay indicators ignored a log price axis and drew linear, up to a third of the chart off the candles
 - Older data coming in recolored the heatmap on screen, brightness started over from the whole data. it keeps it now
 - Tiles of other zooms outlived older data coming in, their book was wrong and near empty where the old data
