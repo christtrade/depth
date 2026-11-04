@@ -232,6 +232,108 @@ test('l3 live: hover and a pinned bubble hold up as chunks land', async ({ page 
     expect(errors).toEqual([]);
 });
 
+test('l3: the card time follows the chart timezone and clock', async ({ page }) => {
+    await open(page);
+    await page.evaluate(() => (window as any).__chart.setChartSettings({ timezone: 'Asia/Tokyo', use24HourClock: true }));
+    await page.waitForTimeout(200);
+    const b = await biggest(page);
+    await page.mouse.click(b.cx, b.cy);
+    const want = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Tokyo',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        fractionalSecondDigits: 3,
+        hourCycle: 'h23',
+    }).format(new Date(Number(BigInt(b.first) / 1_000_000n)));
+    expect((await card(page))?.Time).toBe(want);
+
+    await page.evaluate(() => (window as any).__chart.setChartSettings({ use24HourClock: false }));
+    await page.waitForTimeout(200);
+    expect((await card(page))?.Time).toMatch(/^\d\d:\d\d:\d\d\.\d{3} (AM|PM)$/);
+});
+
+for (const theme of ['dark', 'light', 'gruvboxlight'])
+    test(`l3: the card is readable on the ${theme} theme, and looks like it`, async ({ page }) => {
+        await open(page);
+        await page.evaluate((id) => (window as any).__chart.setTheme(id), theme);
+        await page.waitForTimeout(300);
+        const b = await biggest(page);
+        await page.mouse.click(b.cx, b.cy);
+        // the colors behind and in front of the card's first value
+        const got = await page.evaluate(async () => {
+            const w = window as any;
+            const proto = CanvasRenderingContext2D.prototype as any;
+            const fillRect = proto.fillRect;
+            const fillText = proto.fillText;
+            let lastWide = '';
+            let label = '';
+            let value = '';
+            let afterTotal = false;
+            let afterBuy = false;
+            let afterSell = false;
+            let buy = '';
+            let sell = '';
+            proto.fillRect = function (x: number, y: number, rw: number, rh: number) {
+                if (rw > 40 && rh > 80) lastWide = this.fillStyle;
+                return fillRect.call(this, x, y, rw, rh);
+            };
+            proto.fillText = function (s: string, ...a: unknown[]) {
+                if (s === 'Total') {
+                    label = this.fillStyle;
+                    afterTotal = true;
+                } else if (afterTotal) {
+                    value = this.fillStyle;
+                    afterTotal = false;
+                } else if (s === 'Buy') afterBuy = true;
+                else if (s === 'Sell') afterSell = true;
+                else if (afterBuy) {
+                    buy = this.fillStyle;
+                    afterBuy = false;
+                } else if (afterSell) {
+                    sell = this.fillStyle;
+                    afterSell = false;
+                }
+                return fillText.call(this, s, ...a);
+            };
+            w.__chart.renderEngine.markDirty('ui');
+            for (let i = 0; i < 3; i++) await new Promise(requestAnimationFrame);
+            proto.fillRect = fillRect;
+            proto.fillText = fillText;
+            return {
+                bg: lastWide,
+                label,
+                value,
+                buy,
+                sell,
+                chartBg: w.__chart.renderEngine.drawParams.chartSettings.backgroundColor as string,
+            };
+        });
+        const rgb = (c: string) => {
+            const m = c.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i);
+            if (m) return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
+            return c.match(/[\d.]+/g)!.slice(0, 3).map(Number);
+        };
+        const lum = (c: string) => {
+            const [r, g, bl] = rgb(c).map((v) => {
+                const s = v / 255;
+                return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+            });
+            return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+        };
+        const contrast = (a: string, c: string) => {
+            const [hi, lo] = [lum(a), lum(c)].sort((x, y) => y - x);
+            return (hi + 0.05) / (lo + 0.05);
+        };
+        expect(contrast(got.bg, got.label), `label on card ${JSON.stringify(got)}`).toBeGreaterThan(4.5);
+        expect(contrast(got.bg, got.value), `value on card ${JSON.stringify(got)}`).toBeGreaterThan(4.5);
+        expect(contrast(got.bg, got.buy), `buy on card ${JSON.stringify(got)}`).toBeGreaterThan(3);
+        expect(contrast(got.bg, got.sell), `sell on card ${JSON.stringify(got)}`).toBeGreaterThan(3);
+        // the same family as the chart, a black card on a white chart is what this was
+        const light = lum(got.chartBg) > 0.4;
+        expect(lum(got.bg) > 0.2, `card ${got.bg} on chart ${got.chartBg}`).toBe(light);
+    });
+
 test('l3: a drawing tool gets no hover card', async ({ page }) => {
     await open(page);
     const b = await biggest(page);

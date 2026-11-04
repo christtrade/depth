@@ -2598,7 +2598,9 @@ function drawDotDetail(
     const sellColor = `rgb(${SELL_RGB})`;
     const accentColor = dot.buySize * 2 >= dot.size ? buyColor : sellColor;
 
-    const timeStr = nsToDate(dot.ts).toISOString().slice(11, 23); // HH:MM:SS.mmm
+    const timeStr = DateTime.fromMillis(Number(dot.ts / 1_000_000n), { zone: chartSettings.timezone ?? 'UTC' }).toFormat(
+        (chartSettings.use24HourClock ?? true) ? 'HH:mm:ss.SSS' : 'hh:mm:ss.SSS a',
+    );
     const rows = dotRows(dot, formatPrice(dot.price, symbolInfo), timeStr);
 
     ctx.font = '11px "Inter"';
@@ -2622,7 +2624,7 @@ function drawDotDetail(
     if (boxY + boxH > chartH - 4) boxY = chartH - boxH - 4;
 
     // Background
-    ctx.fillStyle = 'rgba(12, 13, 17, 0.95)';
+    ctx.fillStyle = chartSettings.backgroundColor;
     ctx.fillRect(boxX, boxY, boxW, boxH);
 
     // Colored left-edge accent bar
@@ -2630,20 +2632,23 @@ function drawDotDetail(
     ctx.fillRect(boxX, boxY, 3, boxH);
 
     // Outer border
-    ctx.strokeStyle = '#2a2a2a';
+    ctx.strokeStyle = chartSettings.axisTextColor;
+    ctx.globalAlpha = 0.3;
     ctx.lineWidth = 1;
     ctx.strokeRect(boxX, boxY, boxW, boxH);
+    ctx.globalAlpha = 1;
 
     // Row text
     ctx.textBaseline = 'middle';
     rows.forEach(([label, value], i) => {
         const rowY = boxY + 10 + i * rowH + rowH / 2;
 
-        ctx.fillStyle = chartSettings.axisTextColor;
+        ctx.fillStyle = chartSettings.crosshairLabelTextColor;
         ctx.textAlign = 'left';
         ctx.fillText(label, boxX + 10, rowY);
 
-        ctx.fillStyle = i === 1 ? buyColor : i === 2 ? sellColor : '#e0e0e0';
+        ctx.fillStyle =
+            i === 1 ? chartSettings.upBodyColor : i === 2 ? chartSettings.downBodyColor : chartSettings.crosshairLabelTextColor;
         ctx.textAlign = 'right';
         ctx.fillText(value, boxX + boxW - 10, rowY);
     });
