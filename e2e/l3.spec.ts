@@ -141,6 +141,25 @@ test('l3: None opens on half a minute', async ({ page }) => {
     expect(errors).toEqual([]);
 });
 
+test('l3 live: switching to None keeps the horizon on screen', async ({ page }) => {
+    await page.goto('/?sim=1&level=l3');
+    await settled(page);
+    await page.evaluate(() => (window as any).__chart.setTimeframe('None'));
+    const spot = () =>
+        page.evaluate(() => {
+            const c = (window as any).__chart;
+            const v = c.renderEngine.view;
+            return {
+                span: Number(v.tMax - v.tMin) / 1e6,
+                at: Number(BigInt(c.horizon()) * 1_000_000n - v.tMin) / Number(v.tMax - v.tMin),
+            };
+        });
+    await expect.poll(async () => (await spot()).span, { timeout: 20_000 }).toBe(30_000);
+    const { at } = await spot();
+    expect(at).toBeGreaterThan(0);
+    expect(at).toBeLessThan(1);
+});
+
 test('l3: None zoomed in draws its bid and ask from the replay', async ({ page }) => {
     const errors = watchErrors(page);
     await page.setViewportSize({ width: 1400, height: 800 });

@@ -18,6 +18,7 @@ import {
     TimeframeUnit,
     lockedReason,
     servableBarNs,
+    switchView,
     tfViewSpan,
     unsupportedReason,
     timeframeFromBarNs,
@@ -662,8 +663,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
             const end = horizonRef.current + span / 10n;
             return { from: end - span, to: end };
         }
-        const center = (view.tMin + view.tMax) / 2n;
-        return { from: center - span / 2n, to: center + span / 2n };
+        return switchView(view, horizonRef.current, span);
     }
 
     function hasHistoryFor({ from }: { from: bigint; to: bigint }): boolean {

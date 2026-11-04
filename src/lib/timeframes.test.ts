@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { PRESET_TIMEFRAMES, servableBarNs, unsupportedReason, zoomSpanLimits } from './timeframes';
+import { PRESET_TIMEFRAMES, servableBarNs, switchView, unsupportedReason, zoomSpanLimits } from './timeframes';
 
 const SEC = 1_000_000_000n;
 const MIN = 60n * SEC;
@@ -63,5 +63,27 @@ describe('zoomSpanLimits', () => {
 
     it('keeps 3 bars for the rest', () => {
         assert.equal(zoomSpanLimits(tf('1s'), 1).min, 3_000_000_000n);
+    });
+});
+
+describe('the view a timeframe switch lands on', () => {
+    const view = { tMin: 0n, tMax: 800n * SEC };
+
+    it('keeps the center when the horizon stays on screen', () => {
+        assert.deepEqual(switchView(view, 550n * SEC, 400n * SEC), { from: 200n * SEC, to: 600n * SEC });
+    });
+
+    it('keeps the center going wider', () => {
+        assert.deepEqual(switchView(view, 640n * SEC, 1600n * SEC), { from: -400n * SEC, to: 1200n * SEC });
+    });
+
+    it('a span too narrow for the horizon zooms around it, at the same spot on screen', () => {
+        // the horizon 80% across, 5 min right of the center
+        const v = switchView(view, 640n * SEC, 30n * SEC);
+        assert.deepEqual(v, { from: 616n * SEC, to: 646n * SEC });
+    });
+
+    it('stays on what you panned to when the horizon was off screen', () => {
+        assert.deepEqual(switchView(view, 5000n * SEC, 30n * SEC), { from: 385n * SEC, to: 415n * SEC });
     });
 });

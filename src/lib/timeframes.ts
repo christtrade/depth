@@ -123,6 +123,18 @@ export function tfViewSpan(tf: Timeframe, bars?: number): bigint {
     return tf.barNs * BigInt(bars ?? tf.defaultBars);
 }
 
+// the center stays, unless that loses a horizon that was on screen. a 30s None around the center of a 1m view
+// opened ~5 min behind live
+export function switchView(view: { tMin: bigint; tMax: bigint }, horizon: bigint, span: bigint): { from: bigint; to: bigint } {
+    const center = (view.tMin + view.tMax) / 2n;
+    const from = center - span / 2n;
+    const to = center + span / 2n;
+    const wasOn = horizon > view.tMin && horizon < view.tMax;
+    if (!wasOn || (horizon > from && horizon < to)) return { from, to };
+    const left = ((horizon - view.tMin) * span) / (view.tMax - view.tMin);
+    return { from: horizon - left, to: horizon - left + span };
+}
+
 const SEC_NS = 1_000_000_000n;
 
 // 3 to 3400 bars. sub-second ones zoom out as far as 1s. None zooms in to 3 of the heatmap's finest columns
