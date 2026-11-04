@@ -193,7 +193,7 @@ export const CVARS: CvarSpec[] = [
     {"name":"footprintDiagRatio","type":{"kind":"number"},"group":"Footprint signals"},
     {"name":"footprintAbsorptionMult","type":{"kind":"number"},"group":"Footprint signals"},
     {"name":"footprintAbsorptionDeltaFrac","type":{"kind":"number"},"group":"Footprint signals"},
-    {"name":"priceScaleMode","type":{"kind":"enum","values":["normal","log","percent"]},"group":"Scales"},
+    {"name":"priceScaleMode","type":{"kind":"enum","values":["normal","log","percent"]},"group":"Scales","doc":"`log` draws linear on a symbol with prices at or under 0, the setting stays for the next one."},
     {"name":"autoScale","type":{"kind":"boolean"},"group":"Scales"},
     {"name":"priceAxisResizeSensitivity","type":{"kind":"number"},"group":"Scales"},
     {"name":"invertScale","type":{"kind":"boolean"},"group":"Scales"},

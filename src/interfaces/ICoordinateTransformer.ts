@@ -16,7 +16,7 @@ import type { ViewBounds } from '../lib/types';
 // Scale modes
 export type PriceScaleMode =
     | 'linear' // default - straight proportional mapping
-    | 'log' // logarithmic price axis (future)
+    | 'log' // logarithmic price axis, linear while the view has prices at or under 0
     | 'percent'; // percent change from pRef (future)
 
 // Stateless interface

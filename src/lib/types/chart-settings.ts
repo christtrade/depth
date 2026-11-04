@@ -37,6 +37,7 @@ export type ChartSettings = {
     footprintAbsorptionMult: number;
     footprintAbsorptionDeltaFrac: number;
     // Scales
+    /** `log` draws linear on a symbol with prices at or under 0, the setting stays for the next one. */
     priceScaleMode: 'normal' | 'log' | 'percent';
     autoScale: boolean;
     priceAxisResizeSensitivity: number;

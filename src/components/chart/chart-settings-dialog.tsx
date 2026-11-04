@@ -91,6 +91,8 @@ interface ChartSettingsDialogProps {
     onMouseLeave?: () => void;
     /** The active chart type, when it came from a plugin. Adds its own tab. */
     pluginChartType?: ChartTypePlugin | null;
+    /** Set when this symbol can't go on a log axis. */
+    logBlockedReason?: string;
 }
 
 
@@ -102,6 +104,7 @@ export function ChartSettingsDialog({
     onMouseEnter,
     onMouseLeave,
     pluginChartType,
+    logBlockedReason,
 }: ChartSettingsDialogProps) {
     const [pickedTab, setTab] = useState<Tab>('candles');
     // the plugin tab can vanish under the user if they switch chart type with
@@ -671,13 +674,14 @@ export function ChartSettingsDialog({
                         <div className="flex flex-col gap-5">
                             <Section label="Price scale mode">
                                 <div className="flex gap-1.5">
-                                    {(['normal', 'percent'] as const).map((m) => (
+                                    {(['normal', 'log', 'percent'] as const).map((m) => (
                                         <ToggleChip
                                             key={m}
-                                            active={s.priceScaleMode === m}
+                                            active={(logBlockedReason && s.priceScaleMode === 'log' ? 'normal' : s.priceScaleMode) === m}
                                             onClick={() => onUpdate({ priceScaleMode: m })}
+                                            disabledReason={m === 'log' ? logBlockedReason : undefined}
                                         >
-                                            {m === 'normal' ? 'Linear' : '%'}
+                                            {m === 'normal' ? 'Linear' : m === 'log' ? 'Log' : '%'}
                                         </ToggleChip>
                                     ))}
                                 </div>
@@ -1537,20 +1541,26 @@ function ToggleChip({
     active,
     onClick,
     children,
+    disabledReason,
 }: {
     active: boolean;
     onClick: () => void;
     children: React.ReactNode;
+    disabledReason?: string;
 }) {
     return (
         <button
             className={cn(
                 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-medium transition-colors',
-                active
-                    ? 'border-brand-500/40 bg-brand-500/15 text-brand-300'
-                    : 'border-white/8 bg-white/4 text-white/40 hover:border-white/15 hover:bg-white/7 hover:text-white/70',
+                disabledReason
+                    ? 'border-white/5 bg-white/2 text-white/15 cursor-not-allowed'
+                    : active
+                      ? 'border-brand-500/40 bg-brand-500/15 text-brand-300'
+                      : 'border-white/8 bg-white/4 text-white/40 hover:border-white/15 hover:bg-white/7 hover:text-white/70',
             )}
-            onClick={onClick}
+            aria-disabled={!!disabledReason}
+            title={disabledReason}
+            onClick={disabledReason ? undefined : onClick}
         >
             {children}
         </button>

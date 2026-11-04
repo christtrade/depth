@@ -98,6 +98,12 @@ export interface DepthProps {
 }
 
 const NARROW_BOTTOM_BAR_PX = 640;
+const LOG_BLOCKED_REASON = 'Log scale needs prices above 0';
+
+function hasNonPositive(bars: { low: Float64Array; length: number }): boolean {
+    for (let i = 0; i < bars.length; i++) if (bars.low[i] <= 0) return true;
+    return false;
+}
 
 function QuickSettingsCluster({
     collapsed,
@@ -438,6 +444,11 @@ export default function Depth({
         });
         return true;
     };
+
+    // the setting is shared by every symbol, so it stays and this symbol just reads as normal
+    const [nonPositiveSymbols, setNonPositiveSymbols] = useState<ReadonlySet<string>>(() => new Set());
+    const logBlocked = nonPositiveSymbols.has(cellSymbols[focused] ?? _chart.getSymbol());
+    const shownScaleMode = logBlocked && chartSettings.priceScaleMode === 'log' ? 'normal' : chartSettings.priceScaleMode;
 
     const focusedBridge = cellBridges[focused] ?? cellBridges[0];
     const dataLevel: DataLevel = focusedBridge?.dataLevel ?? 'ohlcv';
@@ -956,6 +967,18 @@ export default function Depth({
                 if (payload.dataLevel === 'tick' || hasBook(payload.dataLevel))
                     ingestForExecution(payload, 'append');
             }),
+            ...(['data:load', 'data:append', 'data:prepend'] as const).map((ev) =>
+                eventBus.on(ev, ({ symbol, bars }) => {
+                    const bad = hasNonPositive(bars);
+                    setNonPositiveSymbols((was) => {
+                        if (was.has(symbol) === bad) return was;
+                        const next = new Set(was);
+                        if (bad) next.add(symbol);
+                        else next.delete(symbol);
+                        return next;
+                    });
+                }),
+            ),
             eventBus.on('playback:play', () => pb.play()),
             eventBus.on('playback:pause', () => pb.pause()),
             eventBus.on('playback:set-speed', (payload) => pb.setSpeed(payload.speed)),
@@ -1601,35 +1624,49 @@ export default function Depth({
                         >
                             <QuickSettingsCluster collapsed={crampedBottomBar}>
                                 <div className="flex items-center gap-0.5">
-                                    {(['normal', 'percent'] as const).map((mode) => (
-                                        <Tooltip key={mode}>
-                                            <TooltipTrigger asChild>
-                                                <button
-                                                    onClick={() => {
-                                                        const patch = { priceScaleMode: mode };
-                                                        setChartSettings((p) => ({ ...p, ...patch }));
-                                                        chartRefs.current[
-                                                            focusedRef.current
-                                                        ]?.applySettings(patch);
-                                                    }}
-                                                    className={cn(
-                                                        'h-5 px-1.5 text-xs font-semibold rounded leading-none transition-colors',
-                                                        chartSettings.priceScaleMode === mode
-                                                            ? 'text-foreground/75'
-                                                            : 'text-foreground/25 hover:text-foreground/55',
-                                                    )}
+                                    {(['normal', 'log', 'percent'] as const).map((mode) => {
+                                        const blocked = mode === 'log' && logBlocked;
+                                        return (
+                                            <Tooltip key={mode}>
+                                                <TooltipTrigger asChild>
+                                                    {/* not `disabled`, a disabled button never gets the hover for its tooltip */}
+                                                    <button
+                                                        aria-disabled={blocked}
+                                                        onClick={() => {
+                                                            if (blocked) return;
+                                                            const patch = { priceScaleMode: mode };
+                                                            setChartSettings((p) => ({ ...p, ...patch }));
+                                                            chartRefs.current[
+                                                                focusedRef.current
+                                                            ]?.applySettings(patch);
+                                                        }}
+                                                        className={cn(
+                                                            'h-5 px-1.5 text-xs font-semibold rounded leading-none transition-colors',
+                                                            blocked
+                                                                ? 'text-foreground/15 cursor-not-allowed'
+                                                                : shownScaleMode === mode
+                                                                  ? 'text-foreground/75'
+                                                                  : 'text-foreground/25 hover:text-foreground/55',
+                                                        )}
+                                                    >
+                                                        {mode === 'normal' ? 'N' : mode === 'log' ? 'L' : '%'}
+                                                    </button>
+                                                </TooltipTrigger>
+                                                <TooltipContent
+                                                    side="top"
+                                                    className="text-xs border border-border bg-background"
                                                 >
-                                                    {mode === 'normal' ? 'N' : '%'}
-                                                </button>
-                                            </TooltipTrigger>
-                                            <TooltipContent
-                                                side="top"
-                                                className="text-xs border border-border bg-background"
-                                            >
-                                                {mode === 'normal' ? 'Normal scale' : 'Percent scale'}
-                                            </TooltipContent>
-                                        </Tooltip>
-                                    ))}
+                                                    {blocked
+                                                        ? LOG_BLOCKED_REASON
+                                                        : mode === 'normal'
+                                                          ? 'Normal scale'
+                                                          : mode === 'log'
+                                                            ? 'Log scale'
+                                                            : 'Percent scale'}
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        );
+                                    })}
 
                                     <div className="w-px h-3 bg-border/50 mx-1 shrink-0" />
 
@@ -1827,6 +1864,7 @@ export default function Depth({
                         settings={themedSettings(chartSettings, themeColors)}
                         horizon={sharedHorizonRef.current}
                         pluginChartType={activePluginChartType}
+                        logBlockedReason={logBlocked ? LOG_BLOCKED_REASON : undefined}
                         onUpdate={(patch) => {
                             setChartSettings((prev) => ({ ...prev, ...patch }));
                             chartRefs.current[focusedRef.current]?.applySettings(patch);

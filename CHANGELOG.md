@@ -9,6 +9,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Log price axis, `L` in the bottom bar and Log in the settings (`priceScaleMode: 'log'`). off for a symbol with
+  prices at or under 0, there's no log of those. candles, lines, heatmap, footprint, indicators and drawings all follow it
 - Quick settings for turning on/off the trade bubbles & heatmap for non-ohlcv data levels in the bottom panel.
 - With the heatmap on, older data loads while the view is at rest, up to 4 view widths behind it, so zooming out
   doesn't blank (6x at 1m on the sim, ~20 strips up to 239px -> 0). `loadAhead: false` turns it off for

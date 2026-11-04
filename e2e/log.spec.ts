@@ -375,6 +375,108 @@ test('log: heatmap rows sit on their prices, the book around the bid and ask lin
     expect(errors).toEqual([]);
 });
 
+const scaleMode = (page: Page) =>
+    page.evaluate(() => (window as any).__chart.renderEngine.drawParams.chartSettings.priceScaleMode as string);
+const scaleButton = (page: Page, name: 'N' | 'L' | '%') => page.getByRole('button', { name, exact: true });
+
+test('log: the bottom bar turns it on and fits the axis, N turns it off', async ({ page }) => {
+    const errors = watchErrors(page);
+    await page.setViewportSize({ width: 1000, height: 600 });
+    await page.goto('/?wide=1');
+    await settled(page);
+    await page.evaluate(() => (window as any).__chart.setChartSettings({ chartType: 'candles' }));
+    await scaleButton(page, 'L').click();
+    await expect.poll(() => scaleMode(page)).toBe('log');
+    await expect.poll(async () => {
+        const f = await expectedFit(page);
+        return closeTo(f.now, f.log);
+    }).toBe(true);
+    await expect(scaleButton(page, 'L')).toHaveClass(/text-foreground\/75/);
+    await expect(scaleButton(page, 'N')).not.toHaveClass(/text-foreground\/75/);
+    await scaleButton(page, 'N').click();
+    await expect.poll(() => scaleMode(page)).toBe('normal');
+    await expect.poll(async () => {
+        const f = await expectedFit(page);
+        return closeTo(f.now, f.linear);
+    }).toBe(true);
+    expect(errors).toEqual([]);
+});
+
+test('log: a symbol with prices under 0 cant turn it on, the bar says why', async ({ page }) => {
+    const errors = watchErrors(page);
+    await page.setViewportSize({ width: 1000, height: 600 });
+    await page.goto('/?negative=1');
+    await settled(page);
+    const log = scaleButton(page, 'L');
+    await expect(log).toHaveAttribute('aria-disabled', 'true');
+    await log.click({ force: true });
+    await page.waitForTimeout(200);
+    expect(await scaleMode(page)).toBe('normal');
+    // a click closes a tooltip till the pointer comes back
+    await page.mouse.move(400, 300);
+    await log.hover();
+    await expect(page.getByText('Log scale needs prices above 0').first()).toBeVisible();
+    expect(errors).toEqual([]);
+});
+
+test('log: set anyway on a symbol under 0 it reads as normal, and draws', async ({ page }) => {
+    const errors = watchErrors(page);
+    await page.setViewportSize({ width: 1000, height: 600 });
+    await page.goto('/?negative=1');
+    await settled(page);
+    await page.evaluate(() => (window as any).__chart.setChartSettings({ priceScaleMode: 'log', chartType: 'candles' }));
+    await page.waitForTimeout(400);
+    await expect(scaleButton(page, 'N')).toHaveClass(/text-foreground\/75/);
+    await expect(scaleButton(page, 'L')).toHaveAttribute('aria-disabled', 'true');
+    const v = await page.evaluate(() => (window as any).__chart.renderEngine.view.pMin as number);
+    expect(v).toBeLessThan(0);
+    expect(errors).toEqual([]);
+});
+
+const openScales = async (page: Page) => {
+    await page.mouse.click(400, 300, { button: 'right' });
+    await page.getByText('Settings', { exact: true }).first().click();
+    await page.getByText('Scales', { exact: true }).click();
+};
+
+test('log: the settings dialog turns it on', async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 600 });
+    await page.goto('/?wide=1');
+    await settled(page);
+    await openScales(page);
+    await page.getByRole('button', { name: 'Log', exact: true }).click();
+    await expect.poll(() => scaleMode(page)).toBe('log');
+    await page.getByRole('button', { name: 'Linear', exact: true }).click();
+    await expect.poll(() => scaleMode(page)).toBe('normal');
+});
+
+test('log: the settings dialog cant turn it on for a symbol under 0, and says why', async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 600 });
+    await page.goto('/?negative=1');
+    await settled(page);
+    await openScales(page);
+    const log = page.getByRole('button', { name: 'Log', exact: true });
+    await expect(log).toHaveAttribute('title', /above 0/);
+    await log.click({ force: true });
+    await page.waitForTimeout(200);
+    expect(await scaleMode(page)).toBe('normal');
+});
+
+for (const level of ['tick', 'l3', 'l2']) {
+    test(`log: ${level} blocks a symbol under 0 too`, async ({ page }) => {
+        await page.goto(`/?negative=1&level=${level}`);
+        await settled(page);
+        await expect(scaleButton(page, 'L')).toHaveAttribute('aria-disabled', 'true');
+    });
+}
+
+for (const url of ['/', '/?level=tick', '/?level=l3', '/?level=l2'])
+    test(`log: an ordinary symbol isnt blocked, ${url}`, async ({ page }) => {
+        await page.goto(url);
+        await settled(page);
+        await expect(scaleButton(page, 'L')).toHaveAttribute('aria-disabled', 'false');
+    });
+
 const geometry = (page: Page) =>
     page.evaluate(() => {
         const c = (window as any).__chart;
