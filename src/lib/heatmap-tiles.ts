@@ -1,3 +1,4 @@
+import { FineBbo } from './fine-bbo';
 import { COLUMN_NS, TILE_COLS, columnFor, rowTicks } from './heatmap-build';
 import { configKey, type HeatmapReply, type HeatmapRequest, type TileConfig } from './types/heatmap-types';
 import type { ViewBounds } from './types';
@@ -34,15 +35,23 @@ export class HeatmapTiles {
     private seen: { config: TileConfig; from: bigint; to: bigint } | null = null;
     //bitmaps the last frame drew, for tests
     drawn: ImageBitmap[] = [];
+    readonly bbo: FineBbo;
 
     constructor(
         private post: (req: HeatmapRequest) => void,
         private changed: () => void,
         private status: (recalculating: boolean) => void,
-    ) {}
+    ) {
+        this.bbo = new FineBbo(post, changed);
+    }
 
     onReply(r: Exclude<HeatmapReply, { type: 'held' }>): void {
+        if (r.type === 'bbo') {
+            this.bbo.onReply(r);
+            return;
+        }
         if (r.type === 'data') {
+            this.bbo.dataFrom(BigInt(r.from));
             this.invalidate(BigInt(r.from));
             return;
         }
@@ -91,6 +100,7 @@ export class HeatmapTiles {
         this.byConfig.clear();
         this.count = 0;
         this.lastDrawn = null;
+        this.bbo.clear();
     }
 
     draw(ctx: CanvasRenderingContext2D, v: TileView): void {

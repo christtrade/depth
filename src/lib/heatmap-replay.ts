@@ -229,6 +229,59 @@ export function levelsAt(r: Replay, ts: bigint): Levels | null {
     return { bids: flat(sizes(book.bids)), asks: flat(sizes(book.asks)) };
 }
 
+export type Bbo = { ts: BigInt64Array; bid: Float64Array; ask: Float64Array; to: bigint };
+
+const best = (s: Side, bid: boolean) => {
+    let b = 0;
+    for (const p of s.levels.keys()) if (!b || (bid ? p > b : p < b)) b = p;
+    return b;
+};
+
+// the best bid and ask standing at `from`, then every change before `to`, 0 for an empty side.
+// `to` comes back as how far the data got
+export function bboBetween(r: Replay, from: bigint, to: bigint): Bbo {
+    const ts: bigint[] = [];
+    const bid: number[] = [];
+    const ask: number[] = [];
+    const last = r.length ? tsAt(r, r.length - 1) + 1n : from;
+    if (r.length) {
+        let j = indexAt(r, from + 1n);
+        const book = bookAt(r, j);
+        let b = best(book.bids, true);
+        let a = best(book.asks, false);
+        ts.push(from);
+        bid.push(b);
+        ask.push(a);
+        const tb = new Set<number>();
+        const ta = new Set<number>();
+        while (j < r.length) {
+            const t = tsAt(r, j);
+            if (t >= to) break;
+            tb.clear();
+            ta.clear();
+            while (j < r.length && tsAt(r, j) === t) apply(book, r.view, j++, tb, ta);
+            let nb = book.bids.levels.has(b) ? b : best(book.bids, true);
+            let na = book.asks.levels.has(a) ? a : best(book.asks, false);
+            for (const p of tb) if (book.bids.levels.has(p) && (!nb || p > nb)) nb = p;
+            for (const p of ta) if (book.asks.levels.has(p) && (!na || p < na)) na = p;
+            if (nb !== b || na !== a) {
+                b = nb;
+                a = na;
+                ts.push(t);
+                bid.push(b);
+                ask.push(a);
+            }
+        }
+        r.cursor!.index = j;
+    }
+    return {
+        ts: BigInt64Array.from(ts),
+        bid: Float64Array.from(bid),
+        ask: Float64Array.from(ask),
+        to: to < last ? to : last,
+    };
+}
+
 // each price's peak over the instants in a column. events sharing a timestamp land as one, the book in
 // between them never stood
 export function peakColumns(r: Replay, t0: bigint, colNs: bigint, cols: number): (Levels | null)[] {

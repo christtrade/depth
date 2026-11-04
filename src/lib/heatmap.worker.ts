@@ -9,7 +9,7 @@ import {
 import type { MboEvent } from './types';
 import { createCompactBuffer, sliceToMboEvents } from './compact-buffer';
 import { type Build, type Texels, bookColumn, buildTile, feed, newBuild, pickNorm, rowNorm, seal, snapBytes, unseal } from './heatmap-build';
-import { type Replay, extend, heldBytes, newReplay } from './heatmap-replay';
+import { type Replay, bboBetween, extend, heldBytes, newReplay } from './heatmap-replay';
 
 let build: Build | null = null;
 let replay: Replay | null = null;
@@ -34,6 +34,7 @@ let chain: Promise<unknown> = Promise.resolve();
 // only the latest ask counts, a pan asks again before the last tiles are out
 let wanted: HeatmapRequest | null = null;
 let fillWanted: HeatmapRequest | null = null;
+let bboWanted: HeatmapRequest | null = null;
 let working = false;
 
 self.onmessage = (e: MessageEvent<WorkerInitMessage | HeatmapRequest>) => {
@@ -73,7 +74,7 @@ self.onmessage = (e: MessageEvent<WorkerInitMessage | HeatmapRequest>) => {
             build = null;
             replay = null;
             norms.clear();
-            wanted = fillWanted = null;
+            wanted = fillWanted = bboWanted = null;
             post({ type: 'held', bytes: 0 });
         });
         return;
@@ -89,6 +90,7 @@ self.onmessage = (e: MessageEvent<WorkerInitMessage | HeatmapRequest>) => {
     }
     if (msg.type === 'tiles') wanted = msg;
     else if (msg.type === 'fill') fillWanted = msg;
+    else if (msg.type === 'bbo') bboWanted = msg;
     pump();
 };
 
@@ -108,7 +110,17 @@ async function pump(): Promise<void> {
     if (working || !build) return;
     working = true;
     try {
-        while (build && (wanted || fillWanted)) {
+        while (build && (wanted || fillWanted || bboWanted)) {
+            if (bboWanted?.type === 'bbo') {
+                const { from, to } = bboWanted;
+                bboWanted = null;
+                const b = bboBetween(replay!, BigInt(from), BigInt(to));
+                post(
+                    { type: 'bbo', from, to, until: b.to.toString(), ts: b.ts, bid: b.bid, ask: b.ask },
+                    [b.ts.buffer, b.bid.buffer, b.ask.buffer],
+                );
+                continue;
+            }
             if (fillWanted?.type === 'fill') {
                 const req = fillWanted;
                 fillWanted = null;

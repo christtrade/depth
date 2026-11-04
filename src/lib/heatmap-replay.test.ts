@@ -3,7 +3,8 @@ import { describe, it } from 'node:test';
 
 import { BYTES_PER_EVENT, encodeAt } from './compact-buffer';
 import { COLUMN_NS, TILE_COLS, buildTile, feed, newBuild, seal, type Texels } from './heatmap-build';
-import { type Levels, extend, indexAt, levelsAt, newReplay, peakColumns, tsAt } from './heatmap-replay';
+import { type Levels, bboBetween, extend, indexAt, levelsAt, newReplay, peakColumns, tsAt } from './heatmap-replay';
+import { applyEvent, createBook, getBestAsk, getBestBid } from './book';
 import { isoToNs } from './sampler';
 import { simMboEvents } from './sim-levels';
 import type { MboEvent } from './types';
@@ -140,5 +141,53 @@ describe('the heatmap replay', () => {
             const sorted = (m: Map<number, number>) => [...m].filter(([, s]) => s > 0).sort((p, q) => p[0] - q[0]);
             assert.deepEqual(same(cols[x]), { bids: sorted(want.bids), asks: sorted(want.asks) }, `column ${x}`);
         }
+    });
+});
+
+describe('best bid and ask from the replay', () => {
+    it('every change in the window, the same as the chart book gets to', async () => {
+        const r = await replayOf(simPacked, 500);
+        const from = T0_NS + 60n * SEC;
+        const to = T0_NS + 120n * SEC;
+
+        const book = createBook();
+        const want: [bigint, number, number][] = [];
+        let i = 0;
+        for (; i < simPacked.length && simPacked[i][0] <= from; i++) applyEvent(book, simPacked[i][1]);
+        want.push([from, getBestBid(book) ?? 0, getBestAsk(book) ?? 0]);
+        while (i < simPacked.length && simPacked[i][0] < to) {
+            const t = simPacked[i][0];
+            while (i < simPacked.length && simPacked[i][0] === t) applyEvent(book, simPacked[i++][1]);
+            const [, b, a] = want[want.length - 1];
+            const nb = getBestBid(book) ?? 0;
+            const na = getBestAsk(book) ?? 0;
+            if (nb !== b || na !== a) want.push([t, nb, na]);
+        }
+
+        const got = bboBetween(r, from, to);
+        assert.ok(want.length > 100, `only ${want.length} changes`);
+        assert.deepEqual([...got.ts].map((t, k) => [t, got.bid[k], got.ask[k]]), want);
+        assert.equal(got.to, to);
+    });
+
+    it('a side going empty is 0, a reset takes both, events on one instant land as one', async () => {
+        const r = await replayOf([
+            ev(1n, 'A', 'B', 99, 1, 1),
+            ev(1n, 'A', 'A', 101, 1, 2),
+            ev(2n, 'A', 'B', 100, 1, 3),
+            ev(2n, 'C', 'B', 100, 1, 3),
+            ev(3n, 'C', 'B', 99, 1, 1),
+            ev(4n, 'R', 'N', NaN, 0, 0),
+            ev(5n, 'A', 'A', 102, 1, 4),
+        ]);
+        const got = bboBetween(r, 0n, 100n);
+        assert.deepEqual([...got.ts].map((t, k) => [t, got.bid[k], got.ask[k]]), [
+            [0n, 0, 0],
+            [1n, 99, 101],
+            [3n, 0, 101],
+            [4n, 0, 0],
+            [5n, 0, 102],
+        ]);
+        assert.equal(got.to, 6n);
     });
 });

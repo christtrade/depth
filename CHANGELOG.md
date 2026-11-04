@@ -35,6 +35,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the l3/l2 data per pane and the budget didn't know. panes report it with `data:pane-held`
 - With the heatmap off a pane doesn't send its worker the events anymore and the worker lets its copy go,
   it held the whole thing (and now counted against the budget) for nothing drawn
+- None's bid and ask lines are exact once you zoom in (a 50ms sample 2px wide or more) with the heatmap on, at
+  l3 & l2. the worker replays every change in the view from its events (~16 ms for a 96 s window at 3.3M
+  events/h). The 50ms sampling dropped 81% of the changes there and drew them as steps the book never made.
+  sampling still draws zoomed out, with the heatmap off and at tick
 - Trade dots are bubbles now, one per 8px column (rounded to a power of 2 ns so panning keeps the same
   groups) at the volume weighted price. buys fill it green from the bottom up to their share, the rest red,
   rimmed in the chart's bg so it sits in the heatmap. it drew every trade, flat neon dots piled on each other

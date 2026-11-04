@@ -21,7 +21,9 @@ export type HeatmapRequest =
     // the book at the playhead, painted from there to the right edge
     | ({ type: 'fill'; ts: string } & TileConfig)
     // the view stopped on [from, to), brightness follows it if it's far off
-    | ({ type: 'settle'; from: string; to: string } & TileConfig);
+    | ({ type: 'settle'; from: string; to: string } & TileConfig)
+    // every best bid and ask change in [from, to)
+    | { type: 'bbo'; from: string; to: string };
 
 export type TileReply = {
     type: 'tile';
@@ -39,7 +41,9 @@ export type HeatmapReply =
     | { type: 'data'; from: string }
     // brightness changed for the configs starting with normKey
     | { type: 'norm'; normKey: string }
-    | { type: 'held'; bytes: number };
+    | { type: 'held'; bytes: number }
+    // `until` is as far as the data got
+    | { type: 'bbo'; from: string; to: string; until: string; ts: BigInt64Array; bid: Float64Array; ask: Float64Array };
 
 export const normKey = (c: TileConfig) => `${c.column}:${c.tickSize}:${c.ticks}`;
 

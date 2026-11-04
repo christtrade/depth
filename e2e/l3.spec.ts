@@ -141,6 +141,29 @@ test('l3: None opens on half a minute', async ({ page }) => {
     expect(errors).toEqual([]);
 });
 
+test('l3: None zoomed in draws its bid and ask from the replay', async ({ page }) => {
+    const errors = watchErrors(page);
+    await page.setViewportSize({ width: 1400, height: 800 });
+    await page.goto('/?sim=1&level=l3');
+    await settled(page);
+    await page.evaluate(() => (window as any).__chart.setTimeframe('None'));
+    const fine = () =>
+        page.evaluate(() => {
+            const p = (window as any).__chart.renderEngine.drawParams;
+            const v = (window as any).__chart.renderEngine.view;
+            const inView = (a: any[]) =>
+                a.filter((x) => x.ts >= v.tMin && x.ts < p.heatmap.bbo.held?.to && x.ts <= v.tMax).map((x) => `${x.ts}:${x.bestBid}:${x.bestAsk}`);
+            return Number(v.tMax - v.tMin) / 1e6 === 30_000 && p.heatmap?.bbo.held
+                ? { fine: inView(p.heatmap.bbo.held.points), history: inView(p.priceHistory) }
+                : null;
+        });
+    await expect.poll(async () => (await fine())?.fine.length ?? 0, { timeout: 20_000 }).toBeGreaterThan(20);
+    // the sim stamps events 100ms apart, sampling every 50ms lost nothing, so the two have to agree
+    const { fine: exact, history } = (await fine())!;
+    expect(exact).toEqual(history);
+    expect(errors).toEqual([]);
+});
+
 test('None is in the timeframe list at tick, l2 and l3 only', async ({ page }) => {
     const errors = watchErrors(page);
     for (const level of ['tick', 'l3', 'l2']) {

@@ -316,7 +316,9 @@ export function drawBaseLayer(
                     drawPriceChart(
                         ctx,
                         trades,
-                        priceHistory,
+                        chartSettings.showHeatmap && heatmap && hasBook(dataLevel) && barNs <= 1_000_000n
+                            ? heatmap.bbo.over(priceHistory, bounds, chartW)
+                            : priceHistory,
                         bounds,
                         chartW,
                         rect.h,
