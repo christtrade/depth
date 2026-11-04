@@ -54,6 +54,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reads the bubbles the last draw made
 
 ### Fixed
+- A blank strip could flash a few px left of the horizon on the heatmap, a tile claimed a chunk that landed while its
+  bitmap was being made. and a fallback zoom that stopped short of the data kept the zoom that had it from drawing
 - A timeframe switch whose data took a while landed where live was when you clicked. at None that's over 3s and the
   horizon was off the view for good, the chart looked frozen. it lands on the horizon and keeps following now
 - A live chart stopped following for good if the horizon ever left the view, an 8s stall did it at None, so should a tab

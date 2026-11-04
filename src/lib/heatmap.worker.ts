@@ -181,6 +181,9 @@ async function pump(): Promise<void> {
             if (req === wanted) wanted = { ...req, tiles: req.tiles.slice(1) };
             else aheadWanted = { ...req, tiles: req.tiles.slice(1) };
             const built = build;
+            // before the await, a chunk landing during it isn't in this bitmap. it'd claim data it hasn't got, and
+            // the book at the horizon starts after a blank strip
+            const until = (built.lastEventTs + 1n).toString();
             const t = buildTile({ snaps: built.snaps, replay }, k, { ...req, norm: normOf(req) });
             const bitmap = await bitmapOf(t);
             // a drop or a new init during that await
@@ -188,7 +191,6 @@ async function pump(): Promise<void> {
                 bitmap?.close();
                 continue;
             }
-            const until = (built.lastEventTs + 1n).toString();
             post({ type: 'tile', key: configKey(req), k, rowLo: t.rowLo, rows: t.rows, bitmap, until }, bitmap ? [bitmap] : []);
         }
     } finally {

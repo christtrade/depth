@@ -119,6 +119,16 @@ describe('what draws while a zoom waits on its tiles', () => {
         assert.deepEqual([...new Set(drawn.map((b: any) => b.name ?? 'last'))], ['last']);
     });
 
+    it('the rest from another zoom when the last one stops short of the data, it left a strip by the horizon', () => {
+        const { tiles, ctx, drawn, bitmap } = setup();
+        tiles.onReply({ type: 'tile', key, k: 0, rowLo: 9990, rows: 10, bitmap, until: (50n * COL).toString() });
+        tiles.onReply(reply(0, coarser, bm('coarse')));
+        tiles.draw(ctx, view);
+        drawn.length = 0;
+        tiles.draw(ctx, at(COL / 10n, BigInt(TILE_COLS), COL * 100n));
+        assert.ok(drawn.some((b: any) => b.name === 'coarse'), 'the zoom that has it');
+    });
+
     it('under the blank tail of a tile held since before the data got that far', () => {
         const { tiles, ctx, drawn, bitmap } = setup();
         tiles.onReply({ type: 'tile', key, k: 0, rowLo: 9990, rows: 10, bitmap, until: (90n * COL).toString() });

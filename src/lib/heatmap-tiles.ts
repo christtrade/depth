@@ -408,7 +408,14 @@ export class HeatmapTiles {
         const tiles = this.byConfig.get(key);
         if (!tiles) return false;
         const span = this.spanOf(key);
-        for (let k = from / span; k * span < to; k++) if (!tiles.has(Number(k))) return false;
+        const col = COLUMN_NS[parseKey(key).column];
+        for (let k = from / span; k * span < to; k++) {
+            const t = tiles.get(Number(k));
+            if (!t) return false;
+            // a tile from before the last chunks stops short, another zoom may have what's after it
+            const end = (k + 1n) * span;
+            if (ceilTo(t.until, col) < (end < to ? end : to)) return false;
+        }
         return true;
     }
 

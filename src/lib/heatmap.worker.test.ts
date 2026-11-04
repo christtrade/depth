@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import { appendEvents, BYTES_PER_EVENT, createCompactBuffer } from './compact-buffer';
 import { isoToNs } from './sampler';
+import { COLUMN_NS } from './heatmap-build';
 import type { MboEvent } from './types';
 import type { HeatmapReply } from './types/heatmap-types';
 
@@ -198,6 +199,44 @@ describe('a live chunk during a rebuild', () => {
         send({ type: 'append', ...chunk() });
         await new Promise((r) => setTimeout(r, 20));
         assert.equal(datas().length, n);
+    });
+});
+
+describe('a tile while a chunk lands', () => {
+    it('says how far its own data goes, not how far the data got while its bitmap was made', async () => {
+        const packed = (list: MboEvent[]) => {
+            const cb = createCompactBuffer();
+            appendEvents(cb, list, isoToNs);
+            return { buf: cb._buf.slice(0, cb.length * BYTES_PER_EVENT), length: cb.length };
+        };
+        const count = (type: string) => replies.filter((r) => r.type === type).length;
+        const n = count('data');
+        send({ type: 'init', ...packed(events.slice(0, 6)) });
+        await until(() => count('data') > n);
+
+        const real = (globalThis as any).createImageBitmap;
+        let release: (b: unknown) => void = () => {};
+        let asked = false;
+        (globalThis as any).createImageBitmap = () =>
+            new Promise((r) => {
+                asked = true;
+                release = r;
+            });
+        try {
+            const tiles = count('tile');
+            send({ type: 'tiles', tiles: [0], ...cfg, column: COLUMN_NS.length - 1 });
+            await until(() => asked);
+            assert.ok(asked, 'the bitmap is being made');
+            const d = count('data');
+            send({ type: 'append', ...packed(events.slice(6)) });
+            await until(() => count('data') > d);
+            release({});
+            await until(() => count('tile') > tiles);
+            const t = replies.filter((r) => r.type === 'tile').at(-1) as Extract<HeatmapReply, { type: 'tile' }>;
+            assert.equal(t.until, (60n * SEC + 1n).toString());
+        } finally {
+            (globalThis as any).createImageBitmap = real;
+        }
     });
 });
 
