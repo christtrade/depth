@@ -102,6 +102,7 @@ function tfEngine(opts: {
     maxBytes?: number;
     onEvict?: 'throws' | 'rejects';
     slowForward?: number;
+    slowBackward?: number;
 }) {
     const fetches: Fetch[] = [];
     // copied out, since the view goes stale once the engine moves on
@@ -133,6 +134,9 @@ function tfEngine(opts: {
             if (opts.fail?.()) throw opts.failWith?.() ?? new Error('adapter is down');
             if (opts.slowForward && req.direction === 'forward') {
                 await new Promise((r) => setTimeout(r, opts.slowForward));
+            }
+            if (opts.slowBackward && req.direction === 'backward') {
+                await new Promise((r) => setTimeout(r, opts.slowBackward));
             }
 
             if (opts.barren?.includes(req.timeframe.barNs)) {
@@ -795,6 +799,38 @@ describe('a switch over the budget', () => {
         assert.equal(subs.at(-1)!.req.since, nsOf(de.getSnapshot().bars.time.at(-1)!), 'from where the data ends');
     });
 
+    for (const [how, ask] of [
+        ['a pan', (bus: any, viewMin: bigint) => bus.emit('data:request-backward', { viewMin, symbol: 'NQ' })],
+        ['loading ahead', (bus: any, viewMin: bigint) => bus.emit('data:load-ahead', { viewMin, spanNs: HOUR * 100n, symbol: 'NQ' })],
+    ] as const)
+        it(`a page back from ${how} that lands after a switch is dropped, not mixed in`, async () => {
+            const { bus, de, announce, switchTo, settle, storePeriods } = tfEngine({
+                timeframe: MIN,
+                loadFrom: T2026 - 1000 * 60_000,
+                loadTo: T2026,
+                slowBackward: 100,
+            });
+            await de.load('NQ');
+            announce(0, MIN, T2026 - 100 * 60_000, T2026);
+            await settle();
+            const target = T2026 - 2 * DAY_MS;
+            bus.emit('playback:seek', { tNs: nsOf(target) });
+            await de.seekLoad(nsOf(target), nsOf(T2026));
+            await settle();
+
+            ask(bus, nsOf(target - 3000 * 60_000));
+            switchTo(HOUR, target - 50 * 3_600_000, target);
+            await new Promise((r) => setTimeout(r, 250));
+            assert.deepEqual([...storePeriods()], [HOUR]);
+
+            // and paging still works after it
+            const start = de.getSnapshot().bars.time[0];
+            bus.emit('data:request-backward', { viewMin: nsOf(start - 100 * 3_600_000), symbol: 'NQ' });
+            await new Promise((r) => setTimeout(r, 250));
+            assert.ok(de.getSnapshot().bars.time[0] < start, 'a later page lands');
+            assert.deepEqual([...storePeriods()], [HOUR]);
+        });
+
     it('a forward page that lands after a switch is dropped, not mixed in', async () => {
         const { bus, de, announce, switchTo, settle, storePeriods } = tfEngine({
             timeframe: MIN,
@@ -825,7 +861,9 @@ describe('a switch over the budget', () => {
         });
         await de.load('NQ');
         announce(0, MIN, T2026 - 2900 * 60_000, T2026 - 2800 * 60_000);
-        bus.emit('data:request-backward', { viewMin: nsOf(T2026 - 3000 * 60_000), symbol: 'NQ' });
+        // the window the view asked for fits, a page further back onto it doesn't
+        await settle();
+        bus.emit('data:request-backward', { viewMin: nsOf(T2026 - 6000 * 60_000), symbol: 'NQ' });
         await settle();
 
         assert.ok(de.getSnapshot().bars.time.at(-1)! < T2026 - 60_000, 'live edge dropped');

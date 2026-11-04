@@ -1298,6 +1298,7 @@ export class DataEngine {
 
         const from = windows[0].from;
         const to = windows[windows.length - 1].to;
+        const master = st.master;
 
         if (adapter.fetchPreview && source !== 'ahead') {
             adapter
@@ -1327,6 +1328,8 @@ export class DataEngine {
             .then((response) => {
                 if (this.destroyed) return;
                 recovered(st.retry.backward);
+                // window got swapped while this was out, itd land at the wrong res or edge
+                if (st.master !== master) return;
                 const processed = this._process(response, st, { snapAt: rawTo });
 
                 if (!processed || isEmptyChunk(processed)) {

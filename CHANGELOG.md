@@ -54,6 +54,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reads the bubbles the last draw made
 
 ### Fixed
+- A page back that landed after a timeframe switch got mixed in with the new bars, forward already dropped those.
+  loading ahead would've made it common
 - A blank strip could flash a few px left of the horizon on the heatmap, a tile claimed a chunk that landed while its
   bitmap was being made. and a fallback zoom that stopped short of the data kept the zoom that had it from drawing
 - A timeframe switch whose data took a while landed where live was when you clicked. at None that's over 3s and the
