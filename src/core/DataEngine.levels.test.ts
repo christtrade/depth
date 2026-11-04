@@ -49,6 +49,9 @@ function levelEngine(
         /** a fetch returns at most this much, the newest of it unless it's a forward one */
         pageMs?: number;
         initialMs?: number;
+        loadAhead?: boolean;
+        failBackward?: () => boolean;
+        previews?: { count: number };
     } = {},
 ) {
     let edge = opts.liveEdge ?? T0;
@@ -66,12 +69,19 @@ function levelEngine(
             priceFormat: { minTick: 0.01, precision: 2 },
         }),
         getCapabilities: () => ({}),
+        ...(opts.previews && {
+            fetchPreview: async () => {
+                opts.previews!.count++;
+                return { symbol: 'NQ', bars: [] };
+            },
+        }),
         fetchBars: async (req: any) => {
             let fromMs = Math.max(START, Number(req.range.fromNs / 1_000_000n));
             let toMs = Math.min(edge, Number(req.range.toNs / 1_000_000n));
             if (opts.pageMs && req.direction === 'forward') toMs = Math.min(toMs, fromMs + opts.pageMs);
             else if (opts.pageMs) fromMs = Math.max(fromMs, toMs - opts.pageMs);
             fetches.push({ direction: req.direction, fromMs, toMs });
+            if (req.direction === 'backward' && opts.failBackward?.()) throw new Error('down');
             const hasMore = req.direction === 'forward' ? toMs < edge : fromMs > START;
             // nothing printed from quietFrom on
             const printTo = Math.max(fromMs, Math.min(toMs, opts.quietFrom ?? toMs));
@@ -95,6 +105,7 @@ function levelEngine(
         horizon: new Date(edge).toISOString(),
         timeframe: tf as never,
         dataBudget: { maxBytes: opts.maxBytes ?? Infinity },
+        loadAhead: opts.loadAhead,
     });
     de.setAdapter(adapter);
 
@@ -636,6 +647,114 @@ describe('l3 level, a pane holding its own copy for the heatmap', () => {
         bus.emit('data:pane-held', { id: 0, symbol: 'NQ', bytes: 0 });
         await settle();
         assert.equal(loads.length, 1, 'nothing more dropped');
+    });
+});
+
+describe('load ahead', () => {
+    const backward = (fetches: { direction: string }[]) => fetches.filter((f) => f.direction === 'backward').length;
+    const ask = (bus: TypedEventBus, viewMs: number, spanMs: number) =>
+        bus.emit('data:load-ahead', { viewMin: nsOf(viewMs), spanNs: nsOf(spanMs), symbol: 'NQ' });
+
+    async function loaded(opts: Parameters<typeof levelEngine>[1] = {}) {
+        const e = levelEngine('l3', opts);
+        const load = e.next('data:load');
+        await e.de.load('NQ');
+        await load;
+        return e;
+    }
+
+    it('fetches one window older than whats loaded', async () => {
+        const { bus, fetches, next } = await loaded();
+        const prepended = next('data:prepend');
+        ask(bus, T0 - 10 * MIN_MS, 10 * MIN_MS);
+        await prepended;
+        const f = fetches.filter((x) => x.direction === 'backward');
+        assert.equal(f.length, 1);
+        assert.equal(f[0].fromMs, T0 - 90 * MIN_MS);
+        assert.equal(f[0].toMs, T0 - 30 * MIN_MS);
+    });
+
+    it('fetches no preview, nothing on screen needs one', async () => {
+        const previews = { count: 0 };
+        const { bus, next } = await loaded({ previews });
+        previews.count = 0;
+        const prepended = next('data:prepend');
+        ask(bus, T0 - 10 * MIN_MS, 10 * MIN_MS);
+        await prepended;
+        assert.equal(previews.count, 0);
+        const panned = next('data:prepend');
+        bus.emit('data:request-backward', { viewMin: nsOf(T0 - 3 * HOUR_MS), symbol: 'NQ' });
+        await panned;
+        assert.equal(previews.count, 1, 'a pan does');
+    });
+
+    it('stops once enough is behind the view', async () => {
+        const { bus, fetches, settle } = await loaded();
+        // 25 min behind a 5 min view
+        ask(bus, T0 - 5 * MIN_MS, 5 * MIN_MS);
+        await settle();
+        assert.equal(backward(fetches), 0);
+    });
+
+    it('stops at the start of the data', async () => {
+        const { bus, fetches, next, settle } = await loaded({ initialMs: 5 * HOUR_MS + 30 * MIN_MS });
+        const prepended = next('data:prepend');
+        ask(bus, T0 - 5 * HOUR_MS, 2 * HOUR_MS);
+        assert.equal((await prepended).dataStart < T0 - 5 * HOUR_MS, true);
+        ask(bus, T0 - 5 * HOUR_MS, 2 * HOUR_MS);
+        await settle();
+        assert.equal(backward(fetches), 1);
+    });
+
+    it('a second ask during a fetch doesnt queue another page', async () => {
+        const { bus, fetches, next, settle } = await loaded();
+        const prepended = next('data:prepend');
+        ask(bus, T0 - 10 * MIN_MS, 10 * MIN_MS);
+        ask(bus, T0 - 10 * MIN_MS, 10 * MIN_MS);
+        await prepended;
+        await settle();
+        assert.equal(backward(fetches), 1);
+    });
+
+    it('a failed page isnt retried on its own, and the wait is respected', async () => {
+        const { bus, fetches, settle } = await loaded({ failBackward: () => true });
+        const logged = console.error;
+        console.error = () => {};
+        try {
+            ask(bus, T0 - 10 * MIN_MS, 10 * MIN_MS);
+            await settle();
+            assert.equal(backward(fetches), 1);
+            ask(bus, T0 - 10 * MIN_MS, 10 * MIN_MS);
+            await new Promise((r) => setTimeout(r, 1100));
+            assert.equal(backward(fetches), 1, 'nothing came after the wait');
+            ask(bus, T0 - 10 * MIN_MS, 10 * MIN_MS);
+            await settle();
+            assert.equal(backward(fetches), 2, 'the next settled view asks again');
+        } finally {
+            console.error = logged;
+        }
+    });
+
+    it('wont fetch a page that would set off the budget', async () => {
+        const { bus, fetches, latest, next, settle } = await loaded({ maxBytes: 64 * 2 ** 20 });
+        const before = latest.get('NQ').dataStart;
+        bus.emit('data:pane-held', { id: 0, symbol: 'NQ', bytes: 30 * 2 ** 20 });
+        ask(bus, T0 - 10 * MIN_MS, 10 * MIN_MS);
+        await settle();
+        assert.equal(backward(fetches), 0);
+        assert.equal(latest.get('NQ').dataStart, before, 'nothing evicted');
+        bus.emit('data:pane-held', { id: 0, symbol: 'NQ', bytes: 1024 });
+        const prepended = next('data:prepend');
+        ask(bus, T0 - 10 * MIN_MS, 10 * MIN_MS);
+        await prepended;
+        assert.equal(backward(fetches), 1);
+    });
+
+    it('off means off', async () => {
+        const { bus, fetches, settle } = await loaded({ loadAhead: false });
+        ask(bus, T0 - 10 * MIN_MS, 10 * MIN_MS);
+        await settle();
+        assert.equal(backward(fetches), 0);
     });
 });
 

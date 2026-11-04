@@ -3,6 +3,7 @@ export type WorkerInitMessage = {
     type: 'init' | 'append';
     buf: ArrayBuffer;
     length: number;
+    olderData?: boolean;
 };
 
 export type TileConfig = {

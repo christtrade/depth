@@ -10,6 +10,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - Quick settings for turning on/off the trade bubbles & heatmap for non-ohlcv data levels in the bottom panel.
+- With the heatmap on, older data loads while the view is at rest, up to 4 view widths behind it, so zooming out
+  doesn't blank (6x at 1m on the sim, ~20 strips up to 239px -> 0). `loadAhead: false` turns it off for
+  paid or rate limited backends. stays inside `dataBudget`, never evicts for it
 
 ### Changed
 - the heatmap draws each price on its own row, and zoomed out a row adds up the sizes of the prices in
@@ -46,6 +49,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reads the bubbles the last draw made
 
 ### Fixed
+- Older data coming in recolored the heatmap on screen, brightness started over from the whole data. it keeps it now
+- Tiles of other zooms outlived older data coming in, their book was wrong and near empty where the old data
+  began, a zoom could draw that as a blank strip. they're dropped, the overview covers till new ones land
 - The heatmap flashed a blank column at the horizon on every live chunk, the tile with the new data comes a
   frame later. the book at the horizon covers it now
 - A switch to a narrower timeframe could lose the horizon, None opened ~5 min behind live. it zooms around

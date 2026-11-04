@@ -108,3 +108,56 @@ describe('the heatmap worker once a view settles', () => {
         assert.equal(replies.length, n);
     });
 });
+
+describe('brightness across a rebuild', () => {
+    const quiet = { type: 'settle', from: (61n * SEC).toString(), to: (120n * SEC).toString(), ...cfg };
+    const norms = () => replies.filter((r) => r.type === 'norm').length;
+    const datas = () => replies.filter((r) => r.type === 'data').length;
+    const init = (olderData?: boolean) => {
+        const cb = createCompactBuffer();
+        appendEvents(cb, events, isoToNs);
+        send({ type: 'init', buf: cb._buf.slice(0, cb.length * BYTES_PER_EVENT), length: cb.length, olderData });
+    };
+    const landed = async (before: number) => {
+        await until(() => datas() > before);
+        assert.ok(datas() > before, 'a build landed');
+    };
+    // a quiet view's brightness is in place, so a settle says nothing unless a rebuild reset it
+    const onQuietView = async () => {
+        const d = datas();
+        init();
+        await landed(d);
+        send(quiet);
+    };
+
+    it('older data keeps it, it would recolor what is on screen', async () => {
+        await onQuietView();
+        const d = datas();
+        init(true);
+        await landed(d);
+        const n = norms();
+        send(quiet);
+        assert.equal(norms(), n);
+    });
+
+    it('anything else starts over', async () => {
+        await onQuietView();
+        const d = datas();
+        init();
+        await landed(d);
+        const n = norms();
+        send(quiet);
+        assert.equal(norms(), n + 1);
+    });
+
+    it('a page that cancels a fresh load still starts over', async () => {
+        await onQuietView();
+        const d = datas();
+        init();
+        init(true);
+        await landed(d);
+        const n = norms();
+        send(quiet);
+        assert.equal(norms(), n + 1);
+    });
+});

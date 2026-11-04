@@ -275,7 +275,8 @@ test('l2 without trades: the candles follow the playhead both ways, and live', a
 for (const level of ['tick', 'l3'])
     test(`${level}: a jump back past the loaded start lands on data`, async ({ page }) => {
         const errors = watchErrors(page);
-        await open(page, `/?level=${level}`);
+        // loading ahead would have the target in already
+        await open(page, `/?level=${level}&ahead=0`);
         await pickTimeframe(page, '5s');
         await settled(page);
         const start = await page.evaluate(() => (window as any).__chart.getData().dataStart as number);

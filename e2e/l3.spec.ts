@@ -333,7 +333,8 @@ test('l3 live: a chunk landing draws no other zoom at the horizon, it flashed an
 test('l3 live: zooming out at 1m leaves no blank inside what the worker has', async ({ page, browserName }) => {
     test.skip(browserName === 'webkit', 'frames too slow to see one frame');
     await page.setViewportSize({ width: 1400, height: 800 });
-    await page.goto('/?sim=1&level=l3');
+    // a page landing mid zoom moves what the worker has past what any tile could cover yet
+    await page.goto('/?sim=1&level=l3&ahead=0');
     await settled(page);
     await page.evaluate(() => {
         const c = (window as any).__chart;
@@ -342,6 +343,43 @@ test('l3 live: zooming out at 1m leaves no blank inside what the worker has', as
     });
     await page.waitForTimeout(1200);
     await watchBlanks(page, true);
+    for (let i = 0; i < 6; i++) {
+        const z = await onHorizon(page);
+        await page.mouse.move(z.x, z.y);
+        await page.mouse.wheel(0, 600);
+        await page.waitForTimeout(50);
+    }
+    await page.waitForTimeout(300);
+    expect(await blanksSeen(page)).toBe(0);
+});
+
+test('l3 live: older data loads ahead at rest, so a hard zoom out finds it, and it stops by itself', async ({ page, browserName }) => {
+    test.skip(browserName === 'webkit', 'frames too slow to see one frame');
+    await page.setViewportSize({ width: 1400, height: 800 });
+    await page.goto('/?sim=1&level=l3');
+    await settled(page);
+    await page.evaluate(() => {
+        const win = window as any;
+        const c = win.__chart;
+        win.__backward = 0;
+        const a = c.dataEngine.adapter;
+        const fetchBars = a.fetchBars.bind(a);
+        a.fetchBars = (r: any) => {
+            if (r.direction === 'backward') win.__backward++;
+            return fetchBars(r);
+        };
+        c.setChartSettings({ chartType: 'line', showTradeDots: false });
+        c.setTimeframe('1m');
+    });
+    const backward = () => page.evaluate(() => (window as any).__backward as number);
+    await expect.poll(backward, { timeout: 10_000 }).toBeGreaterThan(0);
+    // 2 pages on the sim, ~1.8s apart, then nothing
+    await page.waitForTimeout(5000);
+    const before = await backward();
+    await page.waitForTimeout(3000);
+    expect(await backward()).toBe(before);
+
+    await watchBlanks(page);
     for (let i = 0; i < 6; i++) {
         const z = await onHorizon(page);
         await page.mouse.move(z.x, z.y);

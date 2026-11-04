@@ -631,6 +631,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
     function onViewSettled() {
         announcePaneView();
         publishTimeRangeSync();
+        chartData.armLoadAhead();
     }
 
     // Timeframe switching

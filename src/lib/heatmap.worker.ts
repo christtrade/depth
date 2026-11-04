@@ -37,12 +37,15 @@ let aheadWanted: HeatmapRequest | null = null;
 let fillWanted: HeatmapRequest | null = null;
 let bboWanted: HeatmapRequest | null = null;
 let working = false;
+let normsOutdated = false;
 
 self.onmessage = (e: MessageEvent<WorkerInitMessage | HeatmapRequest>) => {
     const msg = e.data;
     if (msg.type === 'init' || msg.type === 'append') {
         // keep drawing old tiles while an init builds and a newer init stops it
         const gen = msg.type === 'init' ? ++buildGen : buildGen;
+        // on arrival, this init can get cancelled by a page that keeps them
+        if (msg.type === 'init' && !msg.olderData) normsOutdated = true;
         chain = chain.then(async () => {
             if (gen !== buildGen) return;
             let from = 0n;
@@ -53,7 +56,9 @@ self.onmessage = (e: MessageEvent<WorkerInitMessage | HeatmapRequest>) => {
                 if (!(await extend(freshReplay, msg.buf, msg.length, () => gen !== buildGen))) return;
                 build = fresh;
                 replay = freshReplay;
-                norms.clear();
+                // a page off screen would recolor what's on screen
+                if (normsOutdated) norms.clear();
+                normsOutdated = false;
             } else {
                 if (!build) return;
                 from = build.lastEventTs;

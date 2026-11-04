@@ -44,6 +44,7 @@ function App() {
         timePrecision: 's',
         features: { timeframe: { timeframes: 'any', allowCustom: true } },
         ...(budget && { dataBudget: { maxBytes: Number(budget) } }),
+        ...(params.get('ahead') === '0' && { loadAhead: false }),
         ...(split && {
             restore: { layout: { id: '2h', label: '2', count: 2, cols: 2, rows: 1, areas: '"a b"' } },
         }),

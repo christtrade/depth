@@ -69,6 +69,7 @@ export interface DataEngineConfig {
     initialWindowNs?: bigint;
     scrollWindowNs?: bigint;
     dataBudget?: { maxBytes?: number };
+    loadAhead?: boolean;
     timeframe: Timeframe;
     /** Active symbol - passed in every FetchRequest so one adapter serves many symbols. */
     symbol?: string;
@@ -394,6 +395,8 @@ function recovered(r: Retry): void {
 }
 
 const noRetry = (): Retry => ({ at: 0, ms: 0, timer: null, panAt: 0 });
+
+const AHEAD_VIEWS = 4n;
 
 export class DataEngine {
     private adapter: IDataAdapter | null = null;
@@ -1215,7 +1218,26 @@ export class DataEngine {
             });
     }
 
-    private _fetchBackward(symbol: string, viewMin: bigint, fromPan = false): void {
+    // a page before anyone asks, so a zoom out finds it in the heatmap worker. never evicts to fit one
+    private _loadAhead(symbol: string, viewMin: bigint, spanNs: bigint): void {
+        if (this.config.loadAhead === false) return;
+        const st = this._states.get(symbol);
+        if (!st?.master || st.staging || st.loadedFrom === null || st.loadedTo === null) return;
+        if (!st.hasMoreHistory || st.backwardInFlight || st.retry.backward.at > Date.now()) return;
+        if (viewMin - st.loadedFrom >= spanNs * AHEAD_VIEWS) return;
+
+        let total = 0;
+        for (const [s, o] of this._states) {
+            if (BUDGETED.has(o.master?.dataLevel as DataLevel)) total += heldBytes(o.master!) + this._paneHeld(s);
+        }
+        const mine = heldBytes(st.master) + this._paneHeld(symbol);
+        const page = (mine * Number(this.scrollWindowNs)) / Number(st.loadedTo - st.loadedFrom);
+        if (total + page > this.maxBytes) return;
+
+        this._fetchBackward(symbol, st.loadedFrom - this.scrollWindowNs, 'ahead');
+    }
+
+    private _fetchBackward(symbol: string, viewMin: bigint, source?: 'pan' | 'ahead'): void {
         if (this.destroyed) return;
         const adapter = this._adapterFor(symbol);
         if (!adapter) return;
@@ -1228,7 +1250,7 @@ export class DataEngine {
             st.pendingBackwardViewMin = null;
             if (queued !== null) this._fetchBackward(symbol, queued);
         };
-        if (fromPan) panRetry(st.retry.backward);
+        if (source === 'pan') panRetry(st.retry.backward);
         if (st.backwardInFlight || this._waiting(st.retry.backward, retry)) {
             if (st.pendingBackwardViewMin === null || viewMin < st.pendingBackwardViewMin) {
                 st.pendingBackwardViewMin = viewMin;
@@ -1276,7 +1298,7 @@ export class DataEngine {
         const from = windows[0].from;
         const to = windows[windows.length - 1].to;
 
-        if (adapter.fetchPreview) {
+        if (adapter.fetchPreview && source !== 'ahead') {
             adapter
                 .fetchPreview({
                     symbolInfo: st.symbolInfo,
@@ -1340,7 +1362,8 @@ export class DataEngine {
                 // to ask for this range again.
                 // backOff() to back off first
                 backOff(st.retry.backward);
-                if (st.pendingBackwardViewMin === null || viewMin < st.pendingBackwardViewMin) {
+                // nobody's waiting on an ahead page, the next settled view asks again
+                if (source !== 'ahead' && (st.pendingBackwardViewMin === null || viewMin < st.pendingBackwardViewMin)) {
                     st.pendingBackwardViewMin = viewMin;
                 }
             })
@@ -1943,7 +1966,10 @@ export class DataEngine {
                 this._requestForward(this._targetSymbol(symbol), viewMax);
             }),
             this.eventBus.on('data:request-backward', ({ viewMin, symbol }) => {
-                this._fetchBackward(this._targetSymbol(symbol), viewMin, true);
+                this._fetchBackward(this._targetSymbol(symbol), viewMin, 'pan');
+            }),
+            this.eventBus.on('data:load-ahead', ({ viewMin, spanNs, symbol }) => {
+                this._loadAhead(this._targetSymbol(symbol), viewMin, spanNs);
             }),
             this.eventBus.on('data:rehydrate', () => this.rehydrate()),
             this.eventBus.on('data:retry', ({ symbol }) => {

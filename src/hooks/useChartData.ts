@@ -229,6 +229,7 @@ export interface UseChartDataParams {
 }
 
 export interface ChartDataResult {
+    armLoadAhead: () => void;
     // Core data refs
     compactBufRef: MutableRefObject<CompactBuffer>;
     allTradesRef: MutableRefObject<TradePoint[]>;
@@ -304,6 +305,8 @@ export interface ChartDataResult {
 }
 
 // Hook
+const LOAD_AHEAD_SETTLE_MS = 500;
+
 export function useChartData(p: UseChartDataParams): ChartDataResult {
     // Symbol this cell is showing, readable from the long-lived worker/ingest
     // closures below. Every cell shares one eventBus, so status emitted from
@@ -730,21 +733,42 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         }
     }, []);
 
+    const loadAheadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // an init costs ~2.3 s per 1M events and a newer one cancels it, so one page at a time
+    const armLoadAhead = useCallback(() => {
+        if (loadAheadTimerRef.current !== null) clearTimeout(loadAheadTimerRef.current);
+        loadAheadTimerRef.current = setTimeout(() => {
+            loadAheadTimerRef.current = null;
+            const view = p.viewRef.current;
+            const cb = compactBufRef.current;
+            const start = heatmapTilesRef.current?.workerStart;
+            if (!view || !cb.length || !p.chartSettingsRef.current.showHeatmap) return;
+            if (start == null || start > getTsNs(cb, 0)) return;
+            p.eventBus.emit('data:load-ahead', {
+                viewMin: view.tMin,
+                spanNs: view.tMax - view.tMin,
+                symbol: cellSymbolRef.current,
+            });
+        }, LOAD_AHEAD_SETTLE_MS);
+    }, []);
+
     // Workers
     const onWorkerMessage = (e: MessageEvent<HeatmapReply>) => {
         const r = e.data;
+        if (r.type === 'data' && r.from === '0') armLoadAhead();
         if (r.type !== 'held') return heatmapTilesRef.current?.onReply(r);
         const symbol = cellSymbolRef.current;
         if (symbol) p.eventBus.emit('data:pane-held', { id: p.cellId, symbol, bytes: r.bytes });
     };
 
     // send a copy so the charts own buffer stays usable while the worker builds
-    const sendHeatmapInit = useCallback(() => {
+    const sendHeatmapInit = useCallback((olderData = false) => {
         const cb = compactBufRef.current;
         const worker = workerRef.current;
         if (!worker || !cb.length || !p.chartSettingsRef.current.showHeatmap) return;
         const buf = cb._buf.slice(0, cb.length * BYTES_PER_EVENT);
-        const msg: WorkerInitMessage = { type: 'init', buf, length: cb.length };
+        const msg: WorkerInitMessage = { type: 'init', buf, length: cb.length, olderData };
         worker.postMessage(msg, [buf]);
         heatmapSentRef.current = { buf: cb._buf, length: cb.length };
     }, []);
@@ -1550,7 +1574,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             cb.firstTs = ds;
             cb.lastTs = datasetEndRef.current;
             compactBufRef.current = cb;
-            sendHeatmapInit();
+            sendHeatmapInit(true);
             allTradesRef.current = newTrades;
             midPrintsRef.current = payload.midPrints ?? [];
             allPriceHistoryRef.current = newHistory;
@@ -2189,6 +2213,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         );
         indicatorWorkerRef.current.onmessage = onIndicatorWorkerMessage;
         return () => {
+            if (loadAheadTimerRef.current !== null) clearTimeout(loadAheadTimerRef.current);
             workerRef.current?.terminate();
             const symbol = cellSymbolRef.current;
             if (symbol) p.eventBus.emit('data:pane-held', { id: p.cellId, symbol, bytes: 0 });
@@ -2230,6 +2255,10 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 if (payload.symbol !== cellSymbol) return;
                 previewBarsRef.current = new BarStore();
                 ingestPrependedData(payload as any);
+            }),
+            // a closed stretch has no page, so no init comes back to ask for the next
+            p.eventBus.on('data:session-gap', ({ symbol }) => {
+                if (symbol === cellSymbol) armLoadAhead();
             }),
             p.eventBus.on('data:preview', (payload) => {
                 if (payload.symbol !== cellSymbol) return;
@@ -2277,6 +2306,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
 
     // Return
     return {
+        armLoadAhead,
         compactBufRef,
         allTradesRef,
         tradesRef,

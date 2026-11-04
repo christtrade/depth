@@ -163,6 +163,12 @@ export interface ChartOptions {
     initialWindowNs?: bigint;
     prefetchWindowNs?: bigint;
     dataBudget?: { maxBytes?: number };
+    /**
+     * With the heatmap on, fetch older data while the view is at rest, so a zoom out
+     * doesn't blank. One page at a time, up to 3 view widths behind the view. Default
+     * on, turn off if your backend is paid or rate limited.
+     */
+    loadAhead?: boolean;
     executionAdapter?: IExecutionAdapter;
 
     hideToolbar?: boolean;
@@ -531,6 +537,7 @@ export class DepthChart {
             fpOptions: options.fpOptions,
             initialWindowNs: options.initialWindowNs,
             dataBudget: options.dataBudget,
+            loadAhead: options.loadAhead,
             timeframe,
             symbol: options.symbol,
             plugins: this.dataSources,

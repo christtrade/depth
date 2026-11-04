@@ -249,6 +249,7 @@ export interface ChartEvents {
     // active symbol, so a synced-horizon pan doesnt make every pane reload
     'data:request-forward': { viewMax: bigint; symbol?: string };
     'data:request-backward': { viewMin: bigint; symbol?: string };
+    'data:load-ahead': { viewMin: bigint; spanNs: bigint; symbol?: string };
     /**
      * Jump-load: re-fetch a fresh window centered on `tNs` and reinitialize
      * there, instead of streaming everything between the loaded edge and the
