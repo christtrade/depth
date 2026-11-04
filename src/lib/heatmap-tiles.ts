@@ -56,6 +56,7 @@ export class HeatmapTiles {
     private range: { start: bigint; end: bigint } | null = null;
     // zooming out shows time no zoom has tiles for, this always has it
     private overview: TileConfig | null = null;
+    private oldOverview: string | null = null;
     private overviewAsked = '';
     private frame = 0;
     private lastRange = 0;
@@ -71,6 +72,10 @@ export class HeatmapTiles {
         this.bbo = new FineBbo(post, changed);
     }
 
+    get workerStart(): bigint | null {
+        return this.range?.start ?? null;
+    }
+
     onReply(r: Exclude<HeatmapReply, { type: 'held' }>): void {
         if (r.type === 'bbo') {
             this.bbo.onReply(r);
@@ -80,6 +85,7 @@ export class HeatmapTiles {
             this.bbo.dataFrom(BigInt(r.from));
             this.range = { start: BigInt(r.start), end: BigInt(r.end) };
             this.invalidate(BigInt(r.from));
+            if (r.from === '0') this.dropOtherZooms();
             return;
         }
         if (r.type === 'norm') {
@@ -132,9 +138,30 @@ export class HeatmapTiles {
         this.changed();
     }
 
+    // older orders changed the book in all of them, and they're near empty where the old data began
+    private dropOtherZooms(): void {
+        const s = this.seen;
+        if (!s) return;
+        const before = this.overview && configKey(this.overview);
+        this.askOverview(s.config, null);
+        const now = this.overview && configKey(this.overview);
+        for (const [key, tiles] of this.byConfig) {
+            if (key === configKey(s.config) || key === before || key === now) continue;
+            this.dropZoom(key, tiles);
+        }
+        this.oldOverview = before !== now ? before : null;
+    }
+
+    private dropZoom(key: string, tiles: Map<number, Tile>): void {
+        for (const t of tiles.values()) t.bitmap?.close();
+        this.count -= tiles.size;
+        this.byConfig.delete(key);
+    }
+
     clear(): void {
         this.range = null;
         this.overview = null;
+        this.oldOverview = null;
         this.overviewAsked = '';
         for (const tiles of this.byConfig.values()) for (const t of tiles.values()) t.bitmap?.close();
         this.fill?.bitmap?.close();
@@ -275,7 +302,13 @@ export class HeatmapTiles {
             const t = tiles?.get(Number(k));
             if (!t || (t.stale && (staleBefore === null || t.until < staleBefore))) want.push(Number(k));
         }
-        if (!want.length) return;
+        if (!want.length) {
+            const old = this.oldOverview;
+            this.oldOverview = null;
+            const held = old && old !== configKey(c) ? this.byConfig.get(old) : null;
+            if (held) this.dropZoom(old!, held);
+            return;
+        }
         const ask = key + '|' + want.join(',');
         if (ask === this.overviewAsked) return;
         this.overviewAsked = ask;

@@ -477,6 +477,63 @@ describe('the book past the data a tile has', () => {
     });
 });
 
+describe('a rebuild, older data came in', () => {
+    const DATA = SPAN * 40n;
+    const bm = () => ({ width: 256, height: 10, closed: false, close() { this.closed = true; } });
+    const keyOf = (column: number) => configKey({ column, tickSize: 0.01, ticks: 1, contrast: 0, palette: 'heat' });
+    const tile = (k: string, n: number, bitmap = bm()) =>
+        ({ type: 'tile' as const, key: k, k: n, rowLo: 9990, rows: 10, bitmap: bitmap as unknown as ImageBitmap, until: DATA.toString() });
+    const byConfig = (s: ReturnType<typeof setup>) => (s.tiles as any).byConfig as Map<string, Map<number, unknown>>;
+    const fullOverview = (s: ReturnType<typeof setup>, end: bigint) => {
+        const column = overviewColumn(0n, end);
+        const span = COLUMN_NS[column] * BigInt(TILE_COLS);
+        for (let k = 0; k <= Number(end / span); k++) s.tiles.onReply(tile(keyOf(column), k));
+        return keyOf(column);
+    };
+
+    it('drops the zooms not on screen, their book is wrong and near empty at the old start', () => {
+        const s = setup();
+        s.tiles.onReply(data(0n, DATA));
+        s.tiles.draw(s.ctx, view);
+        const ov = fullOverview(s, DATA);
+        const other = keyOf(COLUMN_NS.indexOf(COL) - 1);
+        const b = bm();
+        s.tiles.onReply(tile(other, 0, b));
+        const before = (s.tiles as any).count;
+        s.tiles.onReply(data(0n, DATA));
+        assert.equal(byConfig(s).has(other), false);
+        assert.equal(b.closed, true);
+        assert.equal((s.tiles as any).count, before - 1);
+        assert.equal(byConfig(s).has(key), true, 'the zoom on screen stays till its new tiles land');
+        assert.equal(byConfig(s).has(ov), true);
+    });
+
+    it('a live chunk doesnt', () => {
+        const s = setup();
+        s.tiles.onReply(data(0n, DATA));
+        s.tiles.draw(s.ctx, view);
+        const other = keyOf(COLUMN_NS.indexOf(COL) - 1);
+        s.tiles.onReply(tile(other, 0));
+        s.tiles.onReply(data(DATA, DATA + COL));
+        assert.equal(byConfig(s).has(other), true);
+    });
+
+    it('an overview that outgrew its column stays till the new one is whole', () => {
+        const s = setup();
+        s.tiles.onReply(data(0n, DATA));
+        s.tiles.draw(s.ctx, view);
+        const old = fullOverview(s, DATA);
+        const bigger = DATA * 100n;
+        assert.notEqual(keyOf(overviewColumn(0n, bigger)), old);
+        s.tiles.onReply(data(0n, bigger));
+        s.tiles.draw(s.ctx, view);
+        assert.equal(byConfig(s).has(old), true, 'something to fall back on meanwhile');
+        fullOverview(s, bigger);
+        s.tiles.draw(s.ctx, view);
+        assert.equal(byConfig(s).has(old), false);
+    });
+});
+
 describe('the overview', () => {
     const DATA = SPAN * 40n;
     const column = overviewColumn(0n, DATA);
