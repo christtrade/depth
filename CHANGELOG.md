@@ -54,6 +54,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   overview of all the loaded data for that, ~160 ms of worker and ~3 MB at 1M events
 - A bright stripe at the horizon while a tile was out of date, and brighter patches during a zoom. every zoom
   level held drew on top of each other and tiles are see through, each time gets one level now
+- Turning the heatmap off while a tile was being built threw in the worker. a tile from before a rebuild is
+  dropped now too, it could land after the new data and pass as up to date
+- The horizon flashed another color on every live chunk, and a dark 1px seam jumped with it. a chunk's new
+  strip gets the book at this zoom's brightness now, and the tiles and the book meet on a whole pixel
 - Zooming blanked the heatmap for a frame right of the horizon and in strips left of it. the old book and
   whatever tiles are held draw till the new ones land
 - When the data landed before the symbol resolved (a slow pc, often safari) the matching engine got

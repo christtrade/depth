@@ -302,6 +302,34 @@ test('l3 live: zooming doesnt blank the heatmap, either side of the horizon', as
     expect(await blanksSeen(page)).toBe(0);
 });
 
+test('l3 live: a chunk landing draws no other zoom at the horizon, it flashed another brightness', async ({ page }) => {
+    await noneOnTheHorizon(page);
+    for (let i = 0; i < 80; i++) {
+        const z = await onHorizon(page);
+        if (z.msPerPx < 12) break;
+        await page.mouse.move(z.x, z.y);
+        await page.mouse.wheel(0, z.msPerPx > 24 ? -300 : -100);
+        await page.waitForTimeout(40);
+    }
+    await page.mouse.move(100, 400);
+    await page.waitForTimeout(1500);
+    // a tile is ~2.6s of 10ms columns, so this crosses into a new one too
+    const drawn = await page.evaluate(async () => {
+        const ht = (window as any).__chart.renderEngine.drawParams.heatmap;
+        const fallback = ht.fallback;
+        let n = 0;
+        ht.fallback = function (...args: unknown[]) {
+            n++;
+            return fallback.apply(this, args);
+        };
+        await new Promise((r) => setTimeout(r, 4000));
+        ht.fallback = fallback;
+        return n;
+    });
+    // 23-24 before, a slow frame under load can still make one
+    expect(drawn).toBeLessThan(4);
+});
+
 test('l3 live: zooming out at 1m leaves no blank inside what the worker has', async ({ page, browserName }) => {
     test.skip(browserName === 'webkit', 'frames too slow to see one frame');
     await page.setViewportSize({ width: 1400, height: 800 });

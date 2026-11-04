@@ -22,6 +22,9 @@ const view: TileView = {
 };
 const key = configKey({ column: COLUMN_NS.indexOf(COL), tickSize: 0.01, ticks: 1, contrast: 0, palette: 'heat' });
 const data = (from: bigint, end = SPAN) => ({ type: 'data' as const, from: from.toString(), start: '0', end: end.toString() });
+// a frame looking somewhere else, the next one comes back to whatever was held
+const away = (s: { tiles: HeatmapTiles; ctx: CanvasRenderingContext2D }) =>
+    s.tiles.draw(s.ctx, { ...view, view: { ...view.view, tMin: SPAN * 8n, tMax: SPAN * 9n } });
 
 function setup() {
     const asked: HeatmapRequest[] = [];
@@ -121,6 +124,8 @@ describe('what draws while a zoom waits on its tiles', () => {
         tiles.onReply({ type: 'tile', key, k: 0, rowLo: 9990, rows: 10, bitmap, until: (90n * COL).toString() });
         tiles.onReply(reply(0, coarser, bm('coarse')));
         tiles.onReply(data(90n * COL));
+        away({ tiles, ctx });
+        drawn.length = 0;
         tiles.draw(ctx, view);
         assert.deepEqual(drawn.map((b: any) => b.name ?? 'tile'), ['coarse', 'tile']);
     });
@@ -156,6 +161,8 @@ describe('what draws while a zoom waits on its tiles', () => {
         s.tiles.onReply({ ...reply(3, COL / 10n, bm('fine')), until: (94n * COL).toString() });
         s.tiles.onReply({ ...reply(0, coarser, bm('coarse')), until: SPAN.toString() });
         s.tiles.onReply(data(90n * COL));
+        away(s);
+        painted.length = 0;
         s.tiles.draw(s.ctx, v);
         const under = painted.filter((p) => p[2] !== 'tile');
         assert.deepEqual(under, [
@@ -172,6 +179,8 @@ describe('what draws while a zoom waits on its tiles', () => {
         s.tiles.onReply({ ...reply(0, coarser, bm('coarse')), until: SPAN.toString() });
         s.tiles.onReply({ type: 'tile', key, k: 0, rowLo: 9990, rows: 10, bitmap: s.bitmap, until: '0' });
         s.tiles.onReply(data(0n));
+        away(s);
+        names.length = 0;
         s.tiles.draw(s.ctx, view);
         assert.deepEqual(names, ['coarse', 'tile'], 'the empty finer tile doesnt hide it');
     });
@@ -305,13 +314,150 @@ describe('the book past the data a tile has', () => {
         assert.deepEqual(xs, [92]);
     });
 
-    it('starts past a coarser tile under the tail of a stale one too, every live chunk has one', () => {
+    it('starts past a coarser tile under the tail of a stale one come back on screen', () => {
         const { tiles, ctx, xs, bitmap } = liveSetup();
         tiles.onReply(tile(0, 90n * COL + 1n, bitmap));
         tiles.onReply(coarse(93n * COL + 1n, bitmap));
         tiles.onReply(data(90n * COL + 1n, 100n * COL));
+        away({ tiles, ctx });
+        xs.length = 0;
         tiles.draw(ctx, live);
         assert.deepEqual(xs, [96]);
+    });
+
+    describe('when a live chunk lands, no other level shows at the horizon', () => {
+        const names = (s: ReturnType<typeof liveSetup>) => {
+            const seen: string[] = [];
+            (s.ctx as any).drawImage = (b: any, x: number) => {
+                if (b === fillBitmap) s.xs.push(x);
+                else seen.push(b.name ?? 'tile');
+            };
+            return seen;
+        };
+        const named = { name: 'coarse', width: 256, height: 10, close() {} } as unknown as ImageBitmap;
+
+        it('the book covers the tail of a tile that was on screen', () => {
+            const s = liveSetup();
+            const seen = names(s);
+            s.tiles.onReply(tile(0, 90n * COL + 1n, s.bitmap));
+            s.tiles.onReply(coarse(99n * COL + 1n, named));
+            s.tiles.draw(s.ctx, live);
+            s.tiles.onReply(data(90n * COL + 1n, 100n * COL));
+            seen.length = 0;
+            s.xs.length = 0;
+            s.tiles.draw(s.ctx, live);
+            assert.deepEqual(seen, ['tile']);
+            assert.deepEqual(s.xs, [91]);
+        });
+
+        it('same when it crossed into a tile nobody has built', () => {
+            const s = liveSetup();
+            const seen = names(s);
+            s.tiles.onReply(fill(past.horizon));
+            s.tiles.onReply(tile(0, SPAN - 5n * COL + 1n, s.bitmap));
+            s.tiles.onReply(coarse(SPAN + 5n * COL, named));
+            const before = { ...past, horizon: SPAN - 5n * COL };
+            s.tiles.draw(s.ctx, before);
+            seen.length = 0;
+            s.xs.length = 0;
+            s.tiles.draw(s.ctx, past);
+            assert.deepEqual(seen, ['tile']);
+            assert.deepEqual(s.xs, [TILE_COLS - 4]);
+        });
+
+        it('even if the chunk landed between the tile arriving and its first draw', () => {
+            const s = liveSetup();
+            const seen = names(s);
+            s.tiles.draw(s.ctx, live);
+            s.tiles.onReply(tile(0, 90n * COL + 1n, s.bitmap));
+            s.tiles.onReply(coarse(99n * COL + 1n, named));
+            s.tiles.onReply(data(90n * COL + 1n, 100n * COL));
+            seen.length = 0;
+            s.tiles.draw(s.ctx, live);
+            assert.deepEqual(seen, ['tile']);
+        });
+
+        it('a tail before the last tile gets the book too, or it would be a hole', () => {
+            const s = liveSetup();
+            const seen = names(s);
+            s.tiles.onReply(fill(past.horizon));
+            s.tiles.onReply(tile(0, SPAN - 5n * COL + 1n, s.bitmap));
+            s.tiles.onReply(coarse(SPAN + 5n * COL, named));
+            s.tiles.draw(s.ctx, { ...past, horizon: SPAN - 5n * COL });
+            s.tiles.onReply(data(SPAN - 5n * COL + 1n, past.horizon));
+            s.tiles.onReply(tile(1, past.horizon, s.bitmap));
+            seen.length = 0;
+            s.xs.length = 0;
+            s.tiles.draw(s.ctx, past);
+            assert.deepEqual(seen, ['tile', 'tile'], 'no other level');
+            assert.equal(s.xs[0], TILE_COLS - 4, 'the book in the gap');
+        });
+
+        it('and the level under it when there is no book yet', () => {
+            const s = setup();
+            const seen: string[] = [];
+            (s.ctx as any).drawImage = (b: any) => seen.push(b.name ?? 'tile');
+            const t = (k: number, until: bigint) => ({ type: 'tile' as const, key, k, rowLo: 9990, rows: 10, bitmap: s.bitmap, until: until.toString() });
+            s.tiles.onReply(t(0, SPAN - 5n * COL + 1n));
+            s.tiles.onReply({ type: 'tile', key: coarseKey, k: 0, rowLo: 9990, rows: 10, bitmap: named, until: (SPAN + 5n * COL).toString() });
+            s.tiles.draw(s.ctx, { ...past, horizon: SPAN - 5n * COL });
+            s.tiles.onReply(data(SPAN - 5n * COL + 1n, past.horizon));
+            s.tiles.onReply(t(1, past.horizon));
+            seen.length = 0;
+            s.tiles.draw(s.ctx, past);
+            assert.deepEqual(seen, ['coarse', 'tile', 'tile']);
+        });
+
+        it('in a zoom the level under it draws, a hole shows there and a flash doesnt', () => {
+            const s = liveSetup();
+            const seen = names(s);
+            s.tiles.onReply(tile(0, 90n * COL + 1n, s.bitmap));
+            s.tiles.onReply(coarse(99n * COL + 1n, named));
+            s.tiles.draw(s.ctx, live);
+            s.tiles.onReply(data(90n * COL + 1n, 100n * COL));
+            seen.length = 0;
+            s.tiles.draw(s.ctx, { ...live, view: { ...live.view, tMin: 1n }, tsToX: live.tsToX });
+            assert.deepEqual(seen, ['coarse', 'tile']);
+        });
+
+        it('a zoom still falls back past a tile that just landed, thats not the live edge', () => {
+            const s = liveSetup();
+            const seen = names(s);
+            s.tiles.onReply(fill(past.horizon));
+            s.tiles.onReply(coarse(SPAN + 5n * COL, named));
+            (s.tiles as any).byConfig.get(key).clear();
+            s.tiles.draw(s.ctx, past);
+            s.tiles.onReply(tile(0, SPAN, s.bitmap));
+            seen.length = 0;
+            s.tiles.draw(s.ctx, past);
+            assert.deepEqual(seen, ['tile', 'coarse']);
+        });
+
+        it('a tile coming back on screen with a blank tail still gets the level under it', () => {
+            const s = liveSetup();
+            const seen = names(s);
+            s.tiles.onReply(tile(0, 90n * COL + 1n, s.bitmap));
+            s.tiles.onReply(coarse(99n * COL + 1n, named));
+            s.tiles.onReply(data(90n * COL + 1n, 100n * COL));
+            s.tiles.draw(s.ctx, live);
+            s.tiles.draw(s.ctx, { ...live, view: { ...live.view, tMin: SPAN * 8n, tMax: SPAN * 9n } });
+            seen.length = 0;
+            s.tiles.draw(s.ctx, live);
+            assert.deepEqual(seen, ['coarse', 'tile']);
+            seen.length = 0;
+            s.tiles.draw(s.ctx, live);
+            assert.deepEqual(seen, ['coarse', 'tile'], 'and stays, till its rebuild lands');
+        });
+    });
+
+    it('the tiles and the book meet on a whole pixel, half covered by both leaves a dark seam', () => {
+        const s = liveSetup();
+        const clips: number[] = [];
+        (s.ctx as any).rect = (_x: number, _y: number, w: number) => clips.push(w);
+        s.tiles.onReply(tile(0, 100n * COL, s.bitmap));
+        s.tiles.draw(s.ctx, { ...live, tsToX: (ts) => Number(ts / COL) + 0.4 });
+        assert.deepEqual(clips, [100]);
+        assert.deepEqual(s.xs, [100]);
     });
 
     it('never past the playhead', () => {

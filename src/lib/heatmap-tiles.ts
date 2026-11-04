@@ -15,7 +15,19 @@ export function overviewColumn(start: bigint, end: bigint): number {
     return COLUMN_NS.length - 1;
 }
 
-type Tile = { k: number; rowLo: number; rows: number; bitmap: ImageBitmap | null; until: bigint; stale?: boolean };
+type Tile = {
+    k: number;
+    rowLo: number;
+    rows: number;
+    bitmap: ImageBitmap | null;
+    until: bigint;
+    stale?: boolean;
+    drawnAt?: number;
+    // a chunk can land between this and its first draw, that tail is short too
+    landedAt?: number;
+    // came back on screen with a blank tail, not a live chunk's short one
+    oldTail?: boolean;
+};
 type Fill = { key: string; ts: bigint; rowLo: number; rows: number; bitmap: ImageBitmap | null; stale?: boolean };
 
 export type TileView = {
@@ -45,6 +57,8 @@ export class HeatmapTiles {
     // zooming out shows time no zoom has tiles for, this always has it
     private overview: TileConfig | null = null;
     private overviewAsked = '';
+    private frame = 0;
+    private lastRange = 0;
     //bitmaps the last frame drew, for tests
     drawn: ImageBitmap[] = [];
     readonly bbo: FineBbo;
@@ -86,9 +100,18 @@ export class HeatmapTiles {
         }
         let tiles = this.byConfig.get(r.key);
         if (!tiles) this.byConfig.set(r.key, (tiles = new Map()));
-        tiles.get(r.k)?.bitmap?.close();
-        if (!tiles.has(r.k)) this.count++;
-        tiles.set(r.k, { k: r.k, rowLo: r.rowLo, rows: r.rows, bitmap: r.bitmap, until: BigInt(r.until) });
+        const was = tiles.get(r.k);
+        was?.bitmap?.close();
+        if (!was) this.count++;
+        tiles.set(r.k, {
+            k: r.k,
+            rowLo: r.rowLo,
+            rows: r.rows,
+            bitmap: r.bitmap,
+            until: BigInt(r.until),
+            drawnAt: was?.drawnAt,
+            landedAt: this.frame,
+        });
         // an overview tile landing shouldn't push out what's on screen
         const shown = this.seen ? configKey(this.seen.config) : r.key;
         this.evict(this.overview && r.key === configKey(this.overview) ? shown : r.key);
@@ -124,6 +147,7 @@ export class HeatmapTiles {
 
     draw(ctx: CanvasRenderingContext2D, v: TileView): void {
         this.drawn = [];
+        this.frame++;
         const { view, w, h } = v;
         const tRange = Number(view.tMax - view.tMin);
         const pRange = view.pMax - view.pMin;
@@ -149,21 +173,36 @@ export class HeatmapTiles {
         ctx.save();
         if (cut !== null) {
             ctx.beginPath();
-            ctx.rect(0, 0, Math.max(0, v.tsToX(cut)), h);
+            // on a whole pixel like the book, half covered by both comes out thinner than either
+            ctx.rect(0, 0, Math.max(0, Math.round(v.tsToX(cut))), h);
             ctx.clip();
         }
 
+        // only then can a chunk's flash be seen, in a zoom a hole is what shows
+        const steady = this.lastRange === tRange;
+        this.lastRange = tRange;
         const missing: number[] = [];
+        let lastOnScreen = false;
+        let liveEdge = false;
         const kFrom = Number(view.tMin / span);
         const kTo = Number((end - 1n) / span);
         for (let k = kFrom; k <= kTo && end > view.tMin; k++) {
             const t = tiles?.get(k);
             const tileEnd = BigInt(k + 1) * span;
             if (t) {
-                // held since before the data got this far, zoom away and back and its tail is blank
+                // held since before the data got this far, zoom away and back and its tail is blank. a live
+                // chunk's tail gets the book, it's this level's brightness, another level flashes every chunk
+                const wasOn = t.drawnAt === this.frame - 1;
+                if (t.stale && t.until < tileEnd && (!steady || (!wasOn && t.landedAt !== this.frame - 1))) t.oldTail = true;
+                t.drawnAt = this.frame;
+                lastOnScreen = wasOn && steady && !t.oldTail;
                 if (t.stale && t.until < tileEnd) {
                     const start = BigInt(k) * span;
-                    this.fallback(ctx, t.until > start ? ceilTo(t.until, colNs) : start, tileEnd, key, config.tickSize, v);
+                    const tail = t.until > start ? ceilTo(t.until, colNs) : start;
+                    // the last tile's tail gets the book further down, a chunk that crossed into the next tile needs it here
+                    if (t.oldTail) this.fallback(ctx, tail, tileEnd, key, config.tickSize, v);
+                    else if (k < kTo && !this.paintBook(ctx, tail, tileEnd, config.tickSize, v))
+                        this.fallback(ctx, tail, tileEnd, key, config.tickSize, v);
                 }
                 this.paint(ctx, t, span, config, v);
                 // keeps it last in line for eviction
@@ -172,14 +211,17 @@ export class HeatmapTiles {
                 if (t.stale) missing.push(k);
             } else {
                 missing.push(k);
-                this.fallback(ctx, BigInt(k) * span, tileEnd, key, config.tickSize, v);
+                // a chunk crossed into a tile nobody's built, that's a tail too
+                if (cut !== null && k === kTo && lastOnScreen) liveEdge = true;
+                else this.fallback(ctx, BigInt(k) * span, tileEnd, key, config.tickSize, v);
+                lastOnScreen = false;
             }
         }
         ctx.restore();
 
         if (cut !== null) {
             // the horizon moves when a live chunk lands, the tile that has it comes later. blank strip every chunk
-            const until = this.paintedUntil(tiles, kFrom, kTo, span, key, config.tickSize);
+            const until = this.paintedUntil(tiles, kFrom, kTo, span, key, config.tickSize, liveEdge);
             let from = cut;
             if (until !== null) {
                 const end = ((until + colNs - 1n) / colNs) * colNs;
@@ -313,14 +355,22 @@ export class HeatmapTiles {
             }
         }
         // a stale fill beats a gap while the new one is on its way, a zoom changes the key
-        if (!f?.bitmap) return;
+        this.paintBook(ctx, from, null, c.tickSize, v);
+    }
+
+    // to the right edge when `to` is null. false if there's no book of this tick size to draw
+    private paintBook(ctx: CanvasRenderingContext2D, from: bigint, to: bigint | null, tickSize: number, v: TileView): boolean {
+        const f = this.fill;
+        if (!f?.bitmap) return false;
         const own = parseKey(f.key);
-        if (own.tickSize !== c.tickSize) return;
-        const x0 = Math.max(0, v.tsToX(from));
+        if (own.tickSize !== tickSize) return false;
+        const x0 = Math.max(0, Math.round(v.tsToX(from)));
+        const x1 = to === null ? v.w : Math.round(v.tsToX(to));
         const top = v.priceToY(((f.rowLo + f.rows) * own.ticks - 0.5) * own.tickSize);
         const bottom = v.priceToY((f.rowLo * own.ticks - 0.5) * own.tickSize);
-        ctx.drawImage(f.bitmap, x0, top, v.w - x0, bottom - top);
+        ctx.drawImage(f.bitmap, x0, top, x1 - x0, bottom - top);
         this.drawn.push(f.bitmap);
+        return true;
     }
 
     // how far the data goes in what this frame painted, the tile at the end or what fell back for it
@@ -331,17 +381,18 @@ export class HeatmapTiles {
         span: bigint,
         key: string,
         tickSize: number,
+        liveEdge: boolean,
     ): bigint | null {
         let until: bigint | null = null;
         for (let k = kTo; k >= kFrom; k--) {
             const t = tiles?.get(k);
             if (!t || t.until <= BigInt(k) * span) continue;
             const end = BigInt(k + 1) * span;
-            // a stale one has what's held painted under its tail
-            if (k === kTo && (!t.stale || t.until >= end)) return t.until;
+            if (k === kTo && !(t.oldTail && t.until < end)) return t.until;
             until = t.until < end ? t.until : end;
             break;
         }
+        if (liveEdge) return until;
         const from = BigInt(kTo) * span;
         const to = from + span;
         for (const old of this.fallbacks(key, tickSize, from, to)) {
