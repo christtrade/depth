@@ -426,6 +426,90 @@ test('l3 live: zooming out at 1m leaves no blank inside what the worker has', as
     expect(await blanksSeen(page)).toBe(0);
 });
 
+test('l3 live: a rebuild over the limit stops loading ahead, a quicker one starts it again', async ({ page, browserName }) => {
+    test.skip(browserName === 'webkit', 'too slow here to count on the timing');
+    // a landing rebuild looks 20 s long while __slow is on
+    await page.addInitScript(() => {
+        const w = window as any;
+        w.__slow = true;
+        w.__skew = 0;
+        const now = performance.now.bind(performance);
+        performance.now = () => now() + w.__skew;
+        const d = Object.getOwnPropertyDescriptor(Worker.prototype, 'onmessage')!;
+        Object.defineProperty(Worker.prototype, 'onmessage', {
+            get() {
+                return d.get!.call(this);
+            },
+            set(fn) {
+                d.set!.call(this, (e: MessageEvent) => {
+                    if (w.__slow && e.data?.type === 'data' && e.data.from === '0') w.__skew += 20_000;
+                    fn(e);
+                });
+            },
+        });
+    });
+    await page.setViewportSize({ width: 1400, height: 800 });
+    await page.goto('/?sim=1&level=l3');
+    await settled(page);
+    await page.evaluate(() => {
+        const w = window as any;
+        w.__backward = 0;
+        const a = w.__chart.dataEngine.adapter;
+        const fetchBars = a.fetchBars.bind(a);
+        a.fetchBars = (r: any) => {
+            if (r.direction === 'backward') w.__backward++;
+            return fetchBars(r);
+        };
+    });
+    const backward = () => page.evaluate(() => (window as any).__backward as number);
+    await page.waitForFunction(() => (window as any).__chart.renderEngine.drawParams.heatmap?.workerStart != null);
+    await page.waitForTimeout(2500);
+    expect(await backward(), 'nothing fetched after a slow rebuild').toBe(0);
+
+    // a zoom out pages back on its own, that rebuild is quick
+    await page.evaluate(() => ((window as any).__slow = false));
+    for (let i = 0; i < 6; i++) {
+        const z = await onHorizon(page);
+        await page.mouse.move(z.x, z.y);
+        await page.mouse.wheel(0, 600);
+        await page.waitForTimeout(50);
+    }
+    await expect.poll(backward, { timeout: 20_000 }).toBeGreaterThan(3);
+});
+
+test('l3 live: a rebuild timed in a hidden tab doesnt stop loading ahead, its timers crawl', async ({ page, browserName }) => {
+    test.skip(browserName === 'webkit', 'too slow here to count on the timing');
+    await page.addInitScript(() => {
+        const w = window as any;
+        w.__skew = 0;
+        w.__backward = 0;
+        Object.defineProperty(document, 'hidden', { get: () => true });
+        const now = performance.now.bind(performance);
+        performance.now = () => now() + w.__skew;
+        const d = Object.getOwnPropertyDescriptor(Worker.prototype, 'onmessage')!;
+        Object.defineProperty(Worker.prototype, 'onmessage', {
+            get() {
+                return d.get!.call(this);
+            },
+            set(fn) {
+                d.set!.call(this, (e: MessageEvent) => {
+                    if (e.data?.type === 'data' && e.data.from === '0') w.__skew += 20_000;
+                    fn(e);
+                });
+            },
+        });
+    });
+    await page.setViewportSize({ width: 1400, height: 800 });
+    await page.goto('/?sim=1&level=l3');
+    await settled(page);
+    const start = () => page.evaluate(() => String((window as any).__chart.renderEngine.drawParams.heatmap?.workerStart));
+    const first = await (async () => {
+        await page.waitForFunction(() => (window as any).__chart.renderEngine.drawParams.heatmap?.workerStart != null);
+        return start();
+    })();
+    await expect.poll(start, { message: 'a page came in', timeout: 15_000 }).not.toBe(first);
+});
+
 test('l3 live: older data loads ahead at rest, so a hard zoom out finds it, and it stops by itself', async ({ page, browserName }) => {
     test.skip(browserName === 'webkit', 'frames too slow to see one frame');
     await page.setViewportSize({ width: 1400, height: 800 });

@@ -308,6 +308,8 @@ export interface ChartDataResult {
 
 // Hook
 const LOAD_AHEAD_SETTLE_MS = 500;
+// ~2.3 s per 1M events, so ~4 hours of real l3. each page rebuilds everything, past this it's a core busy for nothing
+const LOAD_AHEAD_MAX_REBUILD_MS = 10_000;
 
 export function useChartData(p: UseChartDataParams): ChartDataResult {
     // Symbol this cell is showing, readable from the long-lived worker/ingest
@@ -737,6 +739,8 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
 
     const loadAheadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const exactLinesRef = useRef(false);
+    const rebuildSentAtRef = useRef<number | null>(null);
+    const lastRebuildMsRef = useRef(0);
 
     // an init costs ~2.3 s per 1M events and a newer one cancels it, so one page at a time
     const armLoadAhead = useCallback(() => {
@@ -748,6 +752,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             const start = heatmapTilesRef.current?.workerStart;
             if (!view || !cb.length || !p.chartSettingsRef.current.showHeatmap) return;
             if (start == null || start > getTsNs(cb, 0)) return;
+            if (lastRebuildMsRef.current > LOAD_AHEAD_MAX_REBUILD_MS) return;
             p.eventBus.emit('data:load-ahead', {
                 viewMin: view.tMin,
                 spanNs: view.tMax - view.tMin,
@@ -759,7 +764,14 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
     // Workers
     const onWorkerMessage = (e: MessageEvent<HeatmapReply>) => {
         const r = e.data;
-        if (r.type === 'data' && r.from === '0') armLoadAhead();
+        if (r.type === 'data' && r.from === '0') {
+            // a hidden tab's timers crawl, that says nothing about the machine
+            if (rebuildSentAtRef.current !== null && !document.hidden) {
+                lastRebuildMsRef.current = performance.now() - rebuildSentAtRef.current;
+            }
+            rebuildSentAtRef.current = null;
+            armLoadAhead();
+        }
         if (r.type !== 'held') return heatmapTilesRef.current?.onReply(r);
         const symbol = cellSymbolRef.current;
         if (symbol) p.eventBus.emit('data:pane-held', { id: p.cellId, symbol, bytes: r.bytes });
@@ -773,6 +785,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         if (!worker || !cb.length || (linesOnly && !exactLinesRef.current)) return;
         const buf = cb._buf.slice(0, cb.length * BYTES_PER_EVENT);
         const msg: WorkerInitMessage = { type: 'init', buf, length: cb.length, olderData, linesOnly };
+        rebuildSentAtRef.current = document.hidden ? null : performance.now();
         worker.postMessage(msg, [buf]);
         heatmapSentRef.current = { buf: cb._buf, length: cb.length };
     }, []);

@@ -12,7 +12,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Quick settings for turning on/off the trade bubbles & heatmap for non-ohlcv data levels in the bottom panel.
 - With the heatmap on, older data loads while the view is at rest, up to 4 view widths behind it, so zooming out
   doesn't blank (6x at 1m on the sim, ~20 strips up to 239px -> 0). `loadAhead: false` turns it off for
-  paid or rate limited backends. stays inside `dataBudget`, never evicts for it
+  paid or rate limited backends. stays inside `dataBudget`, never evicts for it, and stops once a heatmap
+  rebuild takes over 10s, each page rebuilds everything loaded
 
 ### Changed
 - the heatmap draws each price on its own row, and zoomed out a row adds up the sizes of the prices in
