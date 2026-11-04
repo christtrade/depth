@@ -40,8 +40,12 @@ function noise(sec: number): number {
     return ((x ^ (x >>> 16)) >>> 0) / 4294967296 - 0.5;
 }
 
+// 10x over 3 hours, on the usual range log looks just like linear
+const wide = new URLSearchParams(location.search).get('wide') === '1';
+
 function price(ms: number): number {
     const sec = Math.floor(ms / SEC_MS);
+    if (wide) return 100 * 10 ** (0.5 * Math.sin(ms / 1.7e6)) + noise(sec);
     return 100 + 10 * Math.sin(ms / 3.6e7) + 3 * Math.sin(ms / 2.7e6) + noise(sec);
 }
 
