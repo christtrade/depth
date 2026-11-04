@@ -231,6 +231,7 @@ export interface UseChartDataParams {
 }
 
 export interface ChartDataResult {
+    noteViewMoved: () => void;
     armLoadAhead: () => void;
     // Core data refs
     compactBufRef: MutableRefObject<CompactBuffer>;
@@ -1702,6 +1703,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         [],
     );
 
+    const followingRef = useRef(true);
     const liveScrollRafRef = useRef<number | null>(null);
     const liveScrollLastRef = useRef(0);
     const liveEdgeRef = useRef<LiveEdge | null>(null);
@@ -1723,9 +1725,17 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         if (p.isDragging.current && (mode === 'pan' || mode === 'scaleX')) return false;
         if (mode === 'pinch' || mode === 'glide') return false;
 
-        const bar = ohlcvBucketRange(h, p.activeTimeframeRef.current.barNs, p.sessionMapperRef.current).start;
-        return view.tMin < bar && bar < view.tMax;
+        return followingRef.current;
     };
+
+    // the user's call, made when they move the view. whether the horizon's on screen right now can't decide it,
+    // a stalled frame or a tab in the background loses it and following would never start again
+    const noteViewMoved = useCallback(() => {
+        const view = p.viewRef.current;
+        if (!view) return;
+        const bar = ohlcvBucketRange(p.horizonRef.current, p.activeTimeframeRef.current.barNs, p.sessionMapperRef.current).start;
+        followingRef.current = view.tMin < bar && bar < view.tMax;
+    }, []);
 
     const driveLiveScroll = (t: number) => {
         const view = p.viewRef.current;
@@ -1752,6 +1762,12 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 view.tMax += to - from;
             }
             const h = p.horizonRef.current;
+            // data came in a burst the clock can't account for
+            if (h >= view.tMax) {
+                const back = h - view.tMax + (view.tMax - view.tMin) / 10n;
+                view.tMin += back;
+                view.tMax += back;
+            }
             const edge = liveEdgeRef.current;
             let clock = edge && h >= edge.from ? liveClockRef.current + (to - from) : h;
             // data shows up late and the step ends at the worst of that, behind, so new data lands on the end
@@ -1832,7 +1848,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
                 p.dragMode.current !== 'pinch' &&
                 p.dragMode.current !== 'glide' &&
                 fwd &&
-                inChart
+                (inChart || followingRef.current)
             ) {
                 const easing = p.chartSettingsRef.current.horizonScrollEasing;
                 const duration = p.chartSettingsRef.current.horizonScrollDuration;
@@ -2336,6 +2352,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
 
     // Return
     return {
+        noteViewMoved,
         armLoadAhead,
         compactBufRef,
         allTradesRef,

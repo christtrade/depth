@@ -18,6 +18,7 @@ import {
     TimeframeUnit,
     lockedReason,
     servableBarNs,
+    carryView,
     switchView,
     tfViewSpan,
     unsupportedReason,
@@ -628,6 +629,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
     function onViewSettled() {
         announcePaneView();
         publishTimeRangeSync();
+        chartData.noteViewMoved();
         chartData.armLoadAhead();
     }
 
@@ -639,6 +641,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
     const pendingSwitchRef = useRef<{
         tf: Timeframe;
         target: { from: bigint; to: bigint };
+        horizon: bigint;
         token: number;
     } | null>(null);
     const switchTokenRef = useRef(0);
@@ -676,9 +679,9 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         if (!pending) return;
         // anything that divides the requested timeframe builds it
         if (sourceBarNs <= 0n || pending.tf.barNs % sourceBarNs !== 0n) return;
-        const { tf, target } = pending;
+        const { tf, target, horizon } = pending;
         clearPendingSwitch();
-        handleTimeframeChange(tf, target);
+        handleTimeframeChange(tf, carryView(target, horizon, horizonRef.current));
         announcePaneView();
     }
 
@@ -1788,7 +1791,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
 
         // otherwise stage it and requst new data
         const token = ++switchTokenRef.current;
-        pendingSwitchRef.current = { tf, target, token };
+        pendingSwitchRef.current = { tf, target, horizon: horizonRef.current, token };
         switchPendingRef.current = true;
         setSwitchPending(true);
         if (switchTimerRef.current !== null) clearTimeout(switchTimerRef.current);

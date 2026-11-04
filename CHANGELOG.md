@@ -54,6 +54,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reads the bubbles the last draw made
 
 ### Fixed
+- A timeframe switch whose data took a while landed where live was when you clicked. at None that's over 3s and the
+  horizon was off the view for good, the chart looked frozen. it lands on the horizon and keeps following now
+- A live chart stopped following for good if the horizon ever left the view, an 8s stall did it at None, so should a tab
+  in the background. it only stops when you pan or zoom it off screen now
 - `prefetchWindowNs` did nothing, it never reached the engine and a page was always an hour
 - A page loaded ahead asked for the plugins' lookback on top of its hour, 6 hours at 1m with a 300 bar plugin registered
 - The heatmap's live edge stood still while older data rebuilt in the worker, seconds a page on real l3. live chunks

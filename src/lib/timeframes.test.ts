@@ -1,11 +1,28 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { PRESET_TIMEFRAMES, servableBarNs, switchView, unsupportedReason, zoomSpanLimits } from './timeframes';
+import { PRESET_TIMEFRAMES, carryView, servableBarNs, switchView, unsupportedReason, zoomSpanLimits } from './timeframes';
 
 const SEC = 1_000_000_000n;
 const MIN = 60n * SEC;
 const HOUR = 60n * MIN;
+
+describe('carryView', () => {
+    const target = { from: 100n, to: 130n };
+
+    it('moves with the horizon while the data loaded', () => {
+        assert.deepEqual(carryView(target, 127n, 135n), { from: 108n, to: 138n });
+    });
+
+    it('nothing moved on a chart that isnt live', () => {
+        assert.deepEqual(carryView(target, 127n, 127n), target);
+    });
+
+    it('leaves a view that never had the horizon, the user is looking back', () => {
+        assert.deepEqual(carryView(target, 500n, 510n), target);
+        assert.deepEqual(carryView(target, 50n, 60n), target);
+    });
+});
 const DAY = 24n * HOUR;
 
 const SUPPORTED = [SEC, MIN, HOUR, DAY];

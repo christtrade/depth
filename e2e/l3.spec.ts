@@ -46,7 +46,8 @@ const footprints = (page: Page) =>
         const horizonNs = BigInt((window as any).__chart.horizon()) * 1_000_000n;
         return {
             pastHorizon: bars.filter((b) => b.ts > horizonNs).length,
-            lastIsOpen: bars.length > 0 && horizonNs - bars[bars.length - 1].ts < 60_000_000_000n,
+            // a horizon right on the minute has no trade in the new bar yet, the last one just closed
+            lastIsOpen: bars.length > 0 && horizonNs - bars[bars.length - 1].ts <= 60_000_000_000n,
             imbalances: bars.reduce(
                 (n, b) => n + b.levels.filter((l: any) => l.askImbalance || l.bidImbalance).length,
                 0,
@@ -158,6 +159,104 @@ test('l3 live: switching to None keeps the horizon on screen', async ({ page }) 
     const { at } = await spot();
     expect(at).toBeGreaterThan(0);
     expect(at).toBeLessThan(1);
+});
+
+const blockMainThread = (page: Page, ms: number) =>
+    page.evaluate((ms) => {
+        const end = performance.now() + ms;
+        while (performance.now() < end);
+    }, ms);
+
+const horizonSpot = (page: Page) =>
+    page.evaluate(() => {
+        const c = (window as any).__chart;
+        const v = c.renderEngine.view;
+        return Number(BigInt(c.horizon()) * 1_000_000n - v.tMin) / Number(v.tMax - v.tMin);
+    });
+
+test('l3 live: None keeps following after a stall bigger than the room in the view, a tab in the background is the same', async ({ page }) => {
+    await page.goto('/?sim=1&level=l3');
+    await settled(page);
+    await page.evaluate(() => (window as any).__chart.setTimeframe('None'));
+    await expect.poll(() => horizonSpot(page), { timeout: 20_000 }).toBeLessThan(1);
+    await page.waitForTimeout(2000);
+    await blockMainThread(page, 8000);
+    await expect.poll(() => horizonSpot(page), { message: 'back on screen' }).toBeLessThan(1);
+    await page.waitForTimeout(3000);
+    expect(await horizonSpot(page), 'and staying there').toBeLessThan(1);
+});
+
+test('l3 live: bars keep following after a stall that takes the horizon off the view', async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 600 });
+    await page.goto('/?sim=1&level=l3');
+    await settled(page);
+    await page.evaluate(() => (window as any).__chart.setTimeframe('1s'));
+    await page.waitForTimeout(1500);
+    // in tight, so the stall outruns what's left of the view
+    for (let i = 0; i < 25; i++) {
+        const z = await onHorizon(page);
+        await page.mouse.move(z.x, z.y);
+        await page.mouse.wheel(0, -300);
+        await page.waitForTimeout(30);
+    }
+    await page.waitForTimeout(500);
+    expect(await horizonSpot(page)).toBeLessThan(1);
+    await blockMainThread(page, 8000);
+    await expect.poll(() => horizonSpot(page), { message: 'back on screen' }).toBeLessThan(1);
+    await page.waitForTimeout(2000);
+    expect(await horizonSpot(page), 'and staying there').toBeLessThan(1);
+});
+
+test('l3 live: a view panned away from the horizon stays put through a stall', async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 600 });
+    await page.goto('/?sim=1&level=l3');
+    await settled(page);
+    await page.evaluate(() => (window as any).__chart.setTimeframe('None'));
+    await expect.poll(() => horizonSpot(page), { timeout: 20_000 }).toBeLessThan(1);
+    await page.waitForTimeout(1500);
+    await page.mouse.move(300, 300);
+    await page.mouse.down();
+    await page.mouse.move(900, 300, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForTimeout(800);
+    const tMin = () => page.evaluate(() => String((window as any).__chart.renderEngine.view.tMin));
+    expect(await horizonSpot(page), 'off the view').toBeGreaterThan(1);
+    const before = await tMin();
+    await blockMainThread(page, 2000);
+    await page.waitForTimeout(1000);
+    expect(await tMin()).toBe(before);
+});
+
+test('l3 live: a switch to None whose data takes a while still lands on the horizon and follows it', async ({ page }) => {
+    await page.goto('/?sim=1&level=l3');
+    await settled(page);
+    // a real backend, the horizon sits ~3s from the right edge at None
+    await page.evaluate(() => {
+        const c = (window as any).__chart;
+        const emit = c.eventBus.emit.bind(c.eventBus);
+        c.eventBus.emit = (ev: string, p: any) => {
+            if (ev === 'data:load') setTimeout(() => emit(ev, p), 5000);
+            else emit(ev, p);
+        };
+        c.setTimeframe('None');
+    });
+    const spot = () =>
+        page.evaluate(() => {
+            const c = (window as any).__chart;
+            const v = c.renderEngine.view;
+            return {
+                span: Number(v.tMax - v.tMin) / 1e6,
+                at: Number(BigInt(c.horizon()) * 1_000_000n - v.tMin) / Number(v.tMax - v.tMin),
+            };
+        });
+    await expect.poll(async () => (await spot()).span, { timeout: 30_000 }).toBe(30_000);
+    const first = await spot();
+    expect(first.at).toBeGreaterThan(0);
+    expect(first.at).toBeLessThan(1);
+    await page.waitForTimeout(4000);
+    const later = await spot();
+    expect(later.at, 'still following').toBeLessThan(1);
+    expect(Math.abs(later.at - first.at), 'it stays about where it was').toBeLessThan(0.1);
 });
 
 test('l3: None zoomed in draws its bid and ask from the replay', async ({ page }) => {

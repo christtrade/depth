@@ -135,6 +135,17 @@ export function switchView(view: { tMin: bigint; tMax: bigint }, horizon: bigint
     return { from: horizon - left, to: horizon - left + span };
 }
 
+// a switch lands when its data does, live has moved on by then. off the view's edge it never follows again
+export function carryView(
+    target: { from: bigint; to: bigint },
+    horizonThen: bigint,
+    horizonNow: bigint,
+): { from: bigint; to: bigint } {
+    if (horizonThen <= target.from || horizonThen >= target.to) return target;
+    const moved = horizonNow - horizonThen;
+    return { from: target.from + moved, to: target.to + moved };
+}
+
 const SEC_NS = 1_000_000_000n;
 
 // 3 to 3400 bars. sub-second ones zoom out as far as 1s. None zooms in to 3 of the heatmap's finest columns
