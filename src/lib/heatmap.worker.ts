@@ -9,7 +9,7 @@ import {
 import type { MboEvent } from './types';
 import { createCompactBuffer, sliceToMboEvents } from './compact-buffer';
 import { type Build, type Texels, bookColumn, buildTile, feed, newBuild, pickNorm, rowNorm, seal, snapBytes, unseal } from './heatmap-build';
-import { type Replay, bboBetween, extend, heldBytes, newReplay } from './heatmap-replay';
+import { type Replay, bboBetween, extend, heldBytes, newReplay, tsAt } from './heatmap-replay';
 
 let build: Build | null = null;
 let replay: Replay | null = null;
@@ -50,9 +50,9 @@ self.onmessage = (e: MessageEvent<WorkerInitMessage | HeatmapRequest>) => {
             if (gen !== buildGen) return;
             let from = 0n;
             if (msg.type === 'init') {
-                const fresh = newBuild();
+                const fresh = msg.linesOnly ? null : newBuild();
                 const freshReplay = newReplay();
-                if (!(await feed(fresh, decode(msg), () => gen !== buildGen))) return;
+                if (fresh && !(await feed(fresh, decode(msg), () => gen !== buildGen))) return;
                 if (!(await extend(freshReplay, msg.buf, msg.length, () => gen !== buildGen))) return;
                 build = fresh;
                 replay = freshReplay;
@@ -60,15 +60,18 @@ self.onmessage = (e: MessageEvent<WorkerInitMessage | HeatmapRequest>) => {
                 if (normsOutdated) norms.clear();
                 normsOutdated = false;
             } else {
-                if (!build) return;
-                from = build.lastEventTs;
-                unseal(build);
-                await feed(build, decode(msg));
-                await extend(replay!, msg.buf, msg.length);
+                if (!replay) return;
+                from = tsAt(replay, replay.length - 1);
+                if (build) {
+                    unseal(build);
+                    await feed(build, decode(msg));
+                }
+                await extend(replay, msg.buf, msg.length);
             }
-            seal(build);
-            post({ type: 'data', from: from.toString(), start: build.firstEventTs.toString(), end: build.lastEventTs.toString() });
-            post({ type: 'held', bytes: heldBytes(replay!) + snapBytes(build) });
+            if (build) seal(build);
+            const r = replay!;
+            post({ type: 'data', from: from.toString(), start: tsAt(r, 0).toString(), end: tsAt(r, r.length - 1).toString() });
+            post({ type: 'held', bytes: heldBytes(r) + (build ? snapBytes(build) : 0) });
             pump();
         });
         return;
@@ -114,10 +117,10 @@ async function bitmapOf(t: Texels): Promise<ImageBitmap | null> {
 }
 
 async function pump(): Promise<void> {
-    if (working || !build) return;
+    if (working || !replay) return;
     working = true;
     try {
-        while (build && (wanted || aheadWanted || fillWanted || bboWanted)) {
+        while (replay && (bboWanted || (build && (wanted || aheadWanted || fillWanted)))) {
             if (bboWanted?.type === 'bbo') {
                 const { from, to } = bboWanted;
                 bboWanted = null;
@@ -128,6 +131,7 @@ async function pump(): Promise<void> {
                 );
                 continue;
             }
+            if (!build) break;
             if (fillWanted?.type === 'fill') {
                 const req = fillWanted;
                 fillWanted = null;

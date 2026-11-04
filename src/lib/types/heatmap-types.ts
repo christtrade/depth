@@ -4,6 +4,8 @@ export type WorkerInitMessage = {
     buf: ArrayBuffer;
     length: number;
     olderData?: boolean;
+    // no heatmap, just the exact bid/ask lines. ~83 ms per 1M events vs ~2.3 s with the snapshots
+    linesOnly?: boolean;
 };
 
 export type TileConfig = {

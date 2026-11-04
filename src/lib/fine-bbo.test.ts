@@ -25,6 +25,47 @@ const reply = (a: { from: string; to: string }, until: bigint, ms: bigint[]): Ex
 describe('fine bid/ask', () => {
     const history = [pt(0n, 1), pt(1000n, 2), pt(2000n, 3), pt(3000n, 4)];
 
+    describe('telling the pane it needs a copy of the events', () => {
+        const withLines = () => {
+            const said: boolean[] = [];
+            const fine = new FineBbo(() => {}, () => {}, (w) => said.push(w));
+            return { said, fine };
+        };
+
+        it('says nothing zoomed out, so the heatmap off stays free', () => {
+            const { said, fine } = withLines();
+            fine.over(history, view(0n, 1000n), 40);
+            fine.notNeeded();
+            assert.deepEqual(said, []);
+        });
+
+        it('asks zoomed in, before the request, and lets go once', () => {
+            const { said, fine } = withLines();
+            fine.over(history, view(0n, 1000n), 1000);
+            assert.deepEqual(said, [true]);
+            fine.notNeeded();
+            fine.notNeeded();
+            assert.deepEqual(said, [true, false]);
+        });
+
+        it('zooming back out isnt letting go, or a wheel in and out rebuilds', () => {
+            const { said, fine } = withLines();
+            fine.over(history, view(0n, 1000n), 1000);
+            fine.over(history, view(0n, 1000n), 40);
+            assert.deepEqual(said, [true]);
+            fine.notNeeded();
+            assert.deepEqual(said, [true, false]);
+        });
+
+        it('asks again after the copy went, a clear from the heatmap going off', () => {
+            const { said, fine } = withLines();
+            fine.over(history, view(0n, 1000n), 1000);
+            fine.clear();
+            fine.over(history, view(0n, 1000n), 1000);
+            assert.deepEqual(said, [true, true]);
+        });
+    });
+
     it('stays on the sampled history zoomed out, a 50ms sample under 2px', () => {
         const { asks, fine } = setup();
         assert.equal(fine.over(history, view(0n, 1000n), 40), history);

@@ -68,8 +68,9 @@ export class HeatmapTiles {
         private post: (req: HeatmapRequest) => void,
         private changed: () => void,
         private status: (recalculating: boolean) => void,
+        exactLines?: (wanted: boolean) => void,
     ) {
-        this.bbo = new FineBbo(post, changed);
+        this.bbo = new FineBbo(post, changed, exactLines);
     }
 
     get workerStart(): bigint | null {
@@ -160,6 +161,7 @@ export class HeatmapTiles {
 
     clear(): void {
         this.range = null;
+        this.seen = null;
         this.overview = null;
         this.oldOverview = null;
         this.overviewAsked = '';

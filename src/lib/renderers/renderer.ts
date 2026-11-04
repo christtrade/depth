@@ -321,13 +321,17 @@ export function drawBaseLayer(
                                 : 'heat',
                     });
                 }
+                const exactLines =
+                    !isPluginChartType &&
+                    hasBook(dataLevel) &&
+                    barNs <= 1_000_000n &&
+                    (chartSettings.showHeatmap || chartSettings.showBidLine || chartSettings.showAskLine || chartSettings.showMidLine);
+                if (!exactLines) heatmap?.bbo.notNeeded();
                 if (!isPluginChartType)
                     drawPriceChart(
                         ctx,
                         trades,
-                        chartSettings.showHeatmap && heatmap && hasBook(dataLevel) && barNs <= 1_000_000n
-                            ? heatmap.bbo.over(priceHistory, bounds, chartW)
-                            : priceHistory,
+                        exactLines && heatmap ? heatmap.bbo.over(priceHistory, bounds, chartW) : priceHistory,
                         bounds,
                         chartW,
                         rect.h,

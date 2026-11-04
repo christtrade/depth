@@ -109,6 +109,66 @@ describe('the heatmap worker once a view settles', () => {
     });
 });
 
+describe('just the lines, heatmap off', () => {
+    const init = (length = events.length) => {
+        const cb = createCompactBuffer();
+        appendEvents(cb, events.slice(0, length), isoToNs);
+        return { buf: cb._buf.slice(0, cb.length * BYTES_PER_EVENT), length: cb.length };
+    };
+    const count = (type: string) => replies.filter((r) => r.type === type).length;
+    const nextData = async (send_: () => void) => {
+        const n = count('data');
+        send_();
+        await until(() => count('data') > n);
+        assert.ok(count('data') > n, 'landed');
+        return replies.filter((r) => r.type === 'data').at(-1) as Extract<HeatmapReply, { type: 'data' }>;
+    };
+
+    it('holds the events without the snapshots and says what loaded', async () => {
+        const m = init();
+        const d = await nextData(() => send({ type: 'init', ...m, linesOnly: true }));
+        assert.equal(d.from, '0');
+        assert.equal(d.start, '0');
+        assert.equal(d.end, (120n * SEC).toString());
+        const held = replies.filter((r) => r.type === 'held').at(-1) as Extract<HeatmapReply, { type: 'held' }>;
+        assert.equal(held.bytes, events.length * BYTES_PER_EVENT);
+    });
+
+    it('answers the lines and builds no tile', async () => {
+        const n = count('bbo');
+        const tiles = count('tile');
+        send({ type: 'tiles', tiles: [0], ...cfg });
+        send({ type: 'bbo', from: '0', to: (130n * SEC).toString() });
+        await until(() => count('bbo') > n);
+        const b = replies.filter((r) => r.type === 'bbo').at(-1) as Extract<HeatmapReply, { type: 'bbo' }>;
+        assert.deepEqual([...b.bid], [99.9]);
+        assert.deepEqual([...b.ask], [100.1]);
+        await new Promise((r) => setTimeout(r, 20));
+        assert.equal(count('tile'), tiles);
+    });
+
+    it('takes a live chunk on top', async () => {
+        const m = init(6);
+        await nextData(() => send({ type: 'init', ...m, linesOnly: true }));
+        const cb = createCompactBuffer();
+        appendEvents(cb, events.slice(6), isoToNs);
+        const d = await nextData(() =>
+            send({ type: 'append', buf: cb._buf.slice(0, cb.length * BYTES_PER_EVENT), length: cb.length }),
+        );
+        assert.equal(d.from, (60n * SEC).toString());
+        assert.equal(d.end, (120n * SEC).toString());
+    });
+
+    it('a full init after it draws tiles again', async () => {
+        const m = init();
+        await nextData(() => send({ type: 'init', ...m }));
+        const n = count('tile');
+        send({ type: 'tiles', tiles: [0], ...cfg });
+        await until(() => count('tile') > n);
+        assert.ok(count('tile') > n);
+    });
+});
+
 describe('brightness across a rebuild', () => {
     const quiet = { type: 'settle', from: (61n * SEC).toString(), to: (120n * SEC).toString(), ...cfg };
     const norms = () => replies.filter((r) => r.type === 'norm').length;

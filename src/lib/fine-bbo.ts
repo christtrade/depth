@@ -19,11 +19,20 @@ export class FineBbo {
     private asked: { from: bigint; to: bigint } | null = null;
     private stale = false;
     private held: { from: bigint; to: bigint; points: PriceHistory[] } | null = null;
+    private wanted = false;
 
     constructor(
         private post: (req: HeatmapRequest) => void,
         private changed: () => void,
+        private lines: (wanted: boolean) => void = () => {},
     ) {}
+
+    notNeeded(): void {
+        if (!this.wanted) return;
+        this.wanted = false;
+        this.clear();
+        this.lines(false);
+    }
 
     onReply(r: Extract<HeatmapReply, { type: 'bbo' }>): void {
         const a = this.asked;
@@ -58,6 +67,8 @@ export class FineBbo {
             const to = view.tMax + span;
             this.asked = { from, to };
             this.stale = false;
+            this.wanted = true;
+            this.lines(true);
             this.post({ type: 'bbo', from: from.toString(), to: to.toString() });
         }
         const h = this.held;

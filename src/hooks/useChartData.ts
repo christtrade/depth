@@ -734,6 +734,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
     }, []);
 
     const loadAheadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const exactLinesRef = useRef(false);
 
     // an init costs ~2.3 s per 1M events and a newer one cancels it, so one page at a time
     const armLoadAhead = useCallback(() => {
@@ -766,9 +767,10 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
     const sendHeatmapInit = useCallback((olderData = false) => {
         const cb = compactBufRef.current;
         const worker = workerRef.current;
-        if (!worker || !cb.length || !p.chartSettingsRef.current.showHeatmap) return;
+        const linesOnly = !p.chartSettingsRef.current.showHeatmap;
+        if (!worker || !cb.length || (linesOnly && !exactLinesRef.current)) return;
         const buf = cb._buf.slice(0, cb.length * BYTES_PER_EVENT);
-        const msg: WorkerInitMessage = { type: 'init', buf, length: cb.length, olderData };
+        const msg: WorkerInitMessage = { type: 'init', buf, length: cb.length, olderData, linesOnly };
         worker.postMessage(msg, [buf]);
         heatmapSentRef.current = { buf: cb._buf, length: cb.length };
     }, []);
@@ -778,7 +780,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         const cb = compactBufRef.current;
         const worker = workerRef.current;
         const sent = heatmapSentRef.current;
-        if (!p.chartSettingsRef.current.showHeatmap) return;
+        if (!p.chartSettingsRef.current.showHeatmap && !exactLinesRef.current) return;
         if (!worker || !sent || !cb.length || cb.length < sent.length) return sendHeatmapInit();
         if (!sameEvent(sent.buf, cb._buf, 0) || !sameEvent(sent.buf, cb._buf, sent.length - 1)) {
             return sendHeatmapInit();
@@ -797,6 +799,18 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         workerRef.current?.postMessage({ type: 'drop' } satisfies HeatmapRequest);
         heatmapSentRef.current = null;
         heatmapTilesRef.current?.clear();
+    }, []);
+
+    // with the heatmap off the worker only gets a copy while these lines ask for one
+    const setExactLines = useCallback((wanted: boolean) => {
+        exactLinesRef.current = wanted;
+        if (p.chartSettingsRef.current.showHeatmap) return;
+        if (wanted) {
+            if (!heatmapSentRef.current) sendHeatmapInit();
+            return;
+        }
+        workerRef.current?.postMessage({ type: 'drop' } satisfies HeatmapRequest);
+        heatmapSentRef.current = null;
     }, []);
 
     const runIndicatorWorker = useCallback((trades: SerialTrade[], barNs: bigint) => {
@@ -2207,6 +2221,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
             (req) => worker.postMessage(req),
             () => p.renderEngineRef.current?.markDirty('base'),
             (recalculating) => p.eventBus.emit('heatmap:status', { recalculating, cellId: p.cellId }),
+            setExactLines,
         );
         indicatorWorkerRef.current = new Worker(
             new URL('../lib/indicator-worker.ts', import.meta.url),

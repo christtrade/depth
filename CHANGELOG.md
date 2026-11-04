@@ -38,6 +38,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the l3/l2 data per pane and the budget didn't know. panes report it with `data:pane-held`
 - With the heatmap off a pane doesn't send its worker the events anymore and the worker lets its copy go,
   it held the whole thing (and now counted against the budget) for nothing drawn
+- None's bid and ask lines are exact zoomed in with the heatmap off too. the pane gives its worker the events
+  while it's on None zoomed in, without the snapshots, and lets them go off None, counted against `dataBudget`
 - None's bid and ask lines are exact zoomed in with the heatmap on (l3 & l2), the 50ms sampling dropped 81%
   of the changes at 3.3M events/h
 - Trade dots are bubbles now, one per 8px column at the vwap, green from the bottom up to the buy share

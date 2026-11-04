@@ -183,6 +183,79 @@ test('l3: None zoomed in draws its bid and ask from the replay', async ({ page }
     expect(errors).toEqual([]);
 });
 
+for (const level of ['l3', 'l2'])
+    test(`${level}: None zoomed in with the heatmap off has exact lines, and leaving None lets the copy go`, async ({ page }) => {
+        const errors = watchErrors(page);
+        await page.setViewportSize({ width: 1400, height: 800 });
+        await page.goto(`/?sim=1&level=${level}`);
+        await page.evaluate(() => {
+            const w = window as any;
+            w.__held = [];
+            w.__chart.eventBus.on('data:pane-held', (e: any) => w.__held.push(e.bytes));
+            w.__chart.setChartSettings({ showHeatmap: false });
+        });
+        await settled(page);
+        const held = () => page.evaluate(() => (window as any).__held.at(-1) as number | undefined);
+        // nothing on an ordinary chart
+        await expect.poll(held).toBe(0);
+        await page.waitForTimeout(500);
+        expect(await held()).toBe(0);
+
+        await page.evaluate(() => (window as any).__chart.setTimeframe('None'));
+        const fine = () =>
+            page.evaluate(() => {
+                const c = (window as any).__chart;
+                const p = c.renderEngine.drawParams;
+                const v = c.renderEngine.view;
+                // only where the price changes, l2's history repeats itself
+                const inView = (a: any[]) => {
+                    const out: string[] = [];
+                    let was = '';
+                    for (const x of a) {
+                        const now = `${x.bestBid}:${x.bestAsk}`;
+                        if (now !== was && was && x.ts >= v.tMin && x.ts < p.heatmap.bbo.held?.to && x.ts <= v.tMax) out.push(`${x.ts}:${now}`);
+                        was = now;
+                    }
+                    return out;
+                };
+                return Number(v.tMax - v.tMin) / 1e6 === 30_000 && p.heatmap?.bbo.held
+                    ? { fine: inView(p.heatmap.bbo.held.points), history: inView(p.priceHistory) }
+                    : null;
+            });
+        await expect.poll(async () => (await fine())?.fine.length ?? 0, { timeout: 20_000 }).toBeGreaterThan(10);
+        const { fine: exact, history } = (await fine())!;
+        // the sim stamps events 100ms apart, sampling every 50ms lost nothing, so the two have to agree
+        expect(exact).toEqual(history);
+        expect(await held()).toBeGreaterThan(0);
+        expect(await heatmaps(page)).toBe(0);
+
+        await page.evaluate(() => (window as any).__chart.setTimeframe('1m'));
+        await expect.poll(held, { message: 'gave its copy up' }).toBe(0);
+        expect(errors).toEqual([]);
+    });
+
+test('l3: the heatmap off and back on at None zoomed in keeps the lines and the tiles right', async ({ page }) => {
+    const errors = watchErrors(page);
+    await page.setViewportSize({ width: 1400, height: 800 });
+    await page.goto('/?sim=1&level=l3');
+    await settled(page);
+    await page.evaluate(() => (window as any).__chart.setTimeframe('None'));
+    const points = () =>
+        page.evaluate(() => (window as any).__chart.renderEngine.drawParams.heatmap?.bbo.held?.points.length ?? 0);
+    await expect.poll(points, { timeout: 20_000 }).toBeGreaterThan(20);
+
+    await page.evaluate(() => (window as any).__chart.setChartSettings({ showHeatmap: false }));
+    await expect.poll(points).toBeGreaterThan(20);
+    await page.waitForTimeout(1000);
+    expect(await points()).toBeGreaterThan(20);
+
+    const before = await heatmaps(page);
+    await page.evaluate(() => (window as any).__chart.setChartSettings({ showHeatmap: true }));
+    await expect.poll(() => heatmaps(page), { message: 'tiles draw again', timeout: 20_000 }).toBeGreaterThan(before);
+    await expect.poll(points).toBeGreaterThan(20);
+    expect(errors).toEqual([]);
+});
+
 async function noneOnTheHorizon(page: Page) {
     await page.setViewportSize({ width: 1400, height: 800 });
     await page.goto('/?sim=1&level=l3');
