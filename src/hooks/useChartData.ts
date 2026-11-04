@@ -153,10 +153,12 @@ export function autoFitPriceAxis(
         foldOpenBar();
     }
     if (!found) return;
+    setPriceBounds(view, lo, hi, settings);
+}
+
+export function setPriceBounds(view: ViewBounds, lo: number, hi: number, settings: ChartSettings) {
     if (settings.priceScaleMode === 'log' && lo > 0 && hi > 0) {
-        // Apply the margins in log space so pMin stays strictly positive - a
-        // linear `lo - span*margin` can go negative on a wide range and silently
-        // drop the transformer back to linear scale.
+        // a linear margin can take pMin under 0, the transformer goes linear then
         const logLo = Math.log(lo);
         const logHi = Math.log(hi);
         const logSpan = logHi - logLo;

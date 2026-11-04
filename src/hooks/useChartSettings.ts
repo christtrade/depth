@@ -159,10 +159,14 @@ export function useChartSettings(p: UseChartSettingsParams): UseChartSettingsRes
             return;
         }
 
+        const modeChanged = chartSettings.priceScaleMode !== prev.priceScaleMode;
         if (
-            isYAxisAutoRef.current &&
-            (chartSettings.scaleMarginTop !== prev.scaleMarginTop ||
-                chartSettings.scaleMarginBottom !== prev.scaleMarginBottom)
+            (isYAxisAutoRef.current &&
+                (modeChanged ||
+                    chartSettings.scaleMarginTop !== prev.scaleMarginTop ||
+                    chartSettings.scaleMarginBottom !== prev.scaleMarginBottom)) ||
+            // a set range under 0 has no log, the transformer would stay linear
+            (modeChanged && chartSettings.priceScaleMode === 'log' && (viewRef.current?.pMin ?? 1) <= 0)
         ) {
             const view = viewRef.current;
             if (view)

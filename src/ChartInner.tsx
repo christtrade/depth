@@ -67,7 +67,7 @@ import {
     describeDataError,
 } from './components/chart/chart-status-overlay';
 import { toast } from './lib/notifications/toast';
-import { useChartData, autoFitPriceAxis, applyHorizonScrollEasing } from './hooks/useChartData';
+import { useChartData, autoFitPriceAxis, setPriceBounds, applyHorizonScrollEasing } from './hooks/useChartData';
 import { useChartInteraction } from './hooks/useChartInteraction';
 import { useChartHandlers } from './hooks/useChartHandlers';
 import { useChartSubscriptions } from './hooks/useChartSubscriptions';
@@ -372,11 +372,8 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         if (ordinalModel && isYAxisAutoRef.current && viewRef.current) {
             const r = ordinalVisiblePriceRange(ordinalModel, transformer);
             if (r) {
-                const range = r.max - r.min || Math.abs(r.max) * 0.01 || 1;
-                const top = chartSettingsRef.current.scaleMarginTop ?? 0.1;
-                const bot = chartSettingsRef.current.scaleMarginBottom ?? 0.1;
-                viewRef.current.pMin = r.min - range * bot;
-                viewRef.current.pMax = r.max + range * top;
+                const flat = r.max === r.min ? Math.abs(r.max) * 0.01 || 1 : 0;
+                setPriceBounds(viewRef.current, r.min - flat, r.max + flat, chartSettingsRef.current);
                 transformer.update(viewRef.current);
             }
         }

@@ -1876,7 +1876,7 @@ function drawTradeArrows(
     // Arrow screen positions only change when bounds/data change - not when the
     // crosshair moves. On mouse-move redraws the cache is valid and we skip all
     // recomputation; only the cheap hover scan runs.
-    const boundsKey = `${bounds.tMin}|${bounds.tMax}|${String(bounds.pMin)}|${String(bounds.pMax)}`;
+    const boundsKey = `${bounds.tMin}|${bounds.tMax}|${String(bounds.pMin)}|${String(bounds.pMax)}|${transformer.getScaleMode()}`;
     let cache = _arrowCaches.get(canvas);
     const cacheValid =
         cache !== undefined &&

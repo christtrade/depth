@@ -84,6 +84,134 @@ test('log: an overlay indicator sits on the candles, a pane one keeps its own li
     expect(errors).toEqual([]);
 });
 
+// the bars on screen, fitted with 10% margins either way
+const expectedFit = (page: Page) =>
+    page.evaluate(() => {
+        const c = (window as any).__chart;
+        const v = c.renderEngine.view;
+        const bars = c.getData().bars;
+        let lo = Infinity;
+        let hi = -Infinity;
+        const from = Number(v.tMin / 1_000_000n);
+        const to = Number(v.tMax / 1_000_000n);
+        for (let i = bars.lowerBound(from); i < bars.length && bars.time[i] < to; i++) {
+            lo = Math.min(lo, bars.low[i]);
+            hi = Math.max(hi, bars.high[i]);
+        }
+        const s = Math.log(hi) - Math.log(lo);
+        return {
+            log: [Math.exp(Math.log(lo) - s * 0.1), Math.exp(Math.log(hi) + s * 0.1)],
+            linear: [lo - (hi - lo) * 0.1, hi + (hi - lo) * 0.1],
+            now: [v.pMin as number, v.pMax as number],
+        };
+    });
+
+const closeTo = (a: number[], b: number[]) => a.every((x, i) => Math.abs(x - b[i]) / b[i] < 0.03);
+
+test('log: switching the mode fits the axis again, and back', async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 600 });
+    await page.goto('/?wide=1');
+    await settled(page);
+    await page.evaluate(() => (window as any).__chart.setChartSettings({ chartType: 'candles', priceScaleMode: 'log' }));
+    await expect.poll(async () => {
+        const f = await expectedFit(page);
+        return closeTo(f.now, f.log);
+    }).toBe(true);
+    await page.evaluate(() => (window as any).__chart.setChartSettings({ priceScaleMode: 'normal' }));
+    await expect.poll(async () => {
+        const f = await expectedFit(page);
+        return closeTo(f.now, f.linear);
+    }).toBe(true);
+});
+
+test('log: a set price range under 0 gets fitted, log has nothing there', async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 600 });
+    await page.goto('/?wide=1');
+    await settled(page);
+    await page.evaluate(() => {
+        const c = (window as any).__chart;
+        c.setChartSettings({ chartType: 'candles', autoScale: false });
+    });
+    await page.waitForTimeout(100);
+    await page.evaluate(() => {
+        const c = (window as any).__chart;
+        c.renderEngine.view.pMin = -50;
+        c.setChartSettings({ priceScaleMode: 'log' });
+    });
+    await expect.poll(() => page.evaluate(() => (window as any).__chart.renderEngine.view.pMin as number)).toBeGreaterThan(0);
+});
+
+test('log: a set price range above 0 stays put', async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 600 });
+    await page.goto('/?wide=1');
+    await settled(page);
+    await page.evaluate(() => (window as any).__chart.setChartSettings({ chartType: 'candles', autoScale: false }));
+    await page.waitForTimeout(100);
+    const view = () =>
+        page.evaluate(() => {
+            const v = (window as any).__chart.renderEngine.view;
+            return [v.pMin, v.pMax] as number[];
+        });
+    const before = await view();
+    await page.evaluate(() => (window as any).__chart.setChartSettings({ priceScaleMode: 'log' }));
+    await page.waitForTimeout(200);
+    expect(await view()).toEqual(before);
+});
+
+test('log: renko margins are in log too, a linear one takes the axis under 0', async ({ page }) => {
+    await openLog(page, { chartType: 'renko', scaleMarginBottom: 0.5 });
+    await page.waitForTimeout(500);
+    const pMin = await page.evaluate(() => (window as any).__chart.renderEngine.view.pMin as number);
+    expect(pMin).toBeGreaterThan(0);
+});
+
+test('log: trade arrows move with the mode even when the price range stays', async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 600 });
+    await page.goto('/?wide=1&account=1');
+    await settled(page);
+    await page.evaluate(() => {
+        const c = (window as any).__chart;
+        c.setChartSettings({ chartType: 'candles', autoScale: false });
+        for (let i = 0; i < 40; i++) c.playback.stepBack();
+    });
+    await page.waitForTimeout(400);
+    await page.evaluate(() => {
+        const c = (window as any).__chart;
+        c.executionEngine.placeOrder({ side: 'long', type: 'market', qty: 1, symbol: c.getSymbol() });
+        for (let i = 0; i < 10; i++) c.playback.stepForward();
+    });
+    await page.waitForTimeout(600);
+    // the shaft of a long arrow, moveTo(x, y) with the long color on
+    await page.evaluate(() => {
+        const w = window as any;
+        w.__arrow = [];
+        const proto = CanvasRenderingContext2D.prototype as any;
+        const moveTo = proto.moveTo;
+        proto.moveTo = function (x: number, y: number) {
+            if (String(this.strokeStyle).toLowerCase() === '#12daf2') w.__arrow.push(y);
+            return moveTo.call(this, x, y);
+        };
+    });
+    const arrow = async () => {
+        await page.evaluate(() => {
+            const w = window as any;
+            w.__arrow = [];
+            w.__chart.renderEngine.markDirty('ui');
+        });
+        await page.waitForTimeout(150);
+        return page.evaluate(() => {
+            const w = window as any;
+            return w.__arrow.length ? (w.__arrow.at(-1) as number) : null;
+        });
+    };
+    const linear = await arrow();
+    expect(linear, 'an arrow on screen').not.toBeNull();
+    await page.evaluate(() => (window as any).__chart.setChartSettings({ priceScaleMode: 'log' }));
+    await page.waitForTimeout(300);
+    const log = await arrow();
+    expect(Math.abs(log! - linear!), `${linear} then ${log}`).toBeGreaterThan(5);
+});
+
 const geometry = (page: Page) =>
     page.evaluate(() => {
         const c = (window as any).__chart;

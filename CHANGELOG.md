@@ -51,6 +51,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reads the bubbles the last draw made
 
 ### Fixed
+- Switching to log kept the view's linear margins till the next zoom, the candles sat squashed up top. it fits
+  again now, either way. a set range under 0 gets fitted too, and Renko, Kagi and Line Break margins are in log
 - On a log price axis the crosshair pill read a linear price (162.99 where the axis said ~22), the shift measure
   anchored on one too, ~160px off the click, and a sub pane's grid took log rows off its linear labels
 - Overlay indicators ignored a log price axis and drew linear, up to a third of the chart off the candles
