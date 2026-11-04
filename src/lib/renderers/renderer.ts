@@ -268,6 +268,8 @@ export function drawBaseLayer(
 
         const _transformer = new LiveTransformer();
         _transformer.update({ ...bounds, pMax: yMax, pMin: yMin });
+        // a sub pane has its own scale, the mode is the main price axis's
+        if (isMain) _transformer.setScaleMode(transformer.getScaleMode());
         if (sessionMapper) _transformer.setSessionMapper(sessionMapper);
 
         const renderCtx: RenderContext = {

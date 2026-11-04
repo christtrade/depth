@@ -1444,12 +1444,12 @@ function _execFill(
         const yTop = transformer.priceToY(pMax, rect.h);
         const yBot = transformer.priceToY(pMin, rect.h);
         const g = canvas.createLinearGradient(0, yTop, 0, yBot);
-        const span = pMax - pMin;
+        const span = yBot - yTop;
         for (const s of fo.stops) {
             // All stops on one price collapses the span - keep the ramp legal
             // rather than letting addColorStop throw on a NaN offset.
-            const offset = span > 0 ? (s.price - pMin) / span : 0;
-            g.addColorStop(_clamp01(1 - offset), s.color);
+            const offset = span !== 0 ? (transformer.priceToY(s.price, rect.h) - yTop) / span : 1;
+            g.addColorStop(_clamp01(offset), s.color);
         }
         canvas.fillStyle = g;
         canvas.fill(path);

@@ -51,6 +51,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reads the bubbles the last draw made
 
 ### Fixed
+- Overlay indicators ignored a log price axis and drew linear, up to a third of the chart off the candles
 - Older data coming in recolored the heatmap on screen, brightness started over from the whole data. it keeps it now
 - Tiles of other zooms outlived older data coming in, their book was wrong and near empty where the old data
   began, a zoom could draw that as a blank strip. they're dropped, the overview covers till new ones land
