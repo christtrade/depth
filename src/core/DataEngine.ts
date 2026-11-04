@@ -495,7 +495,7 @@ export class DataEngine {
         this.initialLoad = config.initialLoad;
         this.horizonIso = config.horizon;
         this.fpOptions = config.fpOptions ?? {};
-        this.scrollWindowNs = config.scrollWindowNs ?? 3_600_000_000_000n;
+        this.scrollWindowNs = config.scrollWindowNs && config.scrollWindowNs > 0n ? config.scrollWindowNs : 3_600_000_000_000n;
         this.activeSymbol = config.symbol ?? '';
         this.maxLookbackBars = 0;
         this.maxBytes = config.dataBudget?.maxBytes ?? DEFAULT_MAX_BYTES;
@@ -1260,7 +1260,8 @@ export class DataEngine {
 
         const barNs = st.fetchBarNs;
         const _bwdTimeframe = this._fetchTimeframe(st, barNs);
-        const lookbackNs = BigInt(this.maxLookbackBars) * this._lookbackBarNs(symbol);
+        // an ahead page is sized by the window, 300 bars of lookback made it 6 hours at 1m
+        const lookbackNs = source === 'ahead' ? 0n : BigInt(this.maxLookbackBars) * this._lookbackBarNs(symbol);
         const session = st.symbolInfo.session ?? null;
 
         const rawTo = st.loadedFrom;

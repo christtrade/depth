@@ -52,6 +52,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reads the bubbles the last draw made
 
 ### Fixed
+- `prefetchWindowNs` did nothing, it never reached the engine and a page was always an hour
+- A page loaded ahead asked for the plugins' lookback on top of its hour, 6 hours at 1m with a 300 bar plugin registered
 - The heatmap's live edge stood still while older data rebuilt in the worker, seconds a page on real l3. live chunks
   land on what's drawing now, the new build takes them when it's done
 - Footprint rows on a log price axis were all one height, they overlapped up high (28px on a 10x range) and left

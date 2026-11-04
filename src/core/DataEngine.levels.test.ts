@@ -52,6 +52,7 @@ function levelEngine(
         loadAhead?: boolean;
         failBackward?: () => boolean;
         previews?: { count: number };
+        scrollWindowNs?: bigint;
     } = {},
 ) {
     let edge = opts.liveEdge ?? T0;
@@ -106,6 +107,7 @@ function levelEngine(
         timeframe: tf as never,
         dataBudget: { maxBytes: opts.maxBytes ?? Infinity },
         loadAhead: opts.loadAhead,
+        scrollWindowNs: opts.scrollWindowNs,
     });
     de.setAdapter(adapter);
 
@@ -672,6 +674,34 @@ describe('load ahead', () => {
         assert.equal(f.length, 1);
         assert.equal(f[0].fromMs, T0 - 90 * MIN_MS);
         assert.equal(f[0].toMs, T0 - 30 * MIN_MS);
+    });
+
+    it('a page is the window the host set', async () => {
+        const { bus, fetches, next } = await loaded({ scrollWindowNs: nsOf(10 * MIN_MS) });
+        const prepended = next('data:prepend');
+        ask(bus, T0 - 10 * MIN_MS, 10 * MIN_MS);
+        await prepended;
+        const f = fetches.filter((x) => x.direction === 'backward');
+        assert.equal(f[0].fromMs, T0 - 40 * MIN_MS);
+    });
+
+    it('a page is the window whatever the lookback, it isnt for an indicator', async () => {
+        const { bus, de, fetches, next } = await loaded();
+        de.setLookback(300);
+        const prepended = next('data:prepend');
+        ask(bus, T0 - 10 * MIN_MS, 10 * MIN_MS);
+        await prepended;
+        const f = fetches.filter((x) => x.direction === 'backward');
+        assert.equal(f[0].fromMs, T0 - 90 * MIN_MS);
+    });
+
+    it('a window of 0 falls back to an hour, it would never get anywhere', async () => {
+        const { bus, fetches, next } = await loaded({ scrollWindowNs: 0n });
+        const prepended = next('data:prepend');
+        ask(bus, T0 - 10 * MIN_MS, 10 * MIN_MS);
+        await prepended;
+        const f = fetches.filter((x) => x.direction === 'backward');
+        assert.equal(f[0].fromMs, T0 - 90 * MIN_MS);
     });
 
     it('fetches no preview, nothing on screen needs one', async () => {

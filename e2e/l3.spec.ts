@@ -426,6 +426,25 @@ test('l3 live: zooming out at 1m leaves no blank inside what the worker has', as
     expect(await blanksSeen(page)).toBe(0);
 });
 
+test('l3 live: prefetchWindowNs sets how much a page asks for', async ({ page }) => {
+    await page.goto('/?sim=1&level=l3&prefetchMin=10');
+    await page.waitForFunction(() => !!(window as any).__chart?.dataEngine?.adapter);
+    const asked = await page.evaluate(
+        () =>
+            new Promise<number>((resolve) => {
+                const a = (window as any).__chart.dataEngine.adapter;
+                const fetchBars = a.fetchBars.bind(a);
+                a.fetchBars = (r: any) => {
+                    if (r.direction === 'backward') resolve(r.range.toMs - r.range.fromMs);
+                    return fetchBars(r);
+                };
+            }),
+    );
+    // and down to a whole bar. 360 before, the indicators' lookback went on top and nothing read the option
+    expect(asked / 60_000).toBeGreaterThanOrEqual(10);
+    expect(asked / 60_000).toBeLessThanOrEqual(11);
+});
+
 test('l3 live: a rebuild over the limit stops loading ahead, a quicker one starts it again', async ({ page, browserName }) => {
     test.skip(browserName === 'webkit', 'too slow here to count on the timing');
     // a landing rebuild looks 20 s long while __slow is on

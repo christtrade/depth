@@ -45,6 +45,7 @@ function App() {
         features: { timeframe: { timeframes: 'any', allowCustom: true } },
         ...(budget && { dataBudget: { maxBytes: Number(budget) } }),
         ...(params.get('ahead') === '0' && { loadAhead: false }),
+        ...(params.get('prefetchMin') && { prefetchWindowNs: BigInt(params.get('prefetchMin')!) * 60_000_000_000n }),
         ...(params.get('account') === '1' && { account: { initialBalance: 100_000 } }),
         ...(split && {
             restore: { layout: { id: '2h', label: '2', count: 2, cols: 2, rows: 1, areas: '"a b"' } },

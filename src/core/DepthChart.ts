@@ -161,6 +161,7 @@ export interface ChartOptions {
     barNs?: bigint;
     fpOptions?: FootprintOptions;
     initialWindowNs?: bigint;
+    /** How much a page of older or newer data asks for, in ns. Default one hour. */
     prefetchWindowNs?: bigint;
     dataBudget?: { maxBytes?: number };
     /**
@@ -536,6 +537,7 @@ export class DepthChart {
             horizon: horizon,
             fpOptions: options.fpOptions,
             initialWindowNs: options.initialWindowNs,
+            scrollWindowNs: options.prefetchWindowNs,
             dataBudget: options.dataBudget,
             loadAhead: options.loadAhead,
             timeframe,
