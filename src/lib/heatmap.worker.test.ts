@@ -109,6 +109,98 @@ describe('the heatmap worker once a view settles', () => {
     });
 });
 
+describe('a live chunk during a rebuild', () => {
+    const packed = (list: MboEvent[]) => {
+        const cb = createCompactBuffer();
+        appendEvents(cb, list, isoToNs);
+        return { buf: cb._buf.slice(0, cb.length * BYTES_PER_EVENT), length: cb.length };
+    };
+    const datas = () => replies.filter((r) => r.type === 'data') as Extract<HeatmapReply, { type: 'data' }>[];
+    const quiet = async () => {
+        const n = datas().length;
+        send({ type: 'init', ...packed(events.slice(0, 6)) });
+        await until(() => datas().length > n);
+    };
+    const chunk = () => packed(events.slice(6));
+
+    // big enough that the build yields, the way a real one does
+    const slow = () => {
+        const more: MboEvent[] = [];
+        for (let i = 0; i < 40_000; i++) more.push(ev(30, 'A', 'B', 99, 1, 1000 + i));
+        return packed([...events.slice(0, 1), ...more, ...events.slice(1, 6)]);
+    };
+
+    it('lands on what is drawing right away, it doesnt wait for the build', async () => {
+        await quiet();
+        const n = datas().length;
+        send({ type: 'init', ...slow(), olderData: true });
+        await new Promise((r) => setTimeout(r, 0));
+        send({ type: 'append', ...chunk() });
+        await new Promise((r) => setTimeout(r, 0));
+        const got = datas().slice(n);
+        assert.equal(got[0]?.from, (60n * SEC).toString(), 'the chunk came first');
+        assert.equal(got[0].end, (120n * SEC).toString());
+        await until(() => datas().at(-1)!.from === '0');
+        assert.equal(datas().at(-1)!.end, (120n * SEC).toString());
+    });
+
+    it('the new build has it too when it lands', async () => {
+        await quiet();
+        const n = datas().length;
+        send({ type: 'init', ...packed(events.slice(0, 6)), olderData: true });
+        send({ type: 'append', ...chunk() });
+        await until(() => datas().length > n + 1);
+        const built = datas().at(-1)!;
+        assert.equal(built.from, '0');
+        assert.equal(built.end, (120n * SEC).toString());
+        // and it's a whole book, the lines read off it
+        const b = replies.filter((r) => r.type === 'bbo').length;
+        send({ type: 'bbo', from: (119n * SEC).toString(), to: (121n * SEC).toString() });
+        await until(() => replies.filter((r) => r.type === 'bbo').length > b);
+        const bbo = replies.filter((r) => r.type === 'bbo').at(-1) as Extract<HeatmapReply, { type: 'bbo' }>;
+        assert.equal(bbo.until, (120n * SEC + 1n).toString());
+    });
+
+    it('a chunk from before a newer init isnt taken twice, that init has it', async () => {
+        const held = () => (replies.filter((r) => r.type === 'held').at(-1) as Extract<HeatmapReply, { type: 'held' }>).bytes;
+        let n = datas().length;
+        send({ type: 'init', ...packed(events) });
+        await until(() => datas().length > n);
+        const once = held();
+
+        await quiet();
+        n = datas().length;
+        send({ type: 'init', ...slow(), olderData: true });
+        await new Promise((r) => setTimeout(r, 0));
+        send({ type: 'append', ...chunk() });
+        await new Promise((r) => setTimeout(r, 0));
+        n = datas().length;
+        send({ type: 'init', ...packed(events), olderData: true });
+        await until(() => datas().length > n && datas().at(-1)!.from === '0');
+        assert.equal(held(), once);
+    });
+
+    it('after the build lands a chunk goes the usual way', async () => {
+        await quiet();
+        const n = datas().length;
+        send({ type: 'append', ...chunk() });
+        await until(() => datas().length > n);
+        assert.equal(datas().at(-1)!.from, (60n * SEC).toString());
+    });
+
+    it('a drop stops it all', async () => {
+        await quiet();
+        send({ type: 'init', ...packed(events.slice(0, 6)) });
+        send({ type: 'append', ...chunk() });
+        send({ type: 'drop' });
+        await until(() => (replies.at(-1) as any)?.bytes === 0);
+        const n = datas().length;
+        send({ type: 'append', ...chunk() });
+        await new Promise((r) => setTimeout(r, 20));
+        assert.equal(datas().length, n);
+    });
+});
+
 describe('just the lines, heatmap off', () => {
     const init = (length = events.length) => {
         const cb = createCompactBuffer();

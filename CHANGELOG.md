@@ -51,6 +51,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reads the bubbles the last draw made
 
 ### Fixed
+- The heatmap's live edge stood still while older data rebuilt in the worker, seconds a page on real l3. live chunks
+  land on what's drawing now, the new build takes them when it's done
 - Footprint rows on a log price axis were all one height, they overlapped up high (28px on a 10x range) and left
   gaps down low. each row is as tall as its prices now
 - Dragging a drawing on a log price axis bent it (40px down moved one end 7px) and could take a price under 0,

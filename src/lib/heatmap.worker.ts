@@ -38,46 +38,78 @@ let fillWanted: HeatmapRequest | null = null;
 let bboWanted: HeatmapRequest | null = null;
 let working = false;
 let normsOutdated = false;
+let rebuilding = false;
+let caughtUpBy: WorkerInitMessage[] = [];
+
+function landed(from: bigint): void {
+    if (build) seal(build);
+    const r = replay!;
+    post({ type: 'data', from: from.toString(), start: tsAt(r, 0).toString(), end: tsAt(r, r.length - 1).toString() });
+    post({ type: 'held', bytes: heldBytes(r) + (build ? snapBytes(build) : 0) });
+    pump();
+}
+
+// feed and extend never yield without a stale check, so no message lands halfway through this
+async function addChunk(msg: WorkerInitMessage): Promise<void> {
+    const r = replay;
+    const b = build;
+    if (!r) return;
+    const from = tsAt(r, r.length - 1);
+    if (b) {
+        unseal(b);
+        await feed(b, decode(msg));
+    }
+    await extend(r, msg.buf, msg.length);
+    landed(from);
+}
 
 self.onmessage = (e: MessageEvent<WorkerInitMessage | HeatmapRequest>) => {
     const msg = e.data;
     if (msg.type === 'init' || msg.type === 'append') {
+        // a rebuild takes seconds on real l3, the live edge can't wait on it. the chunk goes on what's
+        // drawing now, and the new build takes it when it's done
+        if (msg.type === 'append' && rebuilding) {
+            caughtUpBy.push(msg);
+            void addChunk(msg);
+            return;
+        }
         // keep drawing old tiles while an init builds and a newer init stops it
         const gen = msg.type === 'init' ? ++buildGen : buildGen;
         // on arrival, this init can get cancelled by a page that keeps them
         if (msg.type === 'init' && !msg.olderData) normsOutdated = true;
+        if (msg.type === 'init') {
+            rebuilding = true;
+            caughtUpBy = [];
+        }
         chain = chain.then(async () => {
             if (gen !== buildGen) return;
-            let from = 0n;
-            if (msg.type === 'init') {
-                const fresh = msg.linesOnly ? null : newBuild();
-                const freshReplay = newReplay();
-                if (fresh && !(await feed(fresh, decode(msg), () => gen !== buildGen))) return;
-                if (!(await extend(freshReplay, msg.buf, msg.length, () => gen !== buildGen))) return;
-                build = fresh;
-                replay = freshReplay;
-                // a page off screen would recolor what's on screen
-                if (normsOutdated) norms.clear();
-                normsOutdated = false;
-            } else {
-                if (!replay) return;
-                from = tsAt(replay, replay.length - 1);
-                if (build) {
-                    unseal(build);
-                    await feed(build, decode(msg));
+            if (msg.type !== 'init') return addChunk(msg);
+            const fresh = msg.linesOnly ? null : newBuild();
+            const freshReplay = newReplay();
+            if (fresh && !(await feed(fresh, decode(msg), () => gen !== buildGen))) return;
+            if (!(await extend(freshReplay, msg.buf, msg.length, () => gen !== buildGen))) return;
+            for (const chunk of caughtUpBy) {
+                if (fresh) {
+                    unseal(fresh);
+                    await feed(fresh, decode(chunk));
                 }
-                await extend(replay, msg.buf, msg.length);
+                await extend(freshReplay, chunk.buf, chunk.length);
             }
-            if (build) seal(build);
-            const r = replay!;
-            post({ type: 'data', from: from.toString(), start: tsAt(r, 0).toString(), end: tsAt(r, r.length - 1).toString() });
-            post({ type: 'held', bytes: heldBytes(r) + (build ? snapBytes(build) : 0) });
-            pump();
+            caughtUpBy = [];
+            rebuilding = false;
+            build = fresh;
+            replay = freshReplay;
+            // a page off screen would recolor what's on screen
+            if (normsOutdated) norms.clear();
+            normsOutdated = false;
+            landed(0n);
         });
         return;
     }
     if (msg.type === 'drop') {
         const gen = ++buildGen;
+        rebuilding = false;
+        caughtUpBy = [];
         chain = chain.then(() => {
             if (gen !== buildGen) return;
             build = null;
