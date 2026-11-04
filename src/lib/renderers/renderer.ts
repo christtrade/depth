@@ -1,6 +1,5 @@
 import { ChartPane, Indicator, Rect, RenderContext } from '../types/indicator-types';
 import { BookSnapshot, PriceHistory, TradePoint } from '../types';
-import { MIN_DOT_RADIUS, MAX_DOT_RADIUS } from '../constants';
 import type { ChartType, TradeLine, ViewBounds } from '../types';
 
 import type { FootprintBar } from '../types/footprint';
@@ -28,7 +27,7 @@ import {
     buildOrdinalModel,
 } from '../series/japaneseCharts';
 import type { CrosshairSync } from '../types/layout-sync';
-import { cachedRefSize, columnNs, sizeT, tradeDots } from './trade-dots';
+import { cachedRefSize, columnNs, dotAt, dotRadius, dotRows, pickDot, tradeDots, type TradeDot } from './trade-dots';
 
 const LABEL_H = 20;
 
@@ -48,7 +47,6 @@ export type Crosshair = { x: number; y: number } | null;
 export const Y_AXIS_WIDTH = 65;
 export const X_AXIS_HEIGHT = 30;
 
-export const TRADE_SNAP_RADIUS = 12;
 
 
 /** Font used for the price-axis tick labels. */
@@ -407,7 +405,7 @@ export function drawUILayer(
     bounds: ViewBounds,
     crosshair: Crosshair,
     showTooltip: boolean,
-    selectedTrade: TradePoint | null,
+    selectedDotTs: bigint | null,
     panes: ChartPane[] = [],
     layouts: Record<string, Rect> = {},
     indicators: Indicator[] = [],
@@ -678,23 +676,16 @@ export function drawUILayer(
         } catch {}
     }
 
-    if (selectedTrade) {
-        drawTradeSelectionRing(
+    if (selectedDotTs !== null && chartSettings.showTradeDots) {
+        drawDotSelection(
             ctx,
-            selectedTrade,
+            selectedDotTs,
+            trades,
             bounds,
             chartW,
             mainPaneH,
             chartSettings,
-            transformer,
-        );
-        drawTradeDetail(
-            ctx,
-            selectedTrade,
-            bounds,
-            chartW,
-            mainPaneH,
-            chartSettings,
+            horizon,
             transformer,
             symbolInfo,
         );
@@ -1641,7 +1632,7 @@ export function nearestTradeIndex(trades: TradePoint[], target: bigint): number 
     return lo;
 }
 
-export function findNearestTrade(
+export function findTradeDot(
     clickX: number,
     clickY: number,
     trades: TradePoint[],
@@ -1651,26 +1642,17 @@ export function findNearestTrade(
     chartSettings: ChartSettings,
     horizon: bigint,
     transformer: LiveTransformer,
-): TradePoint | null {
-    let bestTrade: TradePoint | null = null;
-    let bestDist = TRADE_SNAP_RADIUS;
-    const cutTs = horizon > 0n ? horizon : bounds.tMax;
-
-    for (const trade of trades) {
-        if (trade.ts > cutTs) break;
-        if (trade.ts < bounds.tMin || trade.ts > bounds.tMax) continue;
-
-        const x = transformer.tsToX(trade.ts, chartW);
-        const y = transformer.priceToY(trade.price, chartH);
-        const dist = Math.sqrt((x - clickX) ** 2 + (y - clickY) ** 2);
-
-        if (dist < bestDist) {
-            bestDist = dist;
-            bestTrade = trade;
-        }
-    }
-
-    return bestTrade;
+): TradeDot | null {
+    if (trades.length === 0 || chartW <= 0) return null;
+    const ref = cachedRefSize(trades, dotColumn(bounds, chartW));
+    const mult = chartSettings.tradeDotsSizeMult ?? 1;
+    return pickDot(
+        visibleDots(trades, bounds, chartW, horizon, transformer),
+        clickX,
+        clickY,
+        transformer.makePriceToYFn(chartH),
+        (d) => dotRadius(d.size, ref, mult),
+    );
 }
 
 function roundRect(
@@ -2455,6 +2437,31 @@ function drawBreaks(
     ctx.restore();
 }
 
+const BUY_RGB = '22,190,128';
+const SELL_RGB = '226,58,82';
+
+const dotColumn = (bounds: ViewBounds, w: number) => columnNs(Number(bounds.tMax - bounds.tMin) / w);
+const dotCut = (bounds: ViewBounds, horizon: bigint) =>
+    horizon > 0n && horizon < bounds.tMax ? horizon : bounds.tMax;
+
+function visibleDots(
+    trades: TradePoint[],
+    bounds: ViewBounds,
+    w: number,
+    horizon: bigint,
+    transformer: LiveTransformer,
+): TradeDot[] {
+    const dots = tradeDots(
+        trades,
+        bounds.tMin,
+        dotCut(bounds, horizon),
+        transformer.makeTsToXFn(w),
+        dotColumn(bounds, w),
+    );
+    // big first so the small ones stay on top
+    return dots.sort((a, b) => b.size - a.size);
+}
+
 function drawTrades(
     ctx: CanvasRenderingContext2D,
     trades: TradePoint[],
@@ -2466,26 +2473,18 @@ function drawTrades(
     transformer: LiveTransformer,
 ) {
     if (trades.length === 0 || w <= 0) return;
-    const tsToXFn = transformer.makeTsToXFn(w);
     const priceToYFn = transformer.makePriceToYFn(h);
-    const cutTs = horizon > 0n && horizon < bounds.tMax ? horizon : bounds.tMax;
-    const colNs = columnNs(Number(bounds.tMax - bounds.tMin) / w);
-    const dots = tradeDots(trades, bounds.tMin, cutTs, tsToXFn, colNs);
-    const ref = cachedRefSize(trades, colNs);
-    // big first so the small ones stay on top
-    dots.sort((a, b) => b.size - a.size);
-
-    const maxR = MAX_DOT_RADIUS * (1 + ((chartSettings.tradeDotsSizeMult ?? 1) - 1) / 2);
+    const dots = visibleDots(trades, bounds, w, horizon, transformer);
+    const ref = cachedRefSize(trades, dotColumn(bounds, w));
+    const mult = chartSettings.tradeDotsSizeMult ?? 1;
     const PI2 = Math.PI * 2;
-    const BUY = '22,190,128';
-    const SELL = '226,58,82';
 
     ctx.save();
     // the chart's own bg as the rim cuts it into the heat
     ctx.strokeStyle = chartSettings.backgroundColor;
     ctx.lineWidth = 0.5;
     for (const d of dots) {
-        const r = MIN_DOT_RADIUS + sizeT(d.size, ref) * (maxR - MIN_DOT_RADIUS);
+        const r = dotRadius(d.size, ref, mult);
         const x = d.x;
         const y = priceToYFn(d.price);
         const buy = d.size > 0 ? d.buySize / d.size : 0.5;
@@ -2493,11 +2492,11 @@ function drawTrades(
         ctx.beginPath();
         ctx.arc(x, y, r, 0, PI2);
         ctx.clip();
-        ctx.fillStyle = `rgba(${SELL},0.85)`;
+        ctx.fillStyle = `rgba(${SELL_RGB},0.85)`;
         ctx.fillRect(x - r, y - r, 2 * r, 2 * r);
         // buys fill up from the bottom like a level
         const lvl = 2 * r * buy;
-        ctx.fillStyle = `rgba(${BUY},0.85)`;
+        ctx.fillStyle = `rgba(${BUY_RGB},0.85)`;
         ctx.fillRect(x - r, y + r - lvl, 2 * r, lvl);
         ctx.restore();
         ctx.beginPath();
@@ -2507,69 +2506,70 @@ function drawTrades(
     ctx.restore();
 }
 
-function drawTradeSelectionRing(
+function drawDotSelection(
     ctx: CanvasRenderingContext2D,
-    trade: TradePoint,
-    bounds: ViewBounds,
-    w: number,
-    h: number,
-    chartSettings: ChartSettings,
-    transformer: LiveTransformer,
-) {
-    const x = transformer.tsToX(trade.ts, w);
-    const y = transformer.priceToY(trade.price, h);
-    const color = trade.side === 'B' ? '#00e676' : '#ff1744';
-
-    // Outer soft glow
-    ctx.beginPath();
-    ctx.arc(x, y, 8, 0, Math.PI * 2);
-    ctx.strokeStyle = color + '50';
-    ctx.lineWidth = 3;
-    ctx.stroke();
-
-    // Inner crisp ring
-    ctx.beginPath();
-    ctx.arc(x, y, 5, 0, Math.PI * 2);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-}
-
-function drawTradeDetail(
-    ctx: CanvasRenderingContext2D,
-    trade: TradePoint,
+    selectedTs: bigint,
+    trades: TradePoint[],
     bounds: ViewBounds,
     chartW: number,
     chartH: number,
     chartSettings: ChartSettings,
+    horizon: bigint,
     transformer: LiveTransformer,
     symbolInfo?: SymbolInfo,
 ) {
-    const dotX = transformer.tsToX(trade.ts, chartW);
-    const dotY = transformer.priceToY(trade.price, chartH);
+    const colNs = dotColumn(bounds, chartW);
+    const dot = dotAt(
+        trades,
+        selectedTs,
+        bounds.tMin,
+        dotCut(bounds, horizon),
+        transformer.makeTsToXFn(chartW),
+        colNs,
+    );
+    if (!dot) return;
+    const y = transformer.priceToY(dot.price, chartH);
+    if (y < 0 || y > chartH) return;
+    const r = dotRadius(dot.size, cachedRefSize(trades, colNs), chartSettings.tradeDotsSizeMult ?? 1);
 
-    const isBuy = trade.side === 'B';
-    const accentColor = isBuy ? '#00e676' : '#ff1744';
+    ctx.beginPath();
+    ctx.arc(dot.x, y, r + 2, 0, Math.PI * 2);
+    ctx.strokeStyle = chartSettings.axisTextColor;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
 
-    const timeStr = nsToDate(trade.ts).toISOString().slice(11, 23); // HH:MM:SS.mmm
-    const rows: [string, string][] = [
-        ['Side', isBuy ? 'BUY' : 'SELL'],
-        ['Price', formatPrice(trade.price, symbolInfo)],
-        ['Size', trade.size.toString()],
-        ['Time', timeStr],
-    ];
+    drawDotDetail(ctx, dot, y, r, chartW, chartH, chartSettings, symbolInfo);
+}
+
+function drawDotDetail(
+    ctx: CanvasRenderingContext2D,
+    dot: TradeDot,
+    dotY: number,
+    radius: number,
+    chartW: number,
+    chartH: number,
+    chartSettings: ChartSettings,
+    symbolInfo?: SymbolInfo,
+) {
+    const dotX = dot.x;
+    const buyColor = `rgb(${BUY_RGB})`;
+    const sellColor = `rgb(${SELL_RGB})`;
+    const accentColor = dot.buySize * 2 >= dot.size ? buyColor : sellColor;
+
+    const timeStr = nsToDate(dot.ts).toISOString().slice(11, 23); // HH:MM:SS.mmm
+    const rows = dotRows(dot, formatPrice(dot.price, symbolInfo), timeStr);
 
     ctx.font = '11px "Inter"';
 
     // Size the card to fit the content exactly
-    const labelColumnW = ctx.measureText('Price').width;
+    const labelColumnW = ctx.measureText('Trades').width;
     const maxValueW = Math.max(...rows.map(([, v]) => ctx.measureText(v).width));
     const boxW = labelColumnW + maxValueW + 36; // 12 left pad + gap + 12 right pad
     const rowH = 18;
     const boxH = rows.length * rowH + 20; // 10 top + 10 bottom padding
 
     // Default position: top-right of the dot
-    const gap = 14;
+    const gap = 14 + radius;
     let boxX = dotX + gap;
     let boxY = dotY - boxH - gap;
 
@@ -2601,8 +2601,7 @@ function drawTradeDetail(
         ctx.textAlign = 'left';
         ctx.fillText(label, boxX + 10, rowY);
 
-        // Side row gets the accent color, all others get near-white
-        ctx.fillStyle = i === 0 ? accentColor : '#e0e0e0';
+        ctx.fillStyle = i === 1 ? buyColor : i === 2 ? sellColor : '#e0e0e0';
         ctx.textAlign = 'right';
         ctx.fillText(value, boxX + boxW - 10, rowY);
     });

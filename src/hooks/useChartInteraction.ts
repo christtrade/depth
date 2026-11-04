@@ -22,7 +22,7 @@ import {
     hitTestPane,
     PANE_MIN_HEIGHT_RATIO,
 } from '../lib/types/indicator-types';
-import { findNearestTrade, type Crosshair, X_AXIS_HEIGHT } from '../lib/renderers/renderer';
+import { findTradeDot, type Crosshair, X_AXIS_HEIGHT } from '../lib/renderers/renderer';
 import { autoFitPriceAxis } from './useChartData';
 import { hitTestDrawings, moveDrawingAnchorDelta } from '../lib/renderers/drawings-renderer';
 import { getEffectiveDpr } from '../lib/dpr';
@@ -240,7 +240,7 @@ export interface UseChartInteractionParams {
     datasetEndRef: MutableRefObject<bigint>;
     horizonScrollAnimRef: MutableRefObject<any>;
     tradeLineInteractionRef: MutableRefObject<any>;
-    selectedTradeRef: MutableRefObject<TradePoint | null>;
+    selectedDotTsRef: MutableRefObject<bigint | null>;
 
     // Props
     transformer: LiveTransformer;
@@ -354,7 +354,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
         datasetEndRef,
         horizonScrollAnimRef,
         tradeLineInteractionRef,
-        selectedTradeRef,
+        selectedDotTsRef,
         transformer,
         eventBus,
         features,
@@ -1476,17 +1476,18 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
 
             if (!chartSettingsRef.current.showTradeDots) return;
             const mainPaneH = getLayouts()['main']?.h ?? chartH;
-            selectedTradeRef.current = findNearestTrade(
-                x,
-                y,
-                tradesRef.current,
-                view,
-                chartW,
-                mainPaneH,
-                chartSettingsRef.current,
-                horizonRef.current,
-                transformer,
-            );
+            selectedDotTsRef.current =
+                findTradeDot(
+                    x,
+                    y,
+                    tradesRef.current,
+                    view,
+                    chartW,
+                    mainPaneH,
+                    chartSettingsRef.current,
+                    horizonRef.current,
+                    transformer,
+                )?.ts ?? null;
             pushDrawParams();
             renderEngineRef.current?.markDirty('ui');
         };

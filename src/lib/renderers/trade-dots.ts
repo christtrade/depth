@@ -1,8 +1,11 @@
-export type TradeDot = { x: number; price: number; size: number; buySize: number };
+import { MAX_DOT_RADIUS, MIN_DOT_RADIUS } from '../constants';
+
+export type TradeDot = { x: number; price: number; size: number; buySize: number; count: number; ts: bigint };
 
 type Trade = { ts: bigint; price: number; size: number; side: string };
 
 export const COL_PX = 8;
+const PICK_SLACK_PX = 4;
 
 // power of 2 ns so a column holds the same trades wherever you pan, it only changes when the zoom doubles
 export function columnNs(nsPerPx: number): bigint {
@@ -22,10 +25,10 @@ export function tradeDots(
 ): TradeDot[] {
     const out: TradeDot[] = [];
     let col = -1n;
-    let sx = 0, sp = 0, sw = 0, size = 0, buySize = 0;
+    let sx = 0, sp = 0, sw = 0, size = 0, buySize = 0, count = 0, first = 0n;
     const flush = () => {
-        if (sw > 0) out.push({ x: sx / sw, price: sp / sw, size, buySize });
-        sx = sp = sw = size = buySize = 0;
+        if (sw > 0) out.push({ x: sx / sw, price: sp / sw, size, buySize, count, ts: first });
+        sx = sp = sw = size = buySize = count = 0;
     };
     let lo = 0, hi = trades.length;
     while (lo < hi) {
@@ -41,6 +44,8 @@ export function tradeDots(
             flush();
             col = c;
         }
+        if (count === 0) first = t.ts;
+        count++;
         const w = t.size > 0 ? t.size : 1;
         sx += xOf(t.ts) * w;
         sp += t.price * w;
@@ -50,6 +55,60 @@ export function tradeDots(
     }
     flush();
     return out;
+}
+
+// a zoom changes the column and live grows it, so a selection regroups from its time
+export function dotAt(
+    trades: Trade[],
+    ts: bigint,
+    from: bigint,
+    to: bigint,
+    xOf: (ts: bigint) => number,
+    colNs: bigint,
+): TradeDot | null {
+    const start = (ts / colNs) * colNs;
+    const end = start + colNs - 1n;
+    const lo = start > from ? start : from;
+    const hi = end < to ? end : to;
+    if (lo > hi) return null;
+    return tradeDots(trades, lo, hi, xOf, colNs)[0] ?? null;
+}
+
+// dots in draw order, the last one covering the cursor is the one on top
+export function pickDot(
+    dots: TradeDot[],
+    px: number,
+    py: number,
+    yOf: (price: number) => number,
+    radiusOf: (dot: TradeDot) => number,
+): TradeDot | null {
+    let onTop: TradeDot | null = null;
+    let near: TradeDot | null = null;
+    let nearGap = PICK_SLACK_PX;
+    for (const d of dots) {
+        const gap = Math.hypot(d.x - px, yOf(d.price) - py) - radiusOf(d);
+        if (gap <= 0) onTop = d;
+        else if (gap < nearGap) {
+            nearGap = gap;
+            near = d;
+        }
+    }
+    return onTop ?? near;
+}
+
+const fmtSize = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 8 });
+
+export function dotRows(d: TradeDot, price: string, time: string): [string, string][] {
+    const buyPct = d.size > 0 ? Math.round((d.buySize / d.size) * 100) : 0;
+    const sellPct = d.size > 0 ? 100 - buyPct : 0;
+    return [
+        ['Total', fmtSize(d.size)],
+        ['Buy', `${fmtSize(d.buySize)}  ${buyPct}%`],
+        ['Sell', `${fmtSize(d.size - d.buySize)}  ${sellPct}%`],
+        ['VWAP', price],
+        ['Trades', d.count.toString()],
+        ['Time', time],
+    ];
 }
 
 export type SizeRef = { mid: number; top: number };
@@ -79,6 +138,11 @@ export function refSize(trades: Trade[], colNs: bigint): SizeRef {
 export function sizeT(size: number, ref: SizeRef): number {
     const lo = ref.mid / 2;
     return Math.min(1, Math.max(0, (size - lo) / (ref.top - lo)) ** 0.75);
+}
+
+export function dotRadius(size: number, ref: SizeRef, mult: number): number {
+    const maxR = MAX_DOT_RADIUS * (1 + (mult - 1) / 2);
+    return MIN_DOT_RADIUS + sizeT(size, ref) * (maxR - MIN_DOT_RADIUS);
 }
 
 const refCache = new WeakMap<Trade[], { colNs: bigint; len: number; ref: SizeRef }>();

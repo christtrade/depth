@@ -90,7 +90,7 @@ export interface DrawParams {
     hoveredDividerIdx: number;
     hoveringLegend: boolean;
     showTooltip: boolean;
-    selectedTrade: TradePoint | null;
+    selectedDotTs: bigint | null;
     activeTool: ActiveDrawingTool;
     draggingAnchor: any;
     isHoldingCtrl: boolean;
@@ -591,7 +591,7 @@ export class RenderEngine {
             this.view,
             p.crosshair,
             p.showTooltip,
-            p.selectedTrade,
+            p.selectedDotTs,
             p.panes,
             p.layouts,
             p.indicators,

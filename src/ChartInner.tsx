@@ -10,7 +10,7 @@ import {
     ordinalVisiblePriceRange,
 } from './lib/renderers/renderer';
 import { resolveTickSize } from './lib/priceFormat';
-import { ViewBounds, TradeLine, TradePoint } from './lib/types';
+import { ViewBounds, TradeLine } from './lib/types';
 import { MAX_TIME_SPAN, MIN_TIME_SPAN } from './lib/constants';
 import { ChevronLeft, ChevronRight, Minus, Plus, RotateCcw } from 'lucide-react';
 import { ChartPane, Indicator } from './lib/types/indicator-types';
@@ -406,7 +406,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
             hoveredDividerIdx: hoveredDividerIdxRef.current,
             hoveringLegend: hoveringLegend.current,
             showTooltip: showTooltipRef.current,
-            selectedTrade: selectedTradeRef.current,
+            selectedDotTs: selectedDotTsRef.current,
             activeTool: activeToolRef.current,
             draggingAnchor: draggingAnchorRef.current,
             isHoldingCtrl: isHoldingCtrlRef.current,
@@ -1031,7 +1031,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
     const crosshairRef = useRef<Crosshair>(null);
     const lastMouse = useRef({ x: 0, y: 0 });
     const hasDragged = useRef(false);
-    const selectedTradeRef = useRef<TradePoint | null>(null);
+    const selectedDotTsRef = useRef<bigint | null>(null);
 
     const isRequestingSelectBarRef = useRef(false);
 
@@ -1644,7 +1644,7 @@ const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
         datasetEndRef,
         horizonScrollAnimRef,
         tradeLineInteractionRef,
-        selectedTradeRef,
+        selectedDotTsRef,
         transformer,
         eventBus,
         features,
