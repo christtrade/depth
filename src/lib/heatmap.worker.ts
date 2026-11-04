@@ -139,7 +139,8 @@ async function pump(): Promise<void> {
             wanted = { ...req, tiles: req.tiles.slice(1) };
             const t = buildTile({ snaps: build.snaps, replay }, k, { ...req, norm: normOf(req) });
             const bitmap = await bitmapOf(t);
-            post({ type: 'tile', key: configKey(req), k, rowLo: t.rowLo, rows: t.rows, bitmap }, bitmap ? [bitmap] : []);
+            const until = (build.lastEventTs + 1n).toString();
+            post({ type: 'tile', key: configKey(req), k, rowLo: t.rowLo, rows: t.rows, bitmap, until }, bitmap ? [bitmap] : []);
         }
     } finally {
         working = false;

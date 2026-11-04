@@ -32,6 +32,8 @@ export type TileReply = {
     rowLo: number;
     rows: number;
     bitmap: ImageBitmap | null;
+    // how far the data went when it was built
+    until: string;
 };
 
 export type HeatmapReply =

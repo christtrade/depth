@@ -164,6 +164,82 @@ test('l3: None zoomed in draws its bid and ask from the replay', async ({ page }
     expect(errors).toEqual([]);
 });
 
+test('l3 live: no blank strip at the horizon when a chunk lands', async ({ page, browserName }) => {
+    test.skip(browserName === 'webkit', 'frames too slow to see one frame');
+    await page.setViewportSize({ width: 1400, height: 800 });
+    await page.goto('/?sim=1&level=l3');
+    await settled(page);
+    await page.evaluate(() => {
+        const c = (window as any).__chart;
+        c.setChartSettings({ chartType: 'line', showTradeDots: false });
+        c.setTimeframe('None');
+    });
+    await expect
+        .poll(() => page.evaluate(() => {
+            const v = (window as any).__chart.renderEngine.view;
+            return Number(v.tMax - v.tMin) / 1e6;
+        }), { timeout: 20_000 })
+        .toBe(30_000);
+    await page.locator('button:has(svg.lucide-rotate-ccw)').first().click();
+    await page.waitForTimeout(500);
+    // a chunk is 250ms, ~6px at this zoom
+    const zoom = () =>
+        page.evaluate(() => {
+            const c = (window as any).__chart;
+            const v = c.renderEngine.view;
+            const canvas = c.renderEngine.baseCanvas;
+            const span = Number(v.tMax - v.tMin);
+            const r = canvas.getBoundingClientRect();
+            return { msPerPx: span / canvas.width / 1e6, x: r.x + (Number(BigInt(c.horizon()) * 1_000_000n - v.tMin) / span) * canvas.width - 150, y: r.y + 300 };
+        });
+    for (let i = 0; i < 80; i++) {
+        const z = await zoom();
+        if (z.msPerPx < 45) break;
+        await page.mouse.move(z.x, z.y);
+        await page.mouse.wheel(0, z.msPerPx > 90 ? -300 : -100);
+        await page.waitForTimeout(40);
+    }
+    await page.waitForTimeout(1500);
+    const flashes = await page.evaluate(
+        () =>
+            new Promise<number>((resolve) => {
+                const canvas: HTMLCanvasElement = (window as any).__chart.renderEngine.baseCanvas;
+                const ctx = canvas.getContext('2d')!;
+                const w = canvas.width;
+                const h = Math.floor(canvas.height * 0.85);
+                const blank = () => {
+                    const d = ctx.getImageData(0, 40, w, h).data;
+                    const out = new Uint8Array(w);
+                    for (let x = 0; x < w; x++) {
+                        let n = 0;
+                        for (let y = 0; y < h; y += 3) if (d[(y * w + x) * 4 + 3] < 30) n++;
+                        out[x] = n / Math.ceil(h / 3) > 0.97 ? 1 : 0;
+                    }
+                    return out;
+                };
+                let prev = blank();
+                let count = 0;
+                const start = performance.now();
+                const frame = () => {
+                    const cur = blank();
+                    let run = 0;
+                    for (let x = 0; x <= w; x++) {
+                        if (x < w && cur[x] && !prev[x]) run++;
+                        else {
+                            if (run >= 2) count++;
+                            run = 0;
+                        }
+                    }
+                    prev = cur;
+                    if (performance.now() - start < 4000) requestAnimationFrame(frame);
+                    else resolve(count);
+                };
+                requestAnimationFrame(frame);
+            }),
+    );
+    expect(flashes).toBe(0);
+});
+
 test('None is in the timeframe list at tick, l2 and l3 only', async ({ page }) => {
     const errors = watchErrors(page);
     for (const level of ['tick', 'l3', 'l2']) {

@@ -7,7 +7,7 @@ const MIN_ROW_PX = 3;
 const MAX_TILES = 128;
 const FILL_STEP_NS = 250_000_000n;
 
-type Tile = { k: number; rowLo: number; rows: number; bitmap: ImageBitmap | null; stale?: boolean };
+type Tile = { k: number; rowLo: number; rows: number; bitmap: ImageBitmap | null; until: bigint; stale?: boolean };
 type Fill = { key: string; ts: bigint; rowLo: number; rows: number; bitmap: ImageBitmap | null; stale?: boolean };
 
 export type TileView = {
@@ -75,7 +75,7 @@ export class HeatmapTiles {
         if (!tiles) this.byConfig.set(r.key, (tiles = new Map()));
         tiles.get(r.k)?.bitmap?.close();
         if (!tiles.has(r.k)) this.count++;
-        tiles.set(r.k, { k: r.k, rowLo: r.rowLo, rows: r.rows, bitmap: r.bitmap });
+        tiles.set(r.k, { k: r.k, rowLo: r.rowLo, rows: r.rows, bitmap: r.bitmap, until: BigInt(r.until) });
         this.evict(r.key);
         this.changed();
     }
@@ -152,7 +152,18 @@ export class HeatmapTiles {
         }
         ctx.restore();
 
-        if (cut !== null && cut < view.tMax) this.drawFill(ctx, key, config, cut, v);
+        if (cut !== null) {
+            // the horizon moves when a live chunk lands, the tile that has it comes later. blank strip every chunk
+            let from = cut;
+            for (let k = kTo; k >= kFrom; k--) {
+                const t = tiles?.get(k);
+                if (!t || t.until <= BigInt(k) * span) continue;
+                const until = ((t.until + colNs - 1n) / colNs) * colNs;
+                if (until < from) from = until;
+                break;
+            }
+            if (from < view.tMax) this.drawFill(ctx, key, config, from, v);
+        }
         ctx.imageSmoothingEnabled = smoothing;
 
         if (!missing.length) this.lastDrawn = key;
@@ -212,7 +223,7 @@ export class HeatmapTiles {
         ctx.restore();
     }
 
-    private drawFill(ctx: CanvasRenderingContext2D, key: string, c: TileConfig, cut: bigint, v: TileView): void {
+    private drawFill(ctx: CanvasRenderingContext2D, key: string, c: TileConfig, from: bigint, v: TileView): void {
         const step = COLUMN_NS[c.column] < FILL_STEP_NS ? COLUMN_NS[c.column] : FILL_STEP_NS;
         const ts = (v.horizon / step) * step;
         const f = this.fill;
@@ -225,7 +236,7 @@ export class HeatmapTiles {
         }
         // a stale fill beats a gap while the new one is on its way
         if (!f?.bitmap || f.key !== key) return;
-        const x0 = Math.max(0, v.tsToX(cut));
+        const x0 = Math.max(0, v.tsToX(from));
         const top = v.priceToY(((f.rowLo + f.rows) * c.ticks - 0.5) * c.tickSize);
         const bottom = v.priceToY((f.rowLo * c.ticks - 0.5) * c.tickSize);
         ctx.drawImage(f.bitmap, x0, top, v.w - x0, bottom - top);
