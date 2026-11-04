@@ -133,14 +133,47 @@ describe('what draws while a zoom waits on its tiles', () => {
         assert.deepEqual(drawn.map((b: any) => b.name ?? 'tile'), ['tile']);
     });
 
-    it('zooming out past it, the other zooms held fill in, coarse under fine', () => {
+    it('zooming out past it, the other zooms held fill in, the finest with data first', () => {
         const { tiles, ctx, drawn } = setup();
         tiles.onReply(reply(0, coarser, bm('coarse')));
         tiles.draw(ctx, view);
         drawn.length = 0;
         // 5s columns reach past the only tile of the last zoom
         tiles.draw(ctx, at(COL * 20n, BigInt(TILE_COLS), SPAN * 20n));
-        assert.deepEqual(drawn.map((b: any) => b.name ?? 'last'), ['coarse', 'last']);
+        assert.deepEqual(drawn.map((b: any) => b.name ?? 'last'), ['last', 'coarse']);
+    });
+
+    // tiles are see through, a time painted twice comes out brighter
+    it('paints each time once, however many levels are held', () => {
+        const s = setup();
+        const painted: [number, number, string][] = [];
+        let clip = [0, 0];
+        (s.ctx as any).rect = (x: number, _y: number, w: number) => (clip = [x, x + w]);
+        (s.ctx as any).drawImage = (b: any) => painted.push([clip[0], clip[1], b.name ?? 'tile']);
+        const v = { ...view, tsToX: (ts: bigint) => Number(ts) / Number(COL) };
+        // on screen with a stale tail from 90, a finer level has up to 94, a coarser one all of it
+        s.tiles.onReply({ type: 'tile', key, k: 0, rowLo: 9990, rows: 10, bitmap: s.bitmap, until: (90n * COL).toString() });
+        s.tiles.onReply({ ...reply(3, COL / 10n, bm('fine')), until: (94n * COL).toString() });
+        s.tiles.onReply({ ...reply(0, coarser, bm('coarse')), until: SPAN.toString() });
+        s.tiles.onReply(data(90n * COL));
+        s.tiles.draw(s.ctx, v);
+        const under = painted.filter((p) => p[2] !== 'tile');
+        assert.deepEqual(under, [
+            [90, 94, 'fine'],
+            [94, 256, 'coarse'],
+        ]);
+    });
+
+    it('a level holds no slice past where its data ends, or with no rows', () => {
+        const s = setup();
+        const names: string[] = [];
+        (s.ctx as any).drawImage = (b: any) => names.push(b.name ?? 'tile');
+        s.tiles.onReply({ ...reply(0, COL / 10n, bm('fine')), bitmap: null, until: SPAN.toString() });
+        s.tiles.onReply({ ...reply(0, coarser, bm('coarse')), until: SPAN.toString() });
+        s.tiles.onReply({ type: 'tile', key, k: 0, rowLo: 9990, rows: 10, bitmap: s.bitmap, until: '0' });
+        s.tiles.onReply(data(0n));
+        s.tiles.draw(s.ctx, view);
+        assert.deepEqual(names, ['coarse', 'tile'], 'the empty finer tile doesnt hide it');
     });
 
     it('never another tick sizes tiles', () => {
@@ -258,6 +291,35 @@ describe('the book past the data a tile has', () => {
         xs.length = 0;
         tiles.draw(ctx, zoomed);
         assert.deepEqual(xs, [91]);
+    });
+
+    const coarseKey = configKey({ column: COLUMN_NS.indexOf(COL * 4n), tickSize: 0.01, ticks: 1, contrast: 0, palette: 'heat' });
+    const coarse = (until: bigint, bitmap: ImageBitmap) => ({ type: 'tile' as const, key: coarseKey, k: 0, rowLo: 9990, rows: 10, bitmap, until: until.toString() });
+
+    it('starts past the last column of a coarser tile, it paints that column whole', () => {
+        const { tiles, ctx, xs, bitmap } = liveSetup();
+        // data into 88-91, that column of 4 paints up to 92
+        tiles.onReply(coarse(90n * COL + 1n, bitmap));
+        (tiles as any).byConfig.get(key).clear();
+        tiles.draw(ctx, live);
+        assert.deepEqual(xs, [92]);
+    });
+
+    it('starts past a coarser tile under the tail of a stale one too, every live chunk has one', () => {
+        const { tiles, ctx, xs, bitmap } = liveSetup();
+        tiles.onReply(tile(0, 90n * COL + 1n, bitmap));
+        tiles.onReply(coarse(93n * COL + 1n, bitmap));
+        tiles.onReply(data(90n * COL + 1n, 100n * COL));
+        tiles.draw(ctx, live);
+        assert.deepEqual(xs, [96]);
+    });
+
+    it('never past the playhead', () => {
+        const { tiles, ctx, xs, bitmap } = liveSetup();
+        tiles.onReply(coarse(99n * COL + 1n, bitmap));
+        (tiles as any).byConfig.get(key).clear();
+        tiles.draw(ctx, { ...live, horizon: 98n * COL });
+        assert.deepEqual(xs, [98]);
     });
 
     it('with no tile on screen yet, zooming, the book still starts at the playhead', () => {

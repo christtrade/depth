@@ -163,7 +163,7 @@ export class HeatmapTiles {
                 // held since before the data got this far, zoom away and back and its tail is blank
                 if (t.stale && t.until < tileEnd) {
                     const start = BigInt(k) * span;
-                    this.fallback(ctx, t.until > start ? t.until : start, tileEnd, key, config.tickSize, v);
+                    this.fallback(ctx, t.until > start ? ceilTo(t.until, colNs) : start, tileEnd, key, config.tickSize, v);
                 }
                 this.paint(ctx, t, span, config, v);
                 // keeps it last in line for eviction
@@ -252,23 +252,37 @@ export class HeatmapTiles {
     }
 
     // what's held for there, scaled, until the tile comes. the last complete zoom when it has all of it,
-    // zooming out goes past that, then every other zoom held too, coarse first so the finer ones end up on top
+    // zooming out goes past that, then every other zoom held too. tiles are see through so each time gets
+    // one level, the finest with data there, stacked ones came out brighter
     private fallback(ctx: CanvasRenderingContext2D, from: bigint, to: bigint, key: string, tickSize: number, v: TileView): void {
         const keys = this.fallbacks(key, tickSize, from, to);
-        ctx.save();
-        ctx.beginPath();
-        const x0 = v.tsToX(from);
-        ctx.rect(x0, 0, v.tsToX(to) - x0, v.h);
-        ctx.clip();
-        for (const old of keys) {
-            const c = parseKey(old);
-            const oldSpan = COLUMN_NS[c.column] * BigInt(TILE_COLS);
-            for (const t of this.byConfig.get(old)!.values()) {
-                if (BigInt(t.k + 1) * oldSpan <= from || BigInt(t.k) * oldSpan >= to) continue;
-                this.paint(ctx, t, oldSpan, c, v);
+        let covered: Slice[] = [];
+        for (let i = keys.length - 1; i >= 0; i--) {
+            const c = parseKey(keys[i]);
+            const oldCol = COLUMN_NS[c.column];
+            const oldSpan = oldCol * BigInt(TILE_COLS);
+            const mine: Slice[] = [];
+            for (const t of this.byConfig.get(keys[i])!.values()) {
+                if (!t.bitmap) continue;
+                const start = BigInt(t.k) * oldSpan;
+                const end = start + oldSpan;
+                const reach = ceilTo(t.until < end ? t.until : end, oldCol);
+                const lo = start > from ? start : from;
+                const hi = reach < to ? reach : to;
+                if (lo >= hi) continue;
+                for (const [a, b] of without(lo, hi, covered)) {
+                    ctx.save();
+                    ctx.beginPath();
+                    const x0 = v.tsToX(a);
+                    ctx.rect(x0, 0, v.tsToX(b) - x0, v.h);
+                    ctx.clip();
+                    this.paint(ctx, t, oldSpan, c, v);
+                    ctx.restore();
+                }
+                mine.push([lo, hi]);
             }
+            covered = covered.concat(mine);
         }
-        ctx.restore();
     }
 
     private covers(key: string, from: bigint, to: bigint): boolean {
@@ -322,8 +336,9 @@ export class HeatmapTiles {
         for (let k = kTo; k >= kFrom; k--) {
             const t = tiles?.get(k);
             if (!t || t.until <= BigInt(k) * span) continue;
-            if (k === kTo) return t.until;
             const end = BigInt(k + 1) * span;
+            // a stale one has what's held painted under its tail
+            if (k === kTo && (!t.stale || t.until >= end)) return t.until;
             until = t.until < end ? t.until : end;
             break;
         }
@@ -331,10 +346,12 @@ export class HeatmapTiles {
         const to = from + span;
         for (const old of this.fallbacks(key, tickSize, from, to)) {
             const oldSpan = this.spanOf(old);
+            const oldCol = COLUMN_NS[parseKey(old).column];
             for (const t of this.byConfig.get(old)!.values()) {
                 const end = BigInt(t.k + 1) * oldSpan;
                 if (end <= from || BigInt(t.k) * oldSpan >= to) continue;
-                const reach = t.until < end ? t.until : end;
+                // it paints its last column whole, a fill on top of that doubles the color
+                const reach = ceilTo(t.until < end ? t.until : end, oldCol);
                 if (until === null || reach > until) until = reach;
             }
         }
@@ -361,6 +378,23 @@ export class HeatmapTiles {
             if (!tiles.size && key !== keep) this.byConfig.delete(key);
         }
     }
+}
+
+type Slice = [bigint, bigint];
+
+const ceilTo = (ts: bigint, step: bigint) => ((ts + step - 1n) / step) * step;
+
+function without(from: bigint, to: bigint, taken: Slice[]): Slice[] {
+    const out: Slice[] = [];
+    let at = from;
+    for (const [a, b] of [...taken].sort((x, y) => (x[0] < y[0] ? -1 : 1))) {
+        if (b <= at) continue;
+        if (a >= to) break;
+        if (a > at) out.push([at, a]);
+        at = b;
+    }
+    if (at < to) out.push([at, to]);
+    return out;
 }
 
 function parseKey(key: string): TileConfig {
