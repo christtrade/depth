@@ -139,9 +139,15 @@ async function pump(): Promise<void> {
             // the rest stay wanted unless a newer ask replaces them
             if (req === wanted) wanted = { ...req, tiles: req.tiles.slice(1) };
             else aheadWanted = { ...req, tiles: req.tiles.slice(1) };
-            const t = buildTile({ snaps: build.snaps, replay }, k, { ...req, norm: normOf(req) });
+            const built = build;
+            const t = buildTile({ snaps: built.snaps, replay }, k, { ...req, norm: normOf(req) });
             const bitmap = await bitmapOf(t);
-            const until = (build.lastEventTs + 1n).toString();
+            // a drop or a new init during that await
+            if (build !== built) {
+                bitmap?.close();
+                continue;
+            }
+            const until = (built.lastEventTs + 1n).toString();
             post({ type: 'tile', key: configKey(req), k, rowLo: t.rowLo, rows: t.rows, bitmap, until }, bitmap ? [bitmap] : []);
         }
     } finally {

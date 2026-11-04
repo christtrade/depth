@@ -75,6 +75,28 @@ describe('the heatmap worker once a view settles', () => {
         assert.deepEqual(order, [10, 30, 31, 11, 12]);
     });
 
+    it('survives the heatmap going off while a tile is on its way, and sends nothing', async () => {
+        let closed = 0;
+        let land: (b: unknown) => void = () => {};
+        const real = (globalThis as any).createImageBitmap;
+        (globalThis as any).createImageBitmap = () => new Promise((r) => (land = r));
+        const before = replies.filter((r) => r.type === 'tile').length;
+        send({ type: 'tiles', tiles: [50], ...cfg });
+        send({ type: 'drop' });
+        await until(() => replies.at(-1)?.type === 'held' && (replies.at(-1) as any).bytes === 0);
+        land({ close: () => closed++ });
+        await new Promise((r) => setTimeout(r, 10));
+        (globalThis as any).createImageBitmap = real;
+        assert.equal(replies.filter((r) => r.type === 'tile').length, before);
+        assert.equal(closed, 1);
+
+        const cb = createCompactBuffer();
+        appendEvents(cb, events, isoToNs);
+        const n = replies.length;
+        send({ type: 'init', buf: cb._buf.slice(0, cb.length * BYTES_PER_EVENT), length: cb.length });
+        await until(() => replies.slice(n).some((r) => r.type === 'data'));
+    });
+
     it('lets its copy go when the heatmap is turned off, and builds nothing from it', async () => {
         send({ type: 'drop' });
         await until(() => replies.at(-1)?.type === 'held');
