@@ -21,13 +21,14 @@ const open = async (page: Page, url = '/?level=l3') => {
 
 // the card's rows as the chart wrote them on its next ui draw
 const card = async (page: Page): Promise<Record<string, string> | null> => {
-    await page.evaluate(() => {
+    // a set wait comes up empty under load, this waits for the draw
+    const text: string[] = await page.evaluate(async () => {
         const w = window as any;
         w.__text = [];
         w.__chart.renderEngine.markDirty('ui');
+        for (let i = 0; i < 3; i++) await new Promise(requestAnimationFrame);
+        return w.__text;
     });
-    await page.waitForTimeout(120);
-    const text: string[] = await page.evaluate(() => (window as any).__text);
     const at = text.lastIndexOf('Total');
     if (at < 0) return null;
     const rows: Record<string, string> = {};
