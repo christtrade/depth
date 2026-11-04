@@ -125,7 +125,10 @@ export interface PluginDrawingMoveContext {
     anchors: Anchor[];
     anchor: DrawingAnchorId; // 'body' or 'a0', 'a1', etc.
     dts: bigint;
+    /** What the cursor moved in price. On a log axis use `shiftPrice`, the same delta bends the drawing. */
     dprice: number;
+    /** A price moved the way the cursor moved, the same pixels on any price axis. */
+    shiftPrice(price: number): number;
     curTs: bigint;
     curPrice: number;
 }

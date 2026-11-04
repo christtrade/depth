@@ -51,6 +51,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reads the bubbles the last draw made
 
 ### Fixed
+- Dragging a drawing on a log price axis bent it (40px down moved one end 7px) and could take a price under 0,
+  every point moves the same pixels now. plugin tools with their own `onMove` get `shiftPrice` for it
 - Switching to log kept the view's linear margins till the next zoom, the candles sat squashed up top. it fits
   again now, either way. a set range under 0 gets fitted too, and Renko, Kagi and Line Break margins are in log
 - On a log price axis the crosshair pill read a linear price (162.99 where the axis said ~22), the shift measure

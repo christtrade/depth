@@ -1814,6 +1814,12 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                         ((curTs - prev.ts) / activeTimeframeRef.current.barNs) *
                         activeTimeframeRef.current.barNs;
                     const dprice = curPrice - prev.price;
+                    // same pixels for every point, adding a price on log bends the shape and can go under 0
+                    const ratio = curPrice / prev.price;
+                    const shift =
+                        transformer.getScaleMode() === 'log' && viewRef.current.pMin > 0 && ratio > 0
+                            ? (price: number) => price * ratio
+                            : (price: number) => price + dprice;
 
                     drawingsRef.current = drawingsRef.current.map((d) => {
                         if (d.id !== drawingId) return d;
@@ -1835,6 +1841,7 @@ export function useChartInteraction(p: UseChartInteractionParams): void {
                             anchor,
                             dts,
                             dprice,
+                            shift,
                             curTs,
                             curPrice,
                             isHoldingShiftRef.current,

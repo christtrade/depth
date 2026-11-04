@@ -212,6 +212,54 @@ test('log: trade arrows move with the mode even when the price range stays', asy
     expect(Math.abs(log! - linear!), `${linear} then ${log}`).toBeGreaterThan(5);
 });
 
+for (const [tool, y1, y2, grabX] of [
+    ['line', 100, 400, 350],
+    // only its edges grab
+    ['rect', 100, 300, 280],
+] as const)
+    test(`log: dragging a ${tool} moves all of it the same pixels, and keeps its prices over 0`, async ({ page }) => {
+        const errors = watchErrors(page);
+        await openLog(page, { chartType: 'candles', autoScale: false });
+        await page.waitForTimeout(300);
+        const v = await page.evaluate(() => {
+            const c = (window as any).__chart;
+            const box = c.renderEngine.baseCanvas.getBoundingClientRect();
+            const main = c.renderEngine.drawParams.layouts.main;
+            return { pMin: c.renderEngine.view.pMin, pMax: c.renderEngine.view.pMax, h: main.h, x: box.x + main.x, y: box.y + main.y };
+        });
+        const logY = (p: number) => (1 - (Math.log(p) - Math.log(v.pMin)) / (Math.log(v.pMax) - Math.log(v.pMin))) * v.h;
+        const prices = () =>
+            page.evaluate((tool) => {
+                const all = Object.values((window as any).__chart.drawingStore.serialize()).flat() as any[];
+                const d = all.find((x) => x.tool === tool);
+                return d ? ([d.a.price, d.b.price] as number[]) : null;
+            }, tool);
+        await page.evaluate((name) => (window as any).__chart.setActiveTool({ name, id: '', state: {} }), tool);
+        await page.mouse.move(v.x + 200, v.y + y1);
+        await page.mouse.click(v.x + 200, v.y + y1);
+        await page.mouse.move(v.x + 500, v.y + y2);
+        await page.mouse.click(v.x + 500, v.y + y2);
+        await expect.poll(prices).not.toBeNull();
+        const before = (await prices())!;
+
+        const grabY = v.y + (tool === 'rect' ? Math.min(logY(before[0]), logY(before[1])) : (logY(before[0]) + logY(before[1])) / 2);
+        await page.mouse.move(v.x + grabX, grabY);
+        await page.mouse.click(v.x + grabX, grabY);
+        await page.mouse.move(v.x + grabX, grabY);
+        await page.mouse.down();
+        await page.mouse.move(v.x + grabX, grabY + 40, { steps: 6 });
+        await page.mouse.up();
+        await page.waitForTimeout(200);
+        const after = (await prices())!;
+        expect(after[0]).toBeGreaterThan(0);
+        expect(after[1]).toBeGreaterThan(0);
+        // a rect sorts its corners, so match each to the end it came from
+        const pair = (a: number[]) => [...a].sort((x, y) => x - y);
+        const moved = pair(after).map((p, i) => logY(p) - logY(pair(before)[i]));
+        for (const px of moved) expect(Math.abs(px - 40), `moved ${moved}`).toBeLessThan(2);
+        expect(errors).toEqual([]);
+    });
+
 const geometry = (page: Page) =>
     page.evaluate(() => {
         const c = (window as any).__chart;

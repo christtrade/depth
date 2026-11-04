@@ -3519,6 +3519,7 @@ export function moveDrawingAnchorDelta(
     anchor: DrawingAnchorId,
     dts: bigint, // delta ts since last frame
     dprice: number, // delta price since last frame
+    shift: (price: number) => number, // moves a price by what the cursor moved, in pixels on a log axis
     curTs: bigint, // absolute cursor position (for individual anchor snap)
     curPrice: number,
     holdingShift: boolean,
@@ -3539,6 +3540,7 @@ export function moveDrawingAnchorDelta(
                 anchor,
                 dts,
                 dprice,
+                shiftPrice: shift,
                 curTs,
                 curPrice,
             });
@@ -3548,7 +3550,7 @@ export function moveDrawingAnchorDelta(
         if (anchor === 'body') {
             return ret({
                 ...pd,
-                anchors: pd.anchors.map((a) => ({ ts: a.ts + dts, price: a.price + dprice })),
+                anchors: pd.anchors.map((a) => ({ ts: a.ts + dts, price: shift(a.price) })),
             } as any);
         }
         if (typeof anchor !== 'string') return ret(d);
@@ -3585,24 +3587,24 @@ export function moveDrawingAnchorDelta(
             // body - translate both anchors by delta
             return ret({
                 ...d,
-                a: { ts: d.a.ts + dts, price: d.a.price + dprice },
+                a: { ts: d.a.ts + dts, price: shift(d.a.price) },
                 b: {
                     ts: d.b.ts + dts,
-                    price: d.b.price + dprice,
+                    price: shift(d.b.price),
                 },
             });
 
         case 'cross-line':
             return ret({
                 ...d,
-                price: d.price + dprice,
+                price: shift(d.price),
                 ts: d.ts + dts,
             });
 
         case 'hray':
             return ret({
                 ...d,
-                price: d.price + dprice,
+                price: shift(d.price),
                 ts: d.ts + dts,
             });
 
@@ -3647,11 +3649,12 @@ export function moveDrawingAnchorDelta(
             // body - translate both anchors by delta
             return ret({
                 ...d,
-                a: { ts: d.a.ts + dts, price: d.a.price + dprice },
+                a: { ts: d.a.ts + dts, price: shift(d.a.price) },
                 b: {
                     ts: d.b.ts + dts,
-                    price: d.b.price + dprice,
+                    price: shift(d.b.price),
                 },
+                height: shift(d.a.price + d.height) - shift(d.a.price),
             });
 
         case 'rect': {
@@ -3702,8 +3705,8 @@ export function moveDrawingAnchorDelta(
                 default:
                     newMinTs = minTs + dts;
                     newMaxTs = maxTs + dts;
-                    newMinP = minPrice + dprice;
-                    newMaxP = maxPrice + dprice;
+                    newMinP = shift(minPrice);
+                    newMaxP = shift(maxPrice);
             }
 
             // Detect axis inversions before clamping, so we can remap the anchor.
@@ -3769,9 +3772,9 @@ export function moveDrawingAnchorDelta(
             // body - translate all three vertices by the frame delta.
             return ret({
                 ...d,
-                a: { ts: d.a.ts + dts, price: d.a.price + dprice },
-                b: { ts: d.b.ts + dts, price: d.b.price + dprice },
-                c: { ts: d.c.ts + dts, price: d.c.price + dprice },
+                a: { ts: d.a.ts + dts, price: shift(d.a.price) },
+                b: { ts: d.b.ts + dts, price: shift(d.b.price) },
+                c: { ts: d.c.ts + dts, price: shift(d.c.price) },
             });
         }
 
@@ -3780,15 +3783,15 @@ export function moveDrawingAnchorDelta(
             if (anchor === 'b') return ret({ ...d, b: { ts: curTs, price: curPrice } });
             return ret({
                 ...d,
-                a: { ts: d.a.ts + dts, price: d.a.price + dprice },
-                b: { ts: d.b.ts + dts, price: d.b.price + dprice },
+                a: { ts: d.a.ts + dts, price: shift(d.a.price) },
+                b: { ts: d.b.ts + dts, price: shift(d.b.price) },
             });
 
         case 'text':
             if (anchor === 'body' || anchor === 'anchor')
                 return ret({
                     ...d,
-                    anchor: { ts: d.anchor.ts + dts, price: d.anchor.price + dprice },
+                    anchor: { ts: d.anchor.ts + dts, price: shift(d.anchor.price) },
                 });
             return ret({ ...d, anchor: { ts: curTs, price: curPrice } });
 
@@ -3840,8 +3843,8 @@ export function moveDrawingAnchorDelta(
                 default:
                     newMinTs = minTs + dts;
                     newMaxTs = maxTs + dts;
-                    newMinP = minPrice + dprice;
-                    newMaxP = maxPrice + dprice;
+                    newMinP = shift(minPrice);
+                    newMaxP = shift(maxPrice);
             }
 
             // Detect axis inversions before clamping, so we can remap the anchor.
@@ -3928,9 +3931,9 @@ export function moveDrawingAnchorDelta(
                 default:
                     newMinTs = minTs + dts;
                     newMaxTs = maxTs + dts;
-                    newTopP += dprice;
-                    newEntryP += dprice;
-                    newBotP += dprice;
+                    newTopP = shift(newTopP);
+                    newEntryP = shift(newEntryP);
+                    newBotP = shift(newBotP);
             }
 
             // Sort so dragging an edge past the opposite one inverts naturally,
