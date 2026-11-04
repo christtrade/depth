@@ -64,6 +64,8 @@ const C = {
     bidImbalText2x: '#cc88ff',
 };
 
+const fontSizeFor = (rowH: number) => Math.max(9, Math.min(13, Math.floor(rowH * 0.45)));
+
 // Main renderer
 export function drawFootprintChart(
     ctx: CanvasRenderingContext2D,
@@ -85,8 +87,11 @@ export function drawFootprintChart(
     const tRange = Number(bounds.tMax - bounds.tMin);
     const barPx = (Number(barNs) / tRange) * w;
 
-    const pRange = bounds.pMax - bounds.pMin;
-    const tickPx = pRange > 0 ? (tickSize / pRange) * h : 0;
+    // at the top of the view, where a tick is smallest on a log axis, so no row ends up under MIN_ROW_PX
+    const tickPx =
+        bounds.pMax > bounds.pMin
+            ? transformer.priceToY(bounds.pMax - tickSize, h) - transformer.priceToY(bounds.pMax, h)
+            : 0;
 
     // Text & detail gating
     const showText = barPx >= 44;
@@ -220,17 +225,24 @@ export function drawFootprintChart(
             }
         }
 
-        const rowShowText = showText && rowPx >= 9;
-        const fontSize = Math.max(9, Math.min(13, Math.floor(rowPx * 0.45)));
+        const barFontSize = fontSizeFor(rowPx);
+        let fontSize = barFontSize;
         ctx.font = `${fontSize}px "JetBrains Mono", monospace`;
 
         // Per-row rendering
         for (const [key, b] of bucketMap) {
             const bucketBasePrice = key * lodPrice;
-            const bucketMidPrice = bucketBasePrice + lodPrice / 2;
-            const yCenter = transformer.priceToY(bucketMidPrice, h);
-            const cellH = Math.max(1, rowPx - 1);
+            const yTop = transformer.priceToY(bucketBasePrice + lodPrice, h);
+            const yBottom = transformer.priceToY(bucketBasePrice, h);
+            const rowH = yBottom - yTop;
+            const yCenter = (yTop + yBottom) / 2;
+            const cellH = Math.max(1, rowH - 1);
             const yCell = yCenter - cellH / 2;
+            const rowShowText = showText && rowH >= 9;
+            if (fontSizeFor(rowH) !== fontSize) {
+                fontSize = fontSizeFor(rowH);
+                ctx.font = `${fontSize}px "JetBrains Mono", monospace`;
+            }
 
             // SIGNAL LAYER 2: Absorption halo
             if (showSignals && chartSettings.footprintShowAbsorption && b.absorption) {
@@ -355,10 +367,10 @@ export function drawFootprintChart(
         if (showText && barPx >= 50) {
             const sign = bar.totalDelta >= 0 ? '+' : '';
             ctx.textAlign = 'center';
-            ctx.font = `bold ${fontSize}px "JetBrains Mono", monospace`;
+            ctx.font = `bold ${barFontSize}px "JetBrains Mono", monospace`;
             ctx.fillStyle = bar.totalDelta >= 0 ? 'rgba(0,230,118,0.85)' : 'rgba(255,23,68,0.85)';
             ctx.fillText(`${sign}${bar.totalDelta}`, xCandle, yLow + 14);
-            ctx.font = `${fontSize}px "JetBrains Mono", monospace`;
+            ctx.font = `${barFontSize}px "JetBrains Mono", monospace`;
         }
 
         // Diagonal imbalance bar badge (mini label at bar top)
@@ -373,7 +385,7 @@ export function drawFootprintChart(
             ctx.textAlign = 'center';
             ctx.fillStyle = bar.diagDominant === 'buy' ? C.diagAskText : C.diagBidText;
             ctx.fillText(label, xCandle, yHigh - 6);
-            ctx.font = `${fontSize}px "JetBrains Mono", monospace`;
+            ctx.font = `${barFontSize}px "JetBrains Mono", monospace`;
         }
     }
 
