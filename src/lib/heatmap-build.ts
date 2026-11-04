@@ -46,6 +46,7 @@ export type Build = {
     book: BookState;
     snaps: Snapshot[][];
     nextSnapTimes: (bigint | null)[];
+    firstEventTs: bigint;
     lastEventTs: bigint;
     // a trailing snapshot at lastEventTs ends every level
     sealed: boolean;
@@ -58,6 +59,7 @@ export function newBuild(): Build {
         book: { bids: new Map(), asks: new Map() },
         snaps: Array.from({ length: levels }, () => []),
         nextSnapTimes: new Array(levels).fill(null),
+        firstEventTs: 0n,
         lastEventTs: 0n,
         sealed: false,
     };
@@ -73,6 +75,7 @@ export async function feed(b: Build, events: MboEvent[], stale?: () => boolean):
 
         const event = events[i];
         const ts = isoToNs(event.ts_event);
+        if (b.firstEventTs === 0n) b.firstEventTs = ts;
         b.lastEventTs = ts;
 
         for (let lvl = 0; lvl < b.snaps.length; lvl++) {

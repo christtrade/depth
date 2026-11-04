@@ -6,6 +6,14 @@ import type { ViewBounds } from './types';
 const MIN_ROW_PX = 3;
 const MAX_TILES = 128;
 const FILL_STEP_NS = 250_000_000n;
+const OVERVIEW_TILES = 4n;
+
+// the finest column that fits all the data in a few tiles
+export function overviewColumn(start: bigint, end: bigint): number {
+    const want = end - start;
+    for (let i = 0; i < COLUMN_NS.length; i++) if (COLUMN_NS[i] * BigInt(TILE_COLS) * OVERVIEW_TILES >= want) return i;
+    return COLUMN_NS.length - 1;
+}
 
 type Tile = { k: number; rowLo: number; rows: number; bitmap: ImageBitmap | null; until: bigint; stale?: boolean };
 type Fill = { key: string; ts: bigint; rowLo: number; rows: number; bitmap: ImageBitmap | null; stale?: boolean };
@@ -33,6 +41,10 @@ export class HeatmapTiles {
     private fillAsked = '';
     private missing = false;
     private seen: { config: TileConfig; from: bigint; to: bigint } | null = null;
+    private range: { start: bigint; end: bigint } | null = null;
+    // zooming out shows time no zoom has tiles for, this always has it
+    private overview: TileConfig | null = null;
+    private overviewAsked = '';
     //bitmaps the last frame drew, for tests
     drawn: ImageBitmap[] = [];
     readonly bbo: FineBbo;
@@ -52,6 +64,7 @@ export class HeatmapTiles {
         }
         if (r.type === 'data') {
             this.bbo.dataFrom(BigInt(r.from));
+            this.range = { start: BigInt(r.start), end: BigInt(r.end) };
             this.invalidate(BigInt(r.from));
             return;
         }
@@ -76,7 +89,9 @@ export class HeatmapTiles {
         tiles.get(r.k)?.bitmap?.close();
         if (!tiles.has(r.k)) this.count++;
         tiles.set(r.k, { k: r.k, rowLo: r.rowLo, rows: r.rows, bitmap: r.bitmap, until: BigInt(r.until) });
-        this.evict(r.key);
+        // an overview tile landing shouldn't push out what's on screen
+        const shown = this.seen ? configKey(this.seen.config) : r.key;
+        this.evict(this.overview && r.key === configKey(this.overview) ? shown : r.key);
         this.changed();
     }
 
@@ -90,10 +105,14 @@ export class HeatmapTiles {
         if (this.fill) this.fill.stale = true;
         this.asked = '';
         this.fillAsked = '';
+        this.overviewAsked = '';
         this.changed();
     }
 
     clear(): void {
+        this.range = null;
+        this.overview = null;
+        this.overviewAsked = '';
         for (const tiles of this.byConfig.values()) for (const t of tiles.values()) t.bitmap?.close();
         this.fill?.bitmap?.close();
         this.fill = null;
@@ -186,6 +205,7 @@ export class HeatmapTiles {
             const busy = this.missing;
             queueMicrotask(() => this.status(busy));
         }
+        this.askOverview(config, v.horizon > 0n ? v.horizon - (view.tMax - view.tMin) : 0n);
     }
 
     // the view stopped moving
@@ -193,6 +213,31 @@ export class HeatmapTiles {
         const s = this.seen;
         if (!s || s.to <= s.from) return;
         this.post({ type: 'settle', from: s.from.toString(), to: s.to.toString(), ...s.config });
+        this.askOverview(s.config, null);
+    }
+
+    // a live chunk stales its last tile, rebuilt once a view's width behind or the view stops, null means now
+    private askOverview(c: TileConfig, staleBefore: bigint | null): void {
+        const r = this.range;
+        if (!r) return;
+        const column = overviewColumn(r.start, r.end);
+        const o = this.overview;
+        if (!o || o.column !== column || o.tickSize !== c.tickSize || o.contrast !== c.contrast || o.palette !== c.palette)
+            this.overview = { ...c, column };
+        const config = this.overview!;
+        const key = configKey(config);
+        const span = COLUMN_NS[column] * BigInt(TILE_COLS);
+        const tiles = this.byConfig.get(key);
+        const want: number[] = [];
+        for (let k = r.start / span; k * span <= r.end; k++) {
+            const t = tiles?.get(Number(k));
+            if (!t || (t.stale && (staleBefore === null || t.until < staleBefore))) want.push(Number(k));
+        }
+        if (!want.length) return;
+        const ask = key + '|' + want.join(',');
+        if (ask === this.overviewAsked) return;
+        this.overviewAsked = ask;
+        this.post({ type: 'ahead', tiles: want, ...config });
     }
 
     private paint(ctx: CanvasRenderingContext2D, t: Tile, span: bigint, c: TileConfig, v: TileView): void {
@@ -302,8 +347,10 @@ export class HeatmapTiles {
 
     // oldest first, the config in use last
     private evict(keep: string): void {
+        const overview = this.overview && configKey(this.overview);
         const order = [...this.byConfig.keys()].sort((a, b) => (a === keep ? 1 : b === keep ? -1 : 0));
         for (const key of order) {
+            if (key === overview) continue;
             const tiles = this.byConfig.get(key)!;
             for (const [k, t] of tiles) {
                 if (this.count <= MAX_TILES) return;

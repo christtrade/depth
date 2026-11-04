@@ -33,6 +33,7 @@ let chain: Promise<unknown> = Promise.resolve();
 
 // only the latest ask counts, a pan asks again before the last tiles are out
 let wanted: HeatmapRequest | null = null;
+let aheadWanted: HeatmapRequest | null = null;
 let fillWanted: HeatmapRequest | null = null;
 let bboWanted: HeatmapRequest | null = null;
 let working = false;
@@ -61,7 +62,7 @@ self.onmessage = (e: MessageEvent<WorkerInitMessage | HeatmapRequest>) => {
                 await extend(replay!, msg.buf, msg.length);
             }
             seal(build);
-            post({ type: 'data', from: from.toString() });
+            post({ type: 'data', from: from.toString(), start: build.firstEventTs.toString(), end: build.lastEventTs.toString() });
             post({ type: 'held', bytes: heldBytes(replay!) + snapBytes(build) });
             pump();
         });
@@ -74,7 +75,7 @@ self.onmessage = (e: MessageEvent<WorkerInitMessage | HeatmapRequest>) => {
             build = null;
             replay = null;
             norms.clear();
-            wanted = fillWanted = bboWanted = null;
+            wanted = aheadWanted = fillWanted = bboWanted = null;
             post({ type: 'held', bytes: 0 });
         });
         return;
@@ -89,6 +90,7 @@ self.onmessage = (e: MessageEvent<WorkerInitMessage | HeatmapRequest>) => {
         return;
     }
     if (msg.type === 'tiles') wanted = msg;
+    else if (msg.type === 'ahead') aheadWanted = msg;
     else if (msg.type === 'fill') fillWanted = msg;
     else if (msg.type === 'bbo') bboWanted = msg;
     pump();
@@ -110,7 +112,7 @@ async function pump(): Promise<void> {
     if (working || !build) return;
     working = true;
     try {
-        while (build && (wanted || fillWanted || bboWanted)) {
+        while (build && (wanted || aheadWanted || fillWanted || bboWanted)) {
             if (bboWanted?.type === 'bbo') {
                 const { from, to } = bboWanted;
                 bboWanted = null;
@@ -129,14 +131,14 @@ async function pump(): Promise<void> {
                 post({ type: 'fill', key: configKey(req), ts: req.ts, rowLo: t.rowLo, rows: t.rows, bitmap }, bitmap ? [bitmap] : []);
                 continue;
             }
-            const req = wanted;
-            if (req?.type !== 'tiles' || !req.tiles.length) {
-                wanted = null;
-                continue;
-            }
+            if (wanted?.type === 'tiles' && !wanted.tiles.length) wanted = null;
+            if (aheadWanted?.type === 'ahead' && !aheadWanted.tiles.length) aheadWanted = null;
+            const req = wanted ?? aheadWanted;
+            if (req?.type !== 'tiles' && req?.type !== 'ahead') continue;
             const k = req.tiles[0];
             // the rest stay wanted unless a newer ask replaces them
-            wanted = { ...req, tiles: req.tiles.slice(1) };
+            if (req === wanted) wanted = { ...req, tiles: req.tiles.slice(1) };
+            else aheadWanted = { ...req, tiles: req.tiles.slice(1) };
             const t = buildTile({ snaps: build.snaps, replay }, k, { ...req, norm: normOf(req) });
             const bitmap = await bitmapOf(t);
             const until = (build.lastEventTs + 1n).toString();

@@ -18,6 +18,8 @@ export type HeatmapRequest =
     // the heatmap is off, let the data go
     | { type: 'drop' }
     | ({ type: 'tiles'; tiles: number[] } & TileConfig)
+    // built when nothing else is wanted
+    | ({ type: 'ahead'; tiles: number[] } & TileConfig)
     // the book at the playhead, painted from there to the right edge
     | ({ type: 'fill'; ts: string } & TileConfig)
     // the view stopped on [from, to), brightness follows it if it's far off
@@ -39,8 +41,8 @@ export type TileReply = {
 export type HeatmapReply =
     | TileReply
     | { type: 'fill'; key: string; ts: string; rowLo: number; rows: number; bitmap: ImageBitmap | null }
-    // tiles from this time on are stale, all of them when '0'
-    | { type: 'data'; from: string }
+    // tiles from this time on are stale, all of them when '0'. start and end are what's loaded
+    | { type: 'data'; from: string; start: string; end: string }
     // brightness changed for the configs starting with normKey
     | { type: 'norm'; normKey: string }
     | { type: 'held'; bytes: number }

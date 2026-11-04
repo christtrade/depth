@@ -217,8 +217,8 @@ const onHorizon = (page: Page) =>
     }, AXIS_PX);
 
 // strips of the chart that go blank from one frame to the next, inside the data. nothing's there before it
-const watchBlanks = (page: Page) =>
-    page.evaluate((axis) => {
+const watchBlanks = (page: Page, loadedOnly = false) =>
+    page.evaluate(({ axis, loadedOnly }) => {
         const win = window as any;
         const c = win.__chart;
         const canvas: HTMLCanvasElement = c.renderEngine.baseCanvas;
@@ -242,7 +242,8 @@ const watchBlanks = (page: Page) =>
             if (!seen.on) return;
             const cur = blank();
             const v = c.renderEngine.view;
-            const first = c.renderEngine.drawParams.priceHistory[0]?.ts ?? v.tMin;
+            const p = c.renderEngine.drawParams;
+            const first = (loadedOnly ? p.heatmap?.range?.start : p.priceHistory[0]?.ts) ?? v.tMin;
             const startX = Math.ceil((Number(first - v.tMin) / Number(v.tMax - v.tMin)) * w) + 3;
             let run = 0;
             for (let x = Math.max(0, startX); x <= w; x++) {
@@ -256,7 +257,7 @@ const watchBlanks = (page: Page) =>
             requestAnimationFrame(frame);
         };
         requestAnimationFrame(frame);
-    }, AXIS_PX);
+    }, { axis: AXIS_PX, loadedOnly });
 
 const blanksSeen = (page: Page) =>
     page.evaluate(() => {
@@ -298,6 +299,28 @@ test('l3 live: zooming doesnt blank the heatmap, either side of the horizon', as
             }
         }
     }
+    expect(await blanksSeen(page)).toBe(0);
+});
+
+test('l3 live: zooming out at 1m leaves no blank inside what the worker has', async ({ page, browserName }) => {
+    test.skip(browserName === 'webkit', 'frames too slow to see one frame');
+    await page.setViewportSize({ width: 1400, height: 800 });
+    await page.goto('/?sim=1&level=l3');
+    await settled(page);
+    await page.evaluate(() => {
+        const c = (window as any).__chart;
+        c.setChartSettings({ chartType: 'line', showTradeDots: false });
+        c.setTimeframe('1m');
+    });
+    await page.waitForTimeout(1200);
+    await watchBlanks(page, true);
+    for (let i = 0; i < 6; i++) {
+        const z = await onHorizon(page);
+        await page.mouse.move(z.x, z.y);
+        await page.mouse.wheel(0, 600);
+        await page.waitForTimeout(50);
+    }
+    await page.waitForTimeout(300);
     expect(await blanksSeen(page)).toBe(0);
 });
 

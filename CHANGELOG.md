@@ -50,6 +50,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   frame later. the book at the horizon covers it now
 - A switch to a narrower timeframe could lose the horizon, None opened ~5 min behind live. it zooms around
   the horizon when it was on screen now
+- Zooming out left blank strips up to 170px wide for time nothing had tiles for. the worker keeps a coarse
+  overview of all the loaded data for that, ~160 ms of worker and ~3 MB at 1M events
 - Zooming blanked the heatmap for a frame right of the horizon and in strips left of it. the old book and
   whatever tiles are held draw till the new ones land
 - When the data landed before the symbol resolved (a slow pc, often safari) the matching engine got

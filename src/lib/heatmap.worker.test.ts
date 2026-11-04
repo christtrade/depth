@@ -9,6 +9,8 @@ import type { HeatmapReply } from './types/heatmap-types';
 const replies: HeatmapReply[] = [];
 const worker: any = { postMessage: (r: HeatmapReply) => replies.push(r) };
 (globalThis as any).self = worker;
+(globalThis as any).ImageData = class {};
+(globalThis as any).createImageBitmap = async () => ({});
 
 const SEC = 1_000_000_000n;
 const ev = (s: number, action: string, side: string, price: number, size: number, id: number): MboEvent => ({
@@ -57,12 +59,29 @@ describe('the heatmap worker once a view settles', () => {
         assert.equal(replies.filter((r) => r.type === 'norm').length, 1, 'the same view again changes nothing');
     });
 
+    it('says what loaded with the data', () => {
+        const d = replies.find((r) => r.type === 'data');
+        assert.equal(d?.type === 'data' && d.end, (120n * SEC).toString());
+    });
+
+    it('builds ahead tiles only when nothing on screen waits, and a new ask keeps them', async () => {
+        const n = replies.length;
+        const far = { ...cfg, column: 0 };
+        send({ type: 'ahead', tiles: [10, 11, 12], ...far });
+        send({ type: 'tiles', tiles: [20], ...far });
+        send({ type: 'tiles', tiles: [30, 31], ...far });
+        await until(() => replies.filter((r) => r.type === 'tile').length >= 5);
+        const order = replies.slice(n).flatMap((r) => (r.type === 'tile' ? [r.k] : []));
+        assert.deepEqual(order, [10, 30, 31, 11, 12]);
+    });
+
     it('lets its copy go when the heatmap is turned off, and builds nothing from it', async () => {
         send({ type: 'drop' });
         await until(() => replies.at(-1)?.type === 'held');
         assert.deepEqual(replies.at(-1), { type: 'held', bytes: 0 });
         const n = replies.length;
         send({ type: 'tiles', tiles: [0], ...cfg });
+        send({ type: 'ahead', tiles: [1], ...cfg });
         await new Promise((r) => setTimeout(r, 20));
         assert.equal(replies.length, n);
     });

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { HeatmapTiles, type TileView } from './heatmap-tiles';
+import { HeatmapTiles, overviewColumn, type TileView } from './heatmap-tiles';
 import { COLUMN_NS, TILE_COLS } from './heatmap-build';
 import { configKey, type HeatmapRequest } from './types/heatmap-types';
 
@@ -21,6 +21,7 @@ const view: TileView = {
     finestNs: 1_000_000,
 };
 const key = configKey({ column: COLUMN_NS.indexOf(COL), tickSize: 0.01, ticks: 1, contrast: 0, palette: 'heat' });
+const data = (from: bigint, end = SPAN) => ({ type: 'data' as const, from: from.toString(), start: '0', end: end.toString() });
 
 function setup() {
     const asked: HeatmapRequest[] = [];
@@ -53,10 +54,10 @@ describe('heatmap tiles on screen', () => {
 
     it('keeps drawing a tile new data made stale until its rebuild lands, and asks for it', () => {
         const { tiles, ctx, drawn, asked, bitmap } = setup();
-        tiles.onReply({ type: 'data', from: (SPAN / 2n).toString() });
+        tiles.onReply(data(SPAN / 2n));
         tiles.draw(ctx, view);
         assert.deepEqual(drawn, [bitmap], 'no hole while the rebuild is on its way');
-        assert.deepEqual(asked.map((r) => r.type === 'tiles' && r.tiles), [[0]]);
+        assert.deepEqual(asked.filter((r) => r.type === 'tiles').map((r) => r.tiles), [[0]]);
     });
 
     it('asks for brightness over what it showed once the view stops, up to the playhead', () => {
@@ -84,7 +85,7 @@ describe('heatmap tiles on screen', () => {
 
     it('does the same when the whole buffer was sent again', () => {
         const { tiles, ctx, drawn, bitmap } = setup();
-        tiles.onReply({ type: 'data', from: '0' });
+        tiles.onReply(data(0n));
         tiles.draw(ctx, view);
         assert.deepEqual(drawn, [bitmap]);
     });
@@ -119,7 +120,7 @@ describe('what draws while a zoom waits on its tiles', () => {
         const { tiles, ctx, drawn, bitmap } = setup();
         tiles.onReply({ type: 'tile', key, k: 0, rowLo: 9990, rows: 10, bitmap, until: (90n * COL).toString() });
         tiles.onReply(reply(0, coarser, bm('coarse')));
-        tiles.onReply({ type: 'data', from: (90n * COL).toString() });
+        tiles.onReply(data(90n * COL));
         tiles.draw(ctx, view);
         assert.deepEqual(drawn.map((b: any) => b.name ?? 'tile'), ['coarse', 'tile']);
     });
@@ -182,7 +183,7 @@ describe('the book past the data a tile has', () => {
         tiles.draw(ctx, live);
         assert.deepEqual(xs, [91], 'column 90 has its data up to there');
         xs.length = 0;
-        tiles.onReply({ type: 'data', from: (90n * COL + 1n).toString() });
+        tiles.onReply(data(90n * COL + 1n));
         tiles.draw(ctx, live);
         assert.deepEqual(xs, [91], 'still, the old tile is what draws');
         xs.length = 0;
@@ -265,5 +266,123 @@ describe('the book past the data a tile has', () => {
         tiles.onReply(fill(past.horizon));
         tiles.draw(ctx, later);
         assert.deepEqual(xs, [TILE_COLS + 10]);
+    });
+});
+
+describe('the overview', () => {
+    const DATA = SPAN * 40n;
+    const column = overviewColumn(0n, DATA);
+    const ovSpan = COLUMN_NS[column] * BigInt(TILE_COLS);
+    const ovKey = configKey({ column, tickSize: 0.01, ticks: 1, contrast: 0, palette: 'heat' });
+    const ahead = (asked: HeatmapRequest[]) => asked.filter((r) => r.type === 'ahead');
+    const bm = (name: string) => ({ name, width: 256, height: 10, close() {} }) as unknown as ImageBitmap;
+    const ovTile = (k: number, until: bigint, bitmap = bm('overview')) => ({
+        type: 'tile' as const,
+        key: ovKey,
+        k,
+        rowLo: 9990,
+        rows: 10,
+        bitmap,
+        until: until.toString(),
+    });
+    const held = (s: ReturnType<typeof setup>) => {
+        const count = Number(DATA / ovSpan) + 1;
+        for (let k = 0; k < count; k++) s.tiles.onReply(ovTile(k, DATA));
+        return count;
+    };
+
+    it('is the finest column that fits the data in a few tiles', () => {
+        assert.ok(COLUMN_NS[column] * BigInt(TILE_COLS) * 4n >= DATA);
+        assert.ok(COLUMN_NS[column - 1] * BigInt(TILE_COLS) * 4n < DATA);
+        assert.equal(overviewColumn(0n, 10n ** 30n), COLUMN_NS.length - 1);
+    });
+
+    it('asks once for all of it once it knows what loaded, at the low priority', () => {
+        const { tiles, ctx, asked } = setup();
+        tiles.draw(ctx, view);
+        assert.deepEqual(ahead(asked), [], 'nothing loaded yet');
+        tiles.onReply(data(0n, DATA));
+        tiles.draw(ctx, view);
+        tiles.draw(ctx, view);
+        const want = Array.from({ length: Number(DATA / ovSpan) + 1 }, (_, k) => k);
+        assert.deepEqual(ahead(asked).map((r) => r.type === 'ahead' && r.tiles), [want]);
+    });
+
+    it('draws for time no zoom has tiles for', () => {
+        const s = setup();
+        s.tiles.onReply(data(0n, DATA));
+        s.tiles.draw(s.ctx, view);
+        held(s);
+        s.drawn.length = 0;
+        // no tile of this zoom, and the last zoom only has the first SPAN
+        s.tiles.draw(s.ctx, { ...view, view: { ...view.view, tMin: SPAN * 2n, tMax: SPAN * 3n } });
+        assert.ok(s.drawn.some((b: any) => b.name === 'overview'));
+    });
+
+    it('isnt evicted and doesnt evict what is on screen', () => {
+        const s = setup();
+        s.tiles.onReply(data(0n, DATA));
+        s.tiles.draw(s.ctx, view);
+        const old = bm('old');
+        const oldKey = configKey({ column: COLUMN_NS.indexOf(COL) - 1, tickSize: 0.01, ticks: 1, contrast: 0, palette: 'heat' });
+        held(s);
+        for (let k = 0; k < 200; k++) s.tiles.onReply({ type: 'tile', key: oldKey, k, rowLo: 9990, rows: 10, bitmap: old, until: DATA.toString() });
+        const byConfig = (s.tiles as any).byConfig as Map<string, Map<number, unknown>>;
+        assert.equal(byConfig.get(ovKey)?.size, Number(DATA / ovSpan) + 1);
+        s.tiles.onReply(ovTile(0, DATA));
+        assert.ok(byConfig.get(key)?.has(0) || byConfig.get(oldKey)?.size, 'something on screen left');
+        assert.equal(byConfig.get(ovKey)?.size, Number(DATA / ovSpan) + 1);
+    });
+
+    it('a live chunk only rebuilds it once its a view behind, or the view stops', () => {
+        const s = setup();
+        const live = { ...view, horizon: SPAN };
+        s.tiles.onReply(data(0n, SPAN));
+        s.tiles.draw(s.ctx, live);
+        const liveCol = overviewColumn(0n, SPAN);
+        const liveKey = configKey({ column: liveCol, tickSize: 0.01, ticks: 1, contrast: 0, palette: 'heat' });
+        const liveSpan = COLUMN_NS[liveCol] * BigInt(TILE_COLS);
+        const landed = () => {
+            for (let k = 0n; k * liveSpan <= SPAN; k++) s.tiles.onReply({ ...ovTile(Number(k), SPAN), key: liveKey });
+        };
+        landed();
+        s.tiles.onReply(data(SPAN - 1n, SPAN));
+        s.asked.length = 0;
+        s.tiles.draw(s.ctx, live);
+        assert.deepEqual(ahead(s.asked), [], 'one chunk, a few ms of worker per chunk for nothing');
+        s.tiles.draw(s.ctx, { ...live, horizon: SPAN * 2n + 1n });
+        assert.equal(ahead(s.asked).length, 1, 'stale past the view');
+
+        landed();
+        s.tiles.onReply(data(SPAN - 1n, SPAN));
+        s.asked.length = 0;
+        s.tiles.draw(s.ctx, live);
+        assert.deepEqual(ahead(s.asked), []);
+        s.tiles.settled();
+        assert.equal(ahead(s.asked).length, 1, 'the view stopped');
+    });
+
+    it('stays put when a y zoom changes the rows, a new palette builds it again', () => {
+        const s = setup();
+        s.tiles.onReply(data(0n, DATA));
+        s.tiles.draw(s.ctx, view);
+        s.asked.length = 0;
+        const squeezed = { ...view, view: { ...view.view, pMin: 90, pMax: 110 } };
+        s.tiles.draw(s.ctx, squeezed);
+        assert.deepEqual(ahead(s.asked), []);
+        s.tiles.draw(s.ctx, { ...view, palette: '#00ff00,#ff0000' });
+        assert.equal(ahead(s.asked).length, 1);
+    });
+
+    it('doesnt count as the chart waiting on tiles', async () => {
+        const seen: boolean[] = [];
+        const tiles = new HeatmapTiles(() => {}, () => {}, (b) => seen.push(b));
+        const { ctx, bitmap } = setup();
+        tiles.onReply({ type: 'tile', key, k: 0, rowLo: 9990, rows: 10, bitmap, until: SPAN.toString() });
+        tiles.onReply(data(0n, DATA));
+        (tiles as any).byConfig.get(key).get(0).stale = false;
+        tiles.draw(ctx, view);
+        await Promise.resolve();
+        assert.deepEqual(seen, []);
     });
 });
