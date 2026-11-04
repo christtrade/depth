@@ -58,6 +58,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   land on what's drawing now, the new build takes them when it's done
 - Footprint rows on a log price axis were all one height, they overlapped up high (28px on a 10x range) and left
   gaps down low. each row is as tall as its prices now
+- The heatmap ignored a log price axis, its rows drifted off their prices the wider the range. it's drawn in strips
+  when it would be over half a pixel off, under that it's the same single draw
 - A parallel channel wasn't parallel on a log price axis, it is now, the stored height reads as a ratio there. a channel
   saved on log can come back a different width, linear is untouched
 - Dragging a drawing on a log price axis bent it (40px down moved one end 7px) and could take a price under 0,

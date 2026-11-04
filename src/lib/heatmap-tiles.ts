@@ -4,6 +4,7 @@ import { configKey, type HeatmapReply, type HeatmapRequest, type TileConfig } fr
 import type { ViewBounds } from './types';
 
 const MIN_ROW_PX = 3;
+const MAX_DRIFT_PX = 0.5;
 const MAX_TILES = 128;
 const FILL_STEP_NS = 250_000_000n;
 const OVERVIEW_TILES = 4n;
@@ -182,10 +183,13 @@ export class HeatmapTiles {
         const pRange = view.pMax - view.pMin;
         if (w <= 0 || h <= 0 || tRange <= 0 || pRange <= 0) return;
 
+        // at the top of the view, where a tick is smallest on a log axis
+        const tickPx = v.priceToY(view.pMax - v.tickSize) - v.priceToY(view.pMax);
         const config: TileConfig = {
             column: columnFor(tRange / w, v.finestNs),
             tickSize: v.tickSize,
-            ticks: rowTicks((v.tickSize / pRange) * h, MIN_ROW_PX),
+            // rounded so linear's float noise can't flip a zoom's row size over the line
+            ticks: rowTicks(Number(tickPx.toFixed(6)), MIN_ROW_PX),
             contrast: v.contrast,
             palette: v.palette,
         };
@@ -321,11 +325,49 @@ export class HeatmapTiles {
         if (!t.bitmap) return;
         const x0 = v.tsToX(BigInt(t.k) * span);
         const x1 = v.tsToX(BigInt(t.k + 1) * span);
+        this.blit(ctx, t.bitmap, t.rowLo, t.rows, c.ticks, c.tickSize, x0, x1 - x0, v);
+    }
+
+    // a bitmap's rows are even in price, a log axis isn't. straight through while that's under half a pixel off
+    private blit(
+        ctx: CanvasRenderingContext2D,
+        bitmap: ImageBitmap,
+        rowLo: number,
+        rows: number,
+        ticks: number,
+        tickSize: number,
+        x: number,
+        w: number,
+        v: TileView,
+    ): void {
+        this.drawn.push(bitmap);
         // row r is the prices from half a tick under r * ticks, so one tick rows sit on their price
-        const top = v.priceToY(((t.rowLo + t.rows) * c.ticks - 0.5) * c.tickSize);
-        const bottom = v.priceToY((t.rowLo * c.ticks - 0.5) * c.tickSize);
-        ctx.drawImage(t.bitmap, x0, top, x1 - x0, bottom - top);
-        this.drawn.push(t.bitmap);
+        const yOf = (row: number) => v.priceToY((row * ticks - 0.5) * tickSize);
+        // from the top of the bitmap down
+        const yAt = (r: number) => yOf(rowLo + rows - r);
+        const drift = (from: number, to: number) => {
+            const mid = (from + to) >> 1;
+            const between = yAt(from) + ((yAt(to) - yAt(from)) * (mid - from)) / (to - from);
+            return Math.abs(yAt(mid) - between);
+        };
+        if (rows < 2 || !(drift(0, rows) > MAX_DRIFT_PX)) {
+            ctx.drawImage(bitmap, x, yAt(0), w, yAt(rows) - yAt(0));
+            return;
+        }
+        // log bends more down low, so split where it's off rather than evenly
+        const strip = (from: number, to: number) => {
+            if (to - from > 1 && drift(from, to) > MAX_DRIFT_PX) {
+                const mid = (from + to) >> 1;
+                strip(from, mid);
+                strip(mid, to);
+                return;
+            }
+            // on whole pixels, the bitmaps are see through so an overlap shows
+            const y0 = Math.round(yAt(from));
+            const y1 = Math.round(yAt(to));
+            if (y1 > y0 && y1 > 0 && y0 < v.h) ctx.drawImage(bitmap, 0, from, bitmap.width, to - from, x, y0, w, y1 - y0);
+        };
+        strip(0, rows);
     }
 
     // what's held for there, scaled, until the tile comes. the last complete zoom when it has all of it,
@@ -401,10 +443,7 @@ export class HeatmapTiles {
         if (own.tickSize !== tickSize) return false;
         const x0 = Math.max(0, Math.round(v.tsToX(from)));
         const x1 = to === null ? v.w : Math.round(v.tsToX(to));
-        const top = v.priceToY(((f.rowLo + f.rows) * own.ticks - 0.5) * own.tickSize);
-        const bottom = v.priceToY((f.rowLo * own.ticks - 0.5) * own.tickSize);
-        ctx.drawImage(f.bitmap, x0, top, x1 - x0, bottom - top);
-        this.drawn.push(f.bitmap);
+        this.blit(ctx, f.bitmap, f.rowLo, f.rows, own.ticks, own.tickSize, x0, x1 - x0, v);
         return true;
     }
 

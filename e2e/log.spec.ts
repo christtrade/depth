@@ -310,6 +310,71 @@ test('log: a channel is parallel on screen and its third click sits on the top l
     expect(errors).toEqual([]);
 });
 
+test('log: heatmap rows sit on their prices, the book around the bid and ask lines up with them', async ({ page }) => {
+    const errors = watchErrors(page);
+    await page.setViewportSize({ width: 1000, height: 600 });
+    await page.goto('/?wide=1&level=l3');
+    await settled(page);
+    // nothing on the canvas but the heat, the lines sit on the bid and ask whatever the heat does
+    await page.evaluate(() =>
+        (window as any).__chart.setChartSettings({
+            chartType: 'line',
+            showTradeDots: false,
+            showBidLine: false,
+            showAskLine: false,
+            showMidLine: false,
+            showLastTradeLine: false,
+            showGrid: false,
+            priceScaleMode: 'log',
+        }),
+    );
+    await page.waitForFunction(() => (window as any).__heatmaps > 0, undefined, { timeout: 15_000 });
+    const box = await page.evaluate(() => {
+        const r = (window as any).__chart.renderEngine.baseCanvas.getBoundingClientRect();
+        return { x: r.x, y: r.y };
+    });
+    // out to a range that bends, ~4x
+    for (let i = 0; i < 6; i++) {
+        await page.mouse.move(box.x + 500, box.y + 250);
+        await page.mouse.wheel(0, 300);
+        await page.waitForTimeout(150);
+    }
+    await page.mouse.move(box.x + 5, box.y + 5);
+    await page.waitForTimeout(3500);
+    const out = await page.evaluate(() => {
+        const c = (window as any).__chart;
+        const p = c.renderEngine.drawParams;
+        const v = c.renderEngine.view;
+        const canvas: HTMLCanvasElement = c.renderEngine.baseCanvas;
+        const ctx = canvas.getContext('2d')!;
+        const dpr = canvas.width / canvas.getBoundingClientRect().width;
+        const main = p.layouts.main;
+        const span = Number(v.tMax - v.tMin);
+        const toY = (price: number) => (1 - (Math.log(price) - Math.log(v.pMin)) / (Math.log(v.pMax) - Math.log(v.pMin))) * main.h;
+        const misses: number[] = [];
+        const hist = p.priceHistory.filter((h: any) => h.ts >= v.tMin && h.ts <= v.tMax);
+        for (const f of [0.3, 0.45, 0.6, 0.75]) {
+            const h = hist[Math.floor(hist.length * f)];
+            const x = Math.round((Number(h.ts - v.tMin) / span) * main.w * dpr);
+            const col = ctx.getImageData(x, 0, 1, Math.round(main.h * dpr)).data;
+            // the heat is a solid run around the bid and ask, its middle should be about there
+            let lo = Infinity;
+            let hi = -Infinity;
+            for (let r = 0; r * 4 < col.length; r++) {
+                if (col[r * 4 + 3] > 30) {
+                    lo = Math.min(lo, r / dpr);
+                    hi = Math.max(hi, r / dpr);
+                }
+            }
+            const y = toY((h.bestBid + h.bestAsk) / 2);
+            misses.push(y < lo ? lo - y : y > hi ? y - hi : 0);
+        }
+        return { misses, span: [v.pMin, v.pMax] };
+    });
+    for (const m of out.misses) expect(m, `bid and ask ${m}px outside the heat, ${JSON.stringify(out)}`).toBeLessThan(2);
+    expect(errors).toEqual([]);
+});
+
 const geometry = (page: Page) =>
     page.evaluate(() => {
         const c = (window as any).__chart;

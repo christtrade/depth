@@ -262,7 +262,7 @@ describe('the book past the data a tile has', () => {
     });
 
     // twice the price range, so rows of 2 ticks and every tile and the fill are from another config
-    const zoomed: TileView = { ...live, view: { ...view.view, pMin: 97 } };
+    const zoomed: TileView = { ...live, view: { ...view.view, pMin: 97 }, priceToY: (p) => (101 - p) * 150 };
     const zoomedKey = configKey({ column: COLUMN_NS.indexOf(COL), tickSize: 0.01, ticks: 2, contrast: 0, palette: 'heat' });
 
     it('keeps drawing the old book through a zoom, on its own rows, till the new one lands', () => {
@@ -477,6 +477,89 @@ describe('the book past the data a tile has', () => {
     });
 });
 
+describe('on a log price axis', () => {
+    const logView = (pMin: number, pMax: number): TileView => ({
+        ...view,
+        view: { ...view.view, pMin, pMax },
+        priceToY: (p) => (1 - (Math.log(p) - Math.log(pMin)) / (Math.log(pMax) - Math.log(pMin))) * 600,
+    });
+    const tick = 0.01;
+    const yOfRow = (v: TileView, row: number, ticks: number) => v.priceToY((row * ticks - 0.5) * tick);
+
+    function drawOne(v: TileView, rowLo: number, rows: number) {
+        const asked: HeatmapRequest[] = [];
+        const tiles = new HeatmapTiles((r) => asked.push(r), () => {}, () => {});
+        const calls: number[][] = [];
+        const ctx = {
+            imageSmoothingEnabled: true,
+            save() {},
+            restore() {},
+            beginPath() {},
+            rect() {},
+            clip() {},
+            drawImage: (_bm: unknown, ...a: number[]) => calls.push(a),
+        } as unknown as CanvasRenderingContext2D;
+        tiles.draw(ctx, v);
+        const req = asked.find((r) => r.type === 'tiles') as Extract<HeatmapRequest, { type: 'tiles' }>;
+        const ticks = req.ticks;
+        const key2 = configKey({ column: req.column, tickSize: req.tickSize, ticks, contrast: 0, palette: 'heat' });
+        calls.length = 0;
+        const bitmap = { width: 256, height: rows, close() {} } as unknown as ImageBitmap;
+        tiles.onReply({ type: 'tile', key: key2, k: req.tiles[0], rowLo: Math.round(rowLo / ticks), rows: Math.round(rows), bitmap, until: (SPAN * 100n).toString() });
+        tiles.draw(ctx, v);
+        return { calls, ticks, rowLo: Math.round(rowLo / ticks), rows: Math.round(rows) };
+    }
+
+    it('a wide range draws in strips, and each sits on its own prices', () => {
+        const v = logView(10, 100);
+        const { calls, ticks, rowLo, rows } = drawOne(v, 1000, 300);
+        assert.ok(calls.length > 1, `${calls.length} pieces`);
+        for (const [sx, sy, sw, sh, , y, , dh] of calls) {
+            assert.equal(sx, 0);
+            assert.equal(sw, 256);
+            // top of the strip, row sy counted from the top of the bitmap
+            const wantTop = yOfRow(v, rowLo + rows - sy, ticks);
+            const wantBottom = yOfRow(v, rowLo + rows - sy - sh, ticks);
+            assert.ok(Math.abs(y - wantTop) <= 0.51, `strip at ${y}, its prices are at ${wantTop}`);
+            assert.ok(Math.abs(y + dh - wantBottom) <= 0.51);
+        }
+    });
+
+    it('anywhere in a strip the row is within a pixel of its price', () => {
+        const v = logView(10, 100);
+        const { calls, ticks, rowLo, rows } = drawOne(v, 1000, 300);
+        for (const [, sy, , sh, , y, , dh] of calls) {
+            for (let f = 0; f <= 1; f += 0.25) {
+                const row = rowLo + rows - (sy + f * sh);
+                const drawn = y + f * dh;
+                assert.ok(Math.abs(drawn - yOfRow(v, row, ticks)) < 1.1, `row ${row} ${drawn} against ${yOfRow(v, row, ticks)}`);
+            }
+        }
+    });
+
+    it('strips meet, whole pixels with no gap or overlap, the bitmaps are see through', () => {
+        const { calls } = drawOne(logView(10, 100), 1000, 300);
+        for (let i = 0; i < calls.length; i++) {
+            const [, , , , , y, , dh] = calls[i];
+            assert.ok(Number.isInteger(y) && Number.isInteger(dh));
+            if (i) assert.equal(y, calls[i - 1][5] + calls[i - 1][7]);
+        }
+    });
+
+    it('a narrow range is one straight draw, the same call linear makes', () => {
+        const { calls } = drawOne(logView(99.9, 100.1), 9990, 20);
+        assert.equal(calls.length, 1);
+        assert.equal(calls[0].length, 4);
+    });
+
+    it('row height comes from the top of the view, where a tick is smallest', () => {
+        const v = logView(10, 100);
+        const { ticks } = drawOne(v, 1000, 300);
+        // 2.61px a tick at the bottom, 0.026 at the top
+        assert.ok((v.priceToY(100 - tick) - v.priceToY(100)) * ticks >= 3, `${ticks} ticks a row`);
+    });
+});
+
 describe('a rebuild, older data came in', () => {
     const DATA = SPAN * 40n;
     const bm = () => ({ width: 256, height: 10, closed: false, close() { this.closed = true; } });
@@ -632,7 +715,7 @@ describe('the overview', () => {
         s.tiles.onReply(data(0n, DATA));
         s.tiles.draw(s.ctx, view);
         s.asked.length = 0;
-        const squeezed = { ...view, view: { ...view.view, pMin: 90, pMax: 110 } };
+        const squeezed = { ...view, view: { ...view.view, pMin: 90, pMax: 110 }, priceToY: (p: number) => (110 - p) * 30 };
         s.tiles.draw(s.ctx, squeezed);
         assert.deepEqual(ahead(s.asked), []);
         s.tiles.draw(s.ctx, { ...view, palette: '#00ff00,#ff0000' });
