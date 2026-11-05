@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-11-05
+
 ### Added
 - Log price axis, `L` in the bottom bar and Log in the settings (`priceScaleMode: 'log'`). off for a symbol with
   prices at or under 0, there's no log of those. candles, lines, heatmap, footprint, indicators and drawings all follow it
@@ -1101,7 +1103,8 @@ Not user-visible, but this is what the split out of the monorepo turned up:
 - 30 unused UI components were removed, taking `depth.css` from 147 KB to
   124 KB.
 
-[unreleased]: https://github.com/christtrade/depth/compare/v0.23.0...HEAD
+[unreleased]: https://github.com/christtrade/depth/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/christtrade/depth/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/christtrade/depth/compare/v0.22.1...v0.23.0
 [0.22.1]: https://github.com/christtrade/depth/compare/v0.22.0...v0.22.1
 [0.22.0]: https://github.com/christtrade/depth/compare/v0.21.0...v0.22.0
