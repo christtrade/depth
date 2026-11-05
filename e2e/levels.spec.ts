@@ -41,18 +41,40 @@ test('l3 live: the heatmap keeps drawing when renders take longer than a chunk',
                 return d.get!.call(this);
             },
             set(fn) {
-                d.set!.call(this, (e: MessageEvent) => (e.data?.bitmap ? setTimeout(() => fn(e), 600) : fn(e)));
+                d.set!.call(this, (e: MessageEvent) => {
+                    if (!e.data?.bitmap) return fn(e);
+                    if (e.data.type === 'tile') fresh.set(e.data.bitmap, e.data.until);
+                    setTimeout(() => fn(e), 600);
+                });
             },
         });
+        const fresh = new WeakMap<object, string>();
+        const draw = CanvasRenderingContext2D.prototype.drawImage as (...a: unknown[]) => void;
+        CanvasRenderingContext2D.prototype.drawImage = function (this: unknown, ...a: unknown[]) {
+            const until = fresh.get(a[0] as object);
+            if (until !== undefined) {
+                const w = window as any;
+                fresh.delete(a[0] as object);
+                w.__tilesLanded = (w.__tilesLanded ?? 0) + 1;
+                w.__tileUntil = until;
+            }
+            draw.apply(this, a);
+        } as typeof CanvasRenderingContext2D.prototype.drawImage;
     });
     await open(page, '/?sim=1&level=l3');
-    const heatmaps = () => page.evaluate(() => (window as any).__heatmaps as number);
+    const landed = () =>
+        page.evaluate(() => {
+            const w = window as any;
+            return { tiles: (w.__tilesLanded ?? 0) as number, until: BigInt(w.__tileUntil ?? 0).toString() };
+        });
     await page.waitForTimeout(2000);
-    const before = await heatmaps();
+    const before = await landed();
     const chunks = await appends(page);
     await page.waitForTimeout(5000);
+    const after = await landed();
     expect(await appends(page), 'live chunks land').toBeGreaterThan(chunks + 10);
-    expect(await heatmaps(), 'heatmaps drawn').toBeGreaterThan(before + 3);
+    expect(after.tiles, 'tiles land').toBeGreaterThan(before.tiles + 3);
+    expect(BigInt(after.until), 'and reach newer data').toBeGreaterThan(BigInt(before.until));
 });
 
 test('l3 live: the heatmap at the playhead stays up while each chunk rebuilds it', async ({ page }) => {

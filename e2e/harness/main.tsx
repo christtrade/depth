@@ -56,7 +56,7 @@ function App() {
         win.__chart = chart;
         const offs = [
             chart.eventBus.on('data:status', ({ status }) => win.__status.push(status)),
-            // a heatmap bitmap made it back from the worker
+            // no tile missing, a chunk landing mid render keeps this from ticking
             chart.eventBus.on('heatmap:status', ({ recalculating }) => {
                 if (!recalculating) win.__heatmaps++;
             }),
