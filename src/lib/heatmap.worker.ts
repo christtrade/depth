@@ -169,7 +169,7 @@ async function pump(): Promise<void> {
                 fillWanted = null;
                 const t = bookColumn({ snaps: build.snaps, replay }, BigInt(req.ts), { ...req, norm: normOf(req) });
                 const bitmap = await bitmapOf(t);
-                post({ type: 'fill', key: configKey(req), ts: req.ts, rowLo: t.rowLo, rows: t.rows, bitmap }, bitmap ? [bitmap] : []);
+                post({ type: 'fill', key: configKey(req), ts: req.ts, ticks: t.ticks, rowLo: t.rowLo, rows: t.rows, bitmap }, bitmap ? [bitmap] : []);
                 continue;
             }
             if (wanted?.type === 'tiles' && !wanted.tiles.length) wanted = null;
@@ -191,7 +191,7 @@ async function pump(): Promise<void> {
                 bitmap?.close();
                 continue;
             }
-            post({ type: 'tile', key: configKey(req), k, rowLo: t.rowLo, rows: t.rows, bitmap, until }, bitmap ? [bitmap] : []);
+            post({ type: 'tile', key: configKey(req), k, ticks: t.ticks, rowLo: t.rowLo, rows: t.rows, bitmap, until }, bitmap ? [bitmap] : []);
         }
     } finally {
         working = false;

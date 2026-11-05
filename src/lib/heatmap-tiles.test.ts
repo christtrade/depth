@@ -487,6 +487,20 @@ describe('the book past the data a tile has', () => {
     });
 });
 
+describe('a tile that merged its rows', () => {
+    it('draws them at the size it says, not the size that was asked for', () => {
+        const s = setup();
+        const calls: number[][] = [];
+        (s.ctx as any).drawImage = (_b: unknown, ...a: number[]) => calls.push(a);
+        const bm = { width: 256, height: 10, close() {} } as unknown as ImageBitmap;
+        s.tiles.onReply({ type: 'tile', key, k: 0, ticks: 8, rowLo: 1248, rows: 10, bitmap: bm, until: (SPAN * 100n).toString() });
+        s.tiles.draw(s.ctx, view);
+        const [, y, , h] = calls[0];
+        assert.equal(y, view.priceToY(((1248 + 10) * 8 - 0.5) * 0.01));
+        assert.equal(y + h, view.priceToY((1248 * 8 - 0.5) * 0.01));
+    });
+});
+
 describe('a tile across a session gap', () => {
     // closed for the middle fifth of the tile's time, the view skips it
     const gapFrom = (SPAN * 2n) / 5n;

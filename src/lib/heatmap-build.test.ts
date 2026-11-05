@@ -4,11 +4,13 @@ import { describe, it } from 'node:test';
 import {
     COLUMN_NS,
     LOD_INTERVALS_NS,
+    MAX_TILE_ROWS,
     bookColumn,
     buildTile,
     columnFor,
     feed,
     newBuild,
+    paintColumns,
     pickNorm,
     rowNorm,
     rowTicks,
@@ -106,6 +108,45 @@ describe('heatmap rows', () => {
     it('put a price off by float noise in its own tick', () => {
         const asks = new Float64Array([0.1 + 0.2, 3, 0.31, 1]);
         assert.deepEqual([...sumRows(asks, 0.01, 1)], [30, 3, 31, 1]);
+    });
+});
+
+describe('more rows than a tile holds', () => {
+    const params = { column: 0, tickSize: 0.01, ticks: 1, norm: 10, contrast: 0, palette: 'heat' };
+    const col = (...prices: number[]) => ({
+        bids: Float64Array.from(prices.flatMap((p) => [p, 10])),
+        asks: new Float64Array(0),
+    });
+    const inkRows = (t: { rows: number; cols: number; data: Uint8ClampedArray }) => {
+        const rows: number[] = [];
+        for (let r = 0; r < t.rows; r++) if (t.data[(r * t.cols + 0) * 4 + 3] > 0) rows.push(r);
+        return rows;
+    };
+
+    it('merges rows till it fits and keeps both ends, it cut to the middle', () => {
+        // 300 apart at 0.01 is 30000 rows
+        const t = paintColumns([col(10, 310)], params);
+        assert.ok(t.rows <= MAX_TILE_ROWS, `${t.rows} rows`);
+        assert.ok(t.ticks > 1 && Number.isInteger(Math.log2(t.ticks)), `${t.ticks} ticks a row`);
+        assert.deepEqual(inkRows(t), [0, t.rows - 1], 'the top and bottom rows have the levels');
+    });
+
+    it('the rows sit on the prices at the size it says', () => {
+        const t = paintColumns([col(10, 310)], params);
+        const row = (p: number) => sumRows(Float64Array.of(p, 1), 0.01, t.ticks)[0];
+        assert.equal(t.rowLo, row(10));
+        assert.equal(t.rowLo + t.rows - 1, row(310));
+    });
+
+    it('sums what lands in a merged row', () => {
+        const t = paintColumns([col(10, 10.01, 310)], { ...params, norm: 20 });
+        const one = paintColumns([col(10, 310)], { ...params, norm: 20 });
+        const bottom = (x: typeof t) => (x.rows - 1) * x.cols * 4 + 3;
+        assert.ok(t.data[bottom(t)] > one.data[bottom(one)], 'two levels show stronger than one');
+    });
+
+    it('leaves a tile that fits at the rows asked for', () => {
+        assert.equal(paintColumns([col(10, 11)], params).ticks, 1);
     });
 });
 

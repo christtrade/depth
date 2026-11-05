@@ -243,6 +243,8 @@ export type Source = { snaps: Snapshot[][]; replay: Replay | null };
 export type TileParams = { column: number; tickSize: number; ticks: number; norm: number; contrast: number; palette: string };
 
 export type Texels = {
+    // what a row holds, more than asked when there were more rows than fit
+    ticks: number;
     rowLo: number;
     rows: number;
     cols: number;
@@ -313,24 +315,30 @@ const hexRgb = (hex: string) => {
 };
 
 export function paintColumns(cols: Col[], p: TileParams): Texels {
-    const rowCols = cols.map((c) =>
-        c ? { bids: sumRows(c.bids, p.tickSize, p.ticks), asks: sumRows(c.asks, p.tickSize, p.ticks) } : null,
-    );
-    let lo = Infinity,
+    // y zoomed in on a wide view spans more ticks than a tile holds. coarser rows, cutting to the middle left
+    // the rest of the prices blank
+    let ticks = p.ticks;
+    let rowCols: ({ bids: Float64Array; asks: Float64Array } | null)[];
+    let lo: number;
+    let hi: number;
+    for (;;) {
+        const t = ticks;
+        rowCols = cols.map((c) =>
+            c ? { bids: sumRows(c.bids, p.tickSize, t), asks: sumRows(c.asks, p.tickSize, t) } : null,
+        );
+        lo = Infinity;
         hi = -Infinity;
-    for (const c of rowCols) {
-        if (!c) continue;
-        for (const side of [c.bids, c.asks])
-            for (let j = 0; j < side.length; j += 2) {
-                if (side[j] < lo) lo = side[j];
-                if (side[j] > hi) hi = side[j];
-            }
-    }
-    if (lo > hi) return { rowLo: 0, rows: 0, cols: cols.length, data: new Uint8ClampedArray(0) };
-    if (hi - lo + 1 > MAX_TILE_ROWS) {
-        const mid = Math.round((lo + hi) / 2);
-        lo = mid - MAX_TILE_ROWS / 2;
-        hi = lo + MAX_TILE_ROWS - 1;
+        for (const c of rowCols) {
+            if (!c) continue;
+            for (const side of [c.bids, c.asks])
+                for (let j = 0; j < side.length; j += 2) {
+                    if (side[j] < lo) lo = side[j];
+                    if (side[j] > hi) hi = side[j];
+                }
+        }
+        if (lo > hi) return { ticks, rowLo: 0, rows: 0, cols: cols.length, data: new Uint8ClampedArray(0) };
+        if (hi - lo + 1 <= MAX_TILE_ROWS) break;
+        ticks *= 2;
     }
     const rows = hi - lo + 1;
     const data = new Uint8ClampedArray(cols.length * rows * 4);
@@ -371,7 +379,7 @@ export function paintColumns(cols: Col[], p: TileParams): Texels {
         put(x, c.bids, BID);
         put(x, c.asks, ASK);
     });
-    return { rowLo: lo, rows, cols: cols.length, data };
+    return { ticks, rowLo: lo, rows, cols: cols.length, data };
 }
 
 export function buildTile(src: Source, k: number, p: TileParams): Texels {

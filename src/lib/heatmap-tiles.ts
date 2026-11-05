@@ -18,6 +18,7 @@ export function overviewColumn(start: bigint, end: bigint): number {
 
 type Tile = {
     k: number;
+    ticks?: number;
     rowLo: number;
     rows: number;
     bitmap: ImageBitmap | null;
@@ -29,7 +30,7 @@ type Tile = {
     // came back on screen with a blank tail, not a live chunk's short one
     oldTail?: boolean;
 };
-type Fill = { key: string; ts: bigint; rowLo: number; rows: number; bitmap: ImageBitmap | null; stale?: boolean };
+type Fill = { key: string; ts: bigint; ticks?: number; rowLo: number; rows: number; bitmap: ImageBitmap | null; stale?: boolean };
 
 export type TileView = {
     view: ViewBounds;
@@ -101,7 +102,7 @@ export class HeatmapTiles {
         }
         if (r.type === 'fill') {
             this.fill?.bitmap?.close();
-            this.fill = { key: r.key, ts: BigInt(r.ts), rowLo: r.rowLo, rows: r.rows, bitmap: r.bitmap };
+            this.fill = { key: r.key, ts: BigInt(r.ts), ticks: r.ticks, rowLo: r.rowLo, rows: r.rows, bitmap: r.bitmap };
             this.fillAsked = '';
             this.changed();
             return;
@@ -113,6 +114,7 @@ export class HeatmapTiles {
         if (!was) this.count++;
         tiles.set(r.k, {
             k: r.k,
+            ticks: r.ticks,
             rowLo: r.rowLo,
             rows: r.rows,
             bitmap: r.bitmap,
@@ -329,7 +331,7 @@ export class HeatmapTiles {
         const start = BigInt(t.k) * span;
         const xAt = (col: number) => v.tsToX(start + BigInt(col) * colNs);
         const piece = (from: number, to: number, x: number, w: number) =>
-            this.blit(ctx, bitmap, t.rowLo, t.rows, c.ticks, c.tickSize, x, w, v, from, to - from);
+            this.blit(ctx, bitmap, t.rowLo, t.rows, t.ticks ?? c.ticks, c.tickSize, x, w, v, from, to - from);
         // several looks, two gaps can even out at any one
         const drift = (from: number, to: number) => {
             let worst = 0;
@@ -484,7 +486,7 @@ export class HeatmapTiles {
         const x0 = Math.max(0, Math.round(v.tsToX(from)));
         const x1 = to === null ? v.w : Math.round(v.tsToX(to));
         this.drawn.push(f.bitmap);
-        this.blit(ctx, f.bitmap, f.rowLo, f.rows, own.ticks, own.tickSize, x0, x1 - x0, v);
+        this.blit(ctx, f.bitmap, f.rowLo, f.rows, f.ticks ?? own.ticks, own.tickSize, x0, x1 - x0, v);
         return true;
     }
 

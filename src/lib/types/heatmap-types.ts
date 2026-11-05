@@ -34,6 +34,8 @@ export type TileReply = {
     type: 'tile';
     key: string;
     k: number;
+    // when it's more than the config's, there were more rows than a tile holds
+    ticks?: number;
     rowLo: number;
     rows: number;
     bitmap: ImageBitmap | null;
@@ -43,7 +45,7 @@ export type TileReply = {
 
 export type HeatmapReply =
     | TileReply
-    | { type: 'fill'; key: string; ts: string; rowLo: number; rows: number; bitmap: ImageBitmap | null }
+    | { type: 'fill'; key: string; ts: string; ticks?: number; rowLo: number; rows: number; bitmap: ImageBitmap | null }
     // tiles from this time on are stale, all of them when '0'. start and end are what's loaded
     | { type: 'data'; from: string; start: string; end: string }
     // brightness changed for the configs starting with normKey

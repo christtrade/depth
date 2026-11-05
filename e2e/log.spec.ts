@@ -530,6 +530,53 @@ for (const [level, url] of [
         expect(out.low, JSON.stringify(out)).toBeGreaterThanOrEqual(out.pMin);
     });
 
+test('heat is there wherever the view is, y zoomed in tight on a wide stretch of time', async ({ page }) => {
+    test.setTimeout(60_000);
+    const errors = watchErrors(page);
+    await page.setViewportSize({ width: 1100, height: 650 });
+    await page.goto('/?wide=1&level=l3');
+    await settled(page);
+    await page.evaluate(() =>
+        (window as any).__chart.setChartSettings({ chartType: 'line', showTradeDots: false, showBidLine: false, showAskLine: false, showGrid: false }),
+    );
+    // wide in time, so a tile spans more ticks than it has rows for
+    await page.mouse.move(500, 300);
+    for (let i = 0; i < 14; i++) {
+        await page.mouse.wheel(0, 300);
+        await page.waitForTimeout(200);
+    }
+    await page.waitForTimeout(6000);
+    await page.evaluate(() => (window as any).__chart.setChartSettings({ autoScale: false }));
+    await page.waitForTimeout(300);
+    const out = await page.evaluate(async () => {
+        const c = (window as any).__chart;
+        const p = c.renderEngine.drawParams;
+        const v = c.renderEngine.view;
+        const canvas: HTMLCanvasElement = c.renderEngine.baseCanvas;
+        const ctx = canvas.getContext('2d')!;
+        const main = p.layouts.main;
+        const dpr = canvas.width / canvas.getBoundingClientRect().width;
+        const hist = (c.getData().priceHistory as any[]).filter((h: any) => h.ts >= v.tMin && h.ts < v.tMax);
+        const got: { f: number; mid: number; ink: number }[] = [];
+        for (const f of [0.05, 0.2, 0.35, 0.5, 0.65, 0.8, 0.95]) {
+            const h = hist[Math.floor(hist.length * f)];
+            const mid = (h.bestBid + h.bestAsk) / 2;
+            v.pMin = mid - 2;
+            v.pMax = mid + 2;
+            c.renderEngine.markDirty('base');
+            await new Promise((res) => setTimeout(res, 1200));
+            const x = Math.round(p.transformer.tsToX(h.ts, main.w) * dpr);
+            const d = ctx.getImageData(x, 0, 1, Math.round(main.h * dpr)).data;
+            let ink = 0;
+            for (let i = 3; i < d.length; i += 4) if (d[i] >= 30) ink++;
+            got.push({ f, mid: Math.round(mid), ink });
+        }
+        return got;
+    });
+    for (const g of out) expect(g.ink, JSON.stringify(out)).toBeGreaterThan(30);
+    expect(errors).toEqual([]);
+});
+
 const scaleMode = (page: Page) =>
     page.evaluate(() => (window as any).__chart.renderEngine.drawParams.chartSettings.priceScaleMode as string);
 const scaleButton = (page: Page, name: 'N' | 'L' | '%') => page.getByRole('button', { name, exact: true });
