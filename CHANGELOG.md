@@ -54,6 +54,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reads the bubbles the last draw made
 
 ### Fixed
+- An l2 book could lose a level at a chunk seam till that price next changed, the chunk's restated book got taken for
+  repeats of what was held. fuzz found it
 - Y zoomed in on a wide stretch of a moving symbol, the heatmap was blank past the 2048 rows a tile holds. it merges
   rows till they fit now, coarser and all there
 - Autoscale skipped the bar the left edge cuts through, on a fast move its price and the line in from it ran off the axis

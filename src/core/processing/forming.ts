@@ -86,9 +86,11 @@ export function joinForming(
 
     const kept: Item[] = [];
     let late = false;
+    // what follows a new reset restates the book, it only looks like a repeat
+    let resetAt: bigint | null = null;
     for (const it of items) {
         const ts = tsOf(level, it);
-        if (ts <= lastTs) {
+        if (resetAt === null && ts <= lastTs) {
             const k = keyOf(level, it);
             const n = held.get(k);
             if (n) {
@@ -97,6 +99,7 @@ export function joinForming(
             }
             if (ts < forming.bucket) continue;
             if (ts < lastTs) late = true;
+            if (level !== 'tick' && (it as MboEvent).action === 'R') resetAt = ts;
         }
         kept.push(it);
     }
@@ -106,7 +109,9 @@ export function joinForming(
     if (barNs <= 0n || first - (first % barNs) !== forming.bucket) {
         return { response: { ...response, [field(level)]: kept }, trimFromNs: null };
     }
-    const merged = forming.items.concat(kept);
+    const at = resetAt;
+    const before = at === null ? forming.items : forming.items.filter((it) => tsOf(level, it) <= at);
+    const merged = before.concat(kept);
     // sort is stable, so equal timestamps keep their order
     if (late) {
         merged.sort((a, b) => {
