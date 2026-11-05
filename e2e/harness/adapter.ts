@@ -4,6 +4,7 @@ import {
     type DataAdapterErrorCode,
     type FetchRequest,
     type IDataAdapter,
+    type MboEvent,
     type OhlcvBar,
     type RealtimeRequest,
     type SymbolInfo,
@@ -24,13 +25,38 @@ const SEC_NS = 1_000_000_000n;
 const SEC_MS = 1000;
 const L3_PAGE_MS = 30 * 60_000;
 
+const session = new URLSearchParams(location.search).get('session') === '1';
+
 const SYMBOL: SymbolInfo = {
     symbol: 'HARNESS',
     type: 'crypto',
     dataLevel: 'ohlcv',
     priceFormat: { minTick: 0.01, precision: 2 },
     supportedResolutions: [SEC_NS, 60n * SEC_NS, 3600n * SEC_NS],
+    // an hour's break a day, the way futures have, 17-18 New York
+    ...(session && { session: { hours: '1800-1700', timezone: 'America/New_York' } }),
 };
+
+// winter, so 22-23 UTC
+const inBreak = (ms: number) => new Date(ms).getUTCHours() === 22;
+const breakStart = (ms: number) => {
+    const d = new Date(ms);
+    d.setUTCHours(22, 0, 0, 0);
+    return d.getTime();
+};
+
+// nothing in the break, and the book starts clean after it the way an exchange's does
+function withBreak(events: MboEvent[], from: number, to: number): MboEvent[] {
+    const out: MboEvent[] = [];
+    for (const ev of events) if (!inBreak(Date.parse(ev.ts_event))) out.push(ev);
+    const reopen = breakStart(from) + 3_600_000;
+    if (from <= reopen && reopen < to) {
+        const at = out.findIndex((ev) => Date.parse(ev.ts_event) >= reopen);
+        const reset = { ts_event: new Date(reopen).toISOString(), action: 'R', side: 'N', price: null, size: 0, order_id: '0', sequence: 0, flags: 0 } as MboEvent;
+        out.splice(at < 0 ? out.length : at, 0, reset);
+    }
+    return out;
+}
 
 // price as a pure function of time, so every resolution and every refetch agrees
 function noise(sec: number): number {
@@ -96,6 +122,7 @@ export class HarnessAdapter implements IDataAdapter {
                 ...(this.l2Trades && { ticks: simTicks(price, from, to, o) }),
                 hasMore: false,
             };
+        if (session) return { mbo: withBreak(simMboEvents(price, from, to, o), from, to), hasMore: false };
         return { mbo: simMboEvents(price, from, to, o), hasMore: false };
     }
 
@@ -117,7 +144,9 @@ export class HarnessAdapter implements IDataAdapter {
         const end = this.endMs();
         if (level !== 'ohlcv') {
             // at most half an hour a fetch, a day of l3 is millions of events
-            const to = Math.min(range.toMs, end);
+            let to = Math.min(range.toMs, end);
+            // a real feed has nothing in the break, so a page reaches back past it
+            if (session && inBreak(to - 1)) to = breakStart(to - 1);
             const from = Math.max(this.startMs, range.fromMs, to - L3_PAGE_MS);
             const hasMore = direction === 'forward' ? range.toMs < end : from > this.startMs;
             return { ...this.events(level, from, to), hasMore };

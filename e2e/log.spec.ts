@@ -412,6 +412,82 @@ test('a drawing being placed follows the cursor with a pane above the main one',
     expect(Math.min(...hit), 'on the cursor').toBeLessThan(3);
 });
 
+test('a session gap inside a heatmap tile: the heat jumps right where the break is', async ({ page }) => {
+    const errors = watchErrors(page);
+    await page.setViewportSize({ width: 1000, height: 600 });
+    await page.goto('/?wide=1&session=1&level=l3');
+    await settled(page);
+    // nothing on the canvas but the heat
+    await page.evaluate(() =>
+        (window as any).__chart.setChartSettings({
+            chartType: 'line',
+            showTradeDots: false,
+            showBidLine: false,
+            showAskLine: false,
+            showMidLine: false,
+            showLastTradeLine: false,
+            showGrid: false,
+        }),
+    );
+    // out till a tile is longer than the break, so the break's inside one
+    const tileMinutes = () =>
+        page.evaluate(() => {
+            const ht = (window as any).__chart.renderEngine.drawParams.heatmap;
+            const key = ht.seen ? [...ht.byConfig.keys()].find((k: string) => k.startsWith(ht.seen.config.column + ':')) : null;
+            return key ? Number(ht.spanOf(key)) / 6e10 : 0;
+        });
+    await page.mouse.move(500, 300);
+    for (let i = 0; i < 40 && (await tileMinutes()) < 70; i++) {
+        await page.mouse.wheel(0, 300);
+        await page.waitForTimeout(300);
+    }
+    expect(await tileMinutes(), 'a tile longer than the break').toBeGreaterThan(70);
+    await page.mouse.move(5, 5);
+    await page.waitForTimeout(6000);
+    // either side of the reopen the heat has to be on that side's price
+    const out = await page.evaluate(() => {
+        const c = (window as any).__chart;
+        const p = c.renderEngine.drawParams;
+        const canvas: HTMLCanvasElement = c.renderEngine.baseCanvas;
+        const ctx = canvas.getContext('2d')!;
+        const dpr = canvas.width / canvas.getBoundingClientRect().width;
+        const main = p.layouts.main;
+        const t = p.transformer;
+        const close = BigInt(Date.UTC(2025, 11, 31, 22)) * 1_000_000n;
+        const reopen = BigInt(Date.UTC(2025, 11, 31, 23)) * 1_000_000n;
+        const hist: any[] = c.getData().priceHistory;
+        const at = (ts: bigint) => {
+            let i = hist.findIndex((h) => h.ts >= ts);
+            if (i < 0) i = hist.length - 1;
+            return (hist[i].bestBid + hist[i].bestAsk) / 2;
+        };
+        const heatAt = (cssX: number, want: number) => {
+            const col = ctx.getImageData(Math.round(cssX * dpr), 0, 1, Math.round(main.h * dpr)).data;
+            let lo = Infinity;
+            let hi = -Infinity;
+            for (let r = 0; r * 4 < col.length; r++) {
+                if (col[r * 4 + 3] > 30) {
+                    lo = Math.min(lo, r / dpr);
+                    hi = Math.max(hi, r / dpr);
+                }
+            }
+            const y = t.priceToY(want, main.h);
+            return { lo: Math.round(lo), hi: Math.round(hi), y: Math.round(y), miss: y < lo ? lo - y : y > hi ? y - hi : 0 };
+        };
+        const x = t.tsToX(reopen, main.w);
+        return {
+            x: Math.round(x),
+            before: heatAt(x - 6, at(close - 60_000_000_000n)),
+            after: heatAt(x + 6, at(reopen + 60_000_000_000n)),
+            first: String(hist[0].ts < close),
+        };
+    });
+    expect(out.first, 'history from before the break').toBe('true');
+    expect(out.before.miss, JSON.stringify(out)).toBeLessThan(4);
+    expect(out.after.miss, JSON.stringify(out)).toBeLessThan(4);
+    expect(errors).toEqual([]);
+});
+
 const scaleMode = (page: Page) =>
     page.evaluate(() => (window as any).__chart.renderEngine.drawParams.chartSettings.priceScaleMode as string);
 const scaleButton = (page: Page, name: 'N' | 'L' | '%') => page.getByRole('button', { name, exact: true });

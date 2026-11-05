@@ -323,9 +323,40 @@ export class HeatmapTiles {
 
     private paint(ctx: CanvasRenderingContext2D, t: Tile, span: bigint, c: TileConfig, v: TileView): void {
         if (!t.bitmap) return;
-        const x0 = v.tsToX(BigInt(t.k) * span);
-        const x1 = v.tsToX(BigInt(t.k + 1) * span);
-        this.blit(ctx, t.bitmap, t.rowLo, t.rows, c.ticks, c.tickSize, x0, x1 - x0, v);
+        this.drawn.push(t.bitmap);
+        const bitmap = t.bitmap;
+        const colNs = span / BigInt(TILE_COLS);
+        const start = BigInt(t.k) * span;
+        const xAt = (col: number) => v.tsToX(start + BigInt(col) * colNs);
+        const piece = (from: number, to: number, x: number, w: number) =>
+            this.blit(ctx, bitmap, t.rowLo, t.rows, c.ticks, c.tickSize, x, w, v, from, to - from);
+        // several looks, two gaps can even out at any one
+        const drift = (from: number, to: number) => {
+            let worst = 0;
+            for (let i = 1; i < 8; i++) {
+                const col = Math.round(from + ((to - from) * i) / 8);
+                const between = xAt(from) + ((xAt(to) - xAt(from)) * (col - from)) / (to - from);
+                worst = Math.max(worst, Math.abs(xAt(col) - between));
+            }
+            return worst;
+        };
+        if (!(drift(0, TILE_COLS) > MAX_DRIFT_PX)) {
+            piece(0, TILE_COLS, xAt(0), xAt(TILE_COLS) - xAt(0));
+            return;
+        }
+        // a session gap in the tile, time jumps there. on whole pixels, an overlap shows
+        const split = (from: number, to: number) => {
+            if (to - from > 1 && drift(from, to) > MAX_DRIFT_PX) {
+                const mid = (from + to) >> 1;
+                split(from, mid);
+                split(mid, to);
+                return;
+            }
+            const x0 = Math.round(xAt(from));
+            const x1 = Math.round(xAt(to));
+            if (x1 > x0) piece(from, to, x0, x1 - x0);
+        };
+        split(0, TILE_COLS);
     }
 
     // a bitmap's rows are even in price, a log axis isn't. straight through while that's under half a pixel off
@@ -339,8 +370,9 @@ export class HeatmapTiles {
         x: number,
         w: number,
         v: TileView,
+        fromCol = 0,
+        cols = bitmap.width,
     ): void {
-        this.drawn.push(bitmap);
         // row r is the prices from half a tick under r * ticks, so one tick rows sit on their price
         const yOf = (row: number) => v.priceToY((row * ticks - 0.5) * tickSize);
         // from the top of the bitmap down
@@ -351,7 +383,8 @@ export class HeatmapTiles {
             return Math.abs(yAt(mid) - between);
         };
         if (rows < 2 || !(drift(0, rows) > MAX_DRIFT_PX)) {
-            ctx.drawImage(bitmap, x, yAt(0), w, yAt(rows) - yAt(0));
+            if (cols === bitmap.width) ctx.drawImage(bitmap, x, yAt(0), w, yAt(rows) - yAt(0));
+            else ctx.drawImage(bitmap, fromCol, 0, cols, rows, x, yAt(0), w, yAt(rows) - yAt(0));
             return;
         }
         // log bends more down low, so split where it's off rather than evenly
@@ -365,7 +398,7 @@ export class HeatmapTiles {
             // on whole pixels, the bitmaps are see through so an overlap shows
             const y0 = Math.round(yAt(from));
             const y1 = Math.round(yAt(to));
-            if (y1 > y0 && y1 > 0 && y0 < v.h) ctx.drawImage(bitmap, 0, from, bitmap.width, to - from, x, y0, w, y1 - y0);
+            if (y1 > y0 && y1 > 0 && y0 < v.h) ctx.drawImage(bitmap, fromCol, from, cols, to - from, x, y0, w, y1 - y0);
         };
         strip(0, rows);
     }
@@ -450,6 +483,7 @@ export class HeatmapTiles {
         if (own.tickSize !== tickSize) return false;
         const x0 = Math.max(0, Math.round(v.tsToX(from)));
         const x1 = to === null ? v.w : Math.round(v.tsToX(to));
+        this.drawn.push(f.bitmap);
         this.blit(ctx, f.bitmap, f.rowLo, f.rows, own.ticks, own.tickSize, x0, x1 - x0, v);
         return true;
     }

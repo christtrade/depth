@@ -487,6 +487,79 @@ describe('the book past the data a tile has', () => {
     });
 });
 
+describe('a tile across a session gap', () => {
+    // closed for the middle fifth of the tile's time, the view skips it
+    const gapFrom = (SPAN * 2n) / 5n;
+    const gapTo = (SPAN * 3n) / 5n;
+    const gappedX = (ts: bigint) => {
+        const market = ts < gapFrom ? ts : ts < gapTo ? gapFrom : ts - (gapTo - gapFrom);
+        return (Number(market) / Number(SPAN - (gapTo - gapFrom))) * TILE_COLS;
+    };
+    const twoGaps = (ts: bigint) => {
+        const a = SPAN / 8n;
+        const b = (SPAN * 2n) / 8n;
+        const c = (SPAN * 6n) / 8n;
+        const d = (SPAN * 7n) / 8n;
+        const m = ts < a ? ts : ts < b ? a : ts < c ? ts - (b - a) : ts < d ? c - (b - a) : ts - (b - a) - (d - c);
+        return (Number(m) / Number(SPAN - (b - a) - (d - c))) * TILE_COLS;
+    };
+    const drawWith = (tsToX: (ts: bigint) => number) => {
+        const s = setup();
+        const calls: number[][] = [];
+        (s.ctx as any).drawImage = (_b: unknown, ...a: number[]) => calls.push(a);
+        s.tiles.draw(s.ctx, { ...view, tsToX });
+        return calls;
+    };
+
+    it('no gap is one straight draw', () => {
+        assert.deepEqual(drawWith(view.tsToX), [[0, view.priceToY((9990 + 10 - 0.5) * 0.01), 256, view.priceToY((9990 - 0.5) * 0.01) - view.priceToY((9990 + 10 - 0.5) * 0.01)]]);
+    });
+
+    for (const [name, x] of [['one gap', gappedX], ['two that even out at the middle', twoGaps]] as const)
+        it(`${name}, every column sits at its own time`, () => {
+            const calls = drawWith(x);
+            assert.ok(calls.length > 1, `${calls.length} pieces`);
+            for (const [sx, , sw, , dx, , dw] of calls) {
+                for (const f of [0, 0.5, 1]) {
+                    const col = sx + sw * f;
+                    const want = x((BigInt(Math.round(col)) * SPAN) / BigInt(TILE_COLS));
+                    // a piece can hold the column the gap lands in, that one's where the jump is
+                    assert.ok(Math.abs(dx + dw * f - want) < 2, `col ${col} at ${dx + dw * f}, its time is at ${want}`);
+                }
+            }
+        });
+
+    it('pieces meet on whole pixels and nothing draws in the gap', () => {
+        const calls = drawWith(gappedX);
+        for (let i = 0; i < calls.length; i++) {
+            const [, , , , dx, , dw] = calls[i];
+            assert.ok(Number.isInteger(dx) && Number.isInteger(dw));
+            if (i) assert.equal(dx, calls[i - 1][4] + calls[i - 1][6]);
+        }
+        // the source skips the closed columns, the screen doesn't show them
+        const cols = calls.reduce((n, c) => n + c[2], 0);
+        assert.ok(cols < 256 && cols >= 200, `${cols} columns drawn`);
+    });
+
+    it('still on its rows on a log axis, pieces both ways', () => {
+        const logY = (p: number) => (1 - (Math.log(p) - Math.log(10)) / (Math.log(100) - Math.log(10))) * 600;
+        const s = setup();
+        const calls: number[][] = [];
+        (s.ctx as any).drawImage = (_b: unknown, ...a: number[]) => calls.push(a);
+        const v: TileView = { ...view, tsToX: gappedX, view: { ...view.view, pMin: 10, pMax: 100 }, priceToY: logY };
+        s.tiles.draw(s.ctx, v);
+        const asked = s.asked.filter((r) => r.type === 'tiles').at(-1) as Extract<HeatmapRequest, { type: 'tiles' }>;
+        const k2 = configKey({ column: asked.column, tickSize: 0.01, ticks: asked.ticks, contrast: 0, palette: 'heat' });
+        const bm = { width: 256, height: 300, close() {} } as unknown as ImageBitmap;
+        s.tiles.onReply({ type: 'tile', key: k2, k: asked.tiles[0], rowLo: 5, rows: 300, bitmap: bm, until: (SPAN * 100n).toString() });
+        calls.length = 0;
+        s.tiles.draw(s.ctx, v);
+        const columns = new Set(calls.map((c) => c[0]));
+        const rows = new Set(calls.map((c) => c[1]));
+        assert.ok(columns.size > 1 && rows.size > 1, `${columns.size} column runs, ${rows.size} row runs`);
+    });
+});
+
 describe('on a log price axis', () => {
     const logView = (pMin: number, pMax: number): TileView => ({
         ...view,
