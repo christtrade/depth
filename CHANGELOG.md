@@ -54,6 +54,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reads the bubbles the last draw made
 
 ### Fixed
+- `dataBudget` sized a switch or a pan at l3, l2 and tick as 48 bytes a bar, so a capped switch never capped there. it goes
+  by what the data held weighs now
+- The preview of a drawing being placed sat off the cursor with a pane above the main one
 - Footprints bucketed every symbol at 0.25 unless `fpOptions.tickSize` was set, a 0.01 symbol got a few real rows with
   zeros between, and tick/l3 candles come off them so their prices were off too (103.35 drew at 103.25). they take the
   symbol's tick now, a pane's own rebuild too

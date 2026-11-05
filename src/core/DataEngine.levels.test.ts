@@ -323,8 +323,11 @@ for (const level of ['tick', 'l3', 'l2'] as const) {
         // l3 only - bid/ask after chunks were joined on, against one pass over the whole span
         const assertBboIsOnePass = (p: any, fromMs: number, toMs: number) => {
             if (level !== 'l3') return;
-            const want = processL3Chunk(simMboEvents(priceOf('NQ'), fromMs, toMs), 0n).priceHistory;
             const got = p.priceHistory;
+            // what got cut off the front is still in the book of what's left
+            const want = processL3Chunk(simMboEvents(priceOf('NQ'), fromMs, toMs), 0n).priceHistory.filter(
+                (h: any) => h.ts >= got[0].ts,
+            );
             // the held buffer stores prices as scaled ints
             const s = (h: any) => h && `${h.ts} ${h.bestBid.toFixed(6)}/${h.bestAsk.toFixed(6)}`;
             for (let i = 0; i < Math.max(got.length, want.length); i++) {
@@ -365,12 +368,11 @@ for (const level of ['tick', 'l3', 'l2'] as const) {
             assertFootprintsClean(q, MIN);
         });
 
-        it('the budget drops what is past the view, and pages it back in on the book left', async () => {
+        it('a switch over the budget stops at the view, and pages on from there on the book it has', async () => {
             const { bus, de, fetches, next, announce } = levelEngine(level, { maxBytes: budget });
             const loaded = next('data:load');
             await de.load('NQ');
             await loaded;
-            // the window reloads around the view, up to the old edge, and that's over the budget
             const cut = new Promise<any>((resolve, reject) => {
                 const timer = setTimeout(() => reject(new Error('no cut')), 5000);
                 bus.on('data:load', (p: any) => {
@@ -392,12 +394,53 @@ for (const level of ['tick', 'l3', 'l2'] as const) {
             bus.emit('data:request-forward', { viewMax: nsOf(end + 10 * MIN_MS), symbol: 'NQ' });
             const q = await appended;
             const fetched = fetches.at(-1)!;
-            assert.equal(fetched.fromMs, end, 'from the new edge');
+            assert.equal(fetched.fromMs, p.dataEnd, 'from the new edge');
             assertTradesAre(q, 'NQ', p.dataStart, fetched.toMs);
             assertEventsAre(q, 'NQ', p.dataStart, fetched.toMs);
             assertBookIs(q, 'NQ', p.dataStart, fetched.toMs);
             assertFootprintsClean(q, MIN);
             assertBboIsOnePass(q, p.dataStart, fetched.toMs);
+        });
+
+        it('the budget drops what is past the view, and pages it back in on the book left', async () => {
+            const { bus, de, fetches, next, announce, settle } = levelEngine(level);
+            const loaded = next('data:load');
+            await de.load('NQ');
+            await loaded;
+            announce(MIN, T0 - 30 * MIN_MS, T0 - 25 * MIN_MS);
+            await settle();
+            // a page back doesn't fit, and what's past the view is the most there is to cut
+            const held = () => {
+                const m = (de as any)._st('NQ').master;
+                return m.compactBuf.byteLength + 96 * m.trades.length + 88 * m.priceHistory.length;
+            };
+            (de as any).maxBytes = held() * 1.3;
+            const cut = new Promise<any>((resolve, reject) => {
+                const timer = setTimeout(() => reject(new Error('no cut')), 5000);
+                bus.on('data:load', (p: any) => {
+                    if (!p.replaced) return;
+                    clearTimeout(timer);
+                    resolve(p);
+                });
+            });
+            bus.emit('data:request-backward', { viewMin: nsOf(T0 - 40 * MIN_MS), symbol: 'NQ' });
+            const p = await cut;
+            const end = Math.floor(p.dataEnd / MIN_MS) * MIN_MS + MIN_MS;
+            assert.ok(end < T0 - 5 * MIN_MS, `kept up to ${(T0 - end) / MIN_MS} min back`);
+            assertTradesAre(p, 'NQ', p.dataStart, end);
+            assertEventsAre(p, 'NQ', p.dataStart, end);
+            assertBookIs(p, 'NQ', p.dataStart, end);
+
+            const appended = next('data:append');
+            bus.emit('data:request-forward', { viewMax: nsOf(end + 10 * MIN_MS), symbol: 'NQ' });
+            const q = await appended;
+            const fetched = fetches.at(-1)!;
+            assert.equal(fetched.fromMs, end, 'from the new edge');
+            assertTradesAre(q, 'NQ', p.dataStart, fetched.toMs);
+            assertEventsAre(q, 'NQ', p.dataStart, fetched.toMs);
+            assertBookIs(q, 'NQ', p.dataStart, fetched.toMs);
+            assertFootprintsClean(q, MIN);
+            assertBboIsOnePass(q, fetches.filter((f) => f.direction === 'backward').at(-1)!.fromMs, fetched.toMs);
         });
 
         if (level === 'l3') {
@@ -651,6 +694,51 @@ describe('l3 level, a pane holding its own copy for the heatmap', () => {
         bus.emit('data:pane-held', { id: 0, symbol: 'NQ', bytes: 0 });
         await settle();
         assert.equal(loads.length, 1, 'nothing more dropped');
+    });
+});
+
+describe('l3 over the budget', () => {
+    // what 30 min holds, the budget's a few times that and the window below ~7x
+    const engine = async () => {
+        const probe = levelEngine('l3');
+        const first = probe.next('data:load');
+        await probe.de.load('NQ');
+        const events = (await first).compactBuf.byteLength;
+        const t = levelEngine('l3', { maxBytes: events * 8 });
+        const loaded = t.next('data:load');
+        await t.de.load('NQ');
+        await loaded;
+        return t;
+    };
+    const untilQuiet = () => new Promise((r) => setTimeout(r, 300));
+
+    it('a switch far back stops at the view, bars at 48 bytes said it all fits', async () => {
+        const { announce, fetches } = await engine();
+        announce(MIN, T0 - 200 * MIN_MS, T0 - 190 * MIN_MS);
+        await untilQuiet();
+        const f = fetches.at(-1)!;
+        assert.ok(f.toMs < T0 - 100 * MIN_MS, `fetched to ${(f.toMs - T0) / MIN_MS} min`);
+    });
+
+    it('a pan into the hole asks for what the budget holds', async () => {
+        const { announce, bus, fetches } = await engine();
+        announce(MIN, T0 - 200 * MIN_MS, T0 - 190 * MIN_MS);
+        await untilQuiet();
+        bus.emit('data:request-forward', { viewMax: nsOf(T0), symbol: 'NQ' });
+        await untilQuiet();
+        const f = fetches.filter((x) => x.direction === 'forward').at(-1)!;
+        // half the budget's ~70 min, the whole 190 to the edge at 48 bytes a bar
+        assert.ok(f.toMs - f.fromMs < 100 * MIN_MS, `asked for ${(f.toMs - f.fromMs) / MIN_MS} min`);
+    });
+
+    it('a switch that fits still runs to the live edge', async () => {
+        const t = levelEngine('l3', { maxBytes: 2 ** 30 });
+        const loaded = t.next('data:load');
+        await t.de.load('NQ');
+        await loaded;
+        t.announce(MIN, T0 - 200 * MIN_MS, T0 - 190 * MIN_MS);
+        await untilQuiet();
+        assert.equal(t.fetches.at(-1)!.toMs, T0);
     });
 });
 

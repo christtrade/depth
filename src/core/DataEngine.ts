@@ -1148,7 +1148,7 @@ export class DataEngine {
             // never under the scroll window though, or a small budget pages a few bars at a time
             let reach = viewMax - st.loadedTo + SWITCH_PAD_BARS * st.fetchBarNs;
             if (Number.isFinite(this.maxBytes)) {
-                reach = bigMin(reach, BigInt(Math.floor(this.maxBytes / 2 / BAR_BYTES)) * st.fetchBarNs);
+                reach = bigMin(reach, BigInt(Math.floor(this.maxBytes / 2 / this._bytesPerNs(st, symbol, st.fetchBarNs))));
             }
             if (reach > win) win = reach;
         }
@@ -1236,9 +1236,7 @@ export class DataEngine {
         for (const [s, o] of this._states) {
             if (BUDGETED.has(o.master?.dataLevel as DataLevel)) total += heldBytes(o.master!) + this._paneHeld(s);
         }
-        const mine = heldBytes(st.master) + this._paneHeld(symbol);
-        const page = (mine * Number(this.scrollWindowNs)) / Number(st.loadedTo - st.loadedFrom);
-        if (total + page > this.maxBytes) return;
+        if (total + Number(this.scrollWindowNs) * this._bytesPerNs(st, symbol, st.fetchBarNs) > this.maxBytes) return;
 
         this._fetchBackward(symbol, st.loadedFrom - this.scrollWindowNs, 'ahead');
     }
@@ -2175,6 +2173,15 @@ export class DataEngine {
         return n;
     }
 
+    // bars weigh the same at any level. events have no period, what's held says what more of it weighs
+    private _bytesPerNs(st: SymbolState, symbol: string, barNs: bigint): number {
+        const m = st.master;
+        if (m && m.dataLevel !== 'ohlcv' && st.loadedFrom !== null && st.loadedTo !== null && st.loadedTo > st.loadedFrom) {
+            return (heldBytes(m) + this._paneHeld(symbol)) / Number(st.loadedTo - st.loadedFrom);
+        }
+        return BAR_BYTES / Number(barNs);
+    }
+
     private _scheduleBudget(): void {
         if (this.budgetTimer !== null || !Number.isFinite(this.maxBytes)) return;
         this.budgetTimer = setTimeout(() => {
@@ -2528,7 +2535,7 @@ export class DataEngine {
         // unless that's over the budget: then stop at the view, and pans page across
         const edge = st.loadedTo === null ? null : st.loadedTo + st.fetchBarNs;
         if (edge === null || edge <= to) return { from, to, capped: false };
-        if (Number((edge - from) / fetchBarNs) * BAR_BYTES > this.maxBytes) {
+        if (Number(edge - from) * this._bytesPerNs(st, symbol, fetchBarNs) > this.maxBytes) {
             return { from, to, capped: true };
         }
         return { from, to: edge, capped: false };
