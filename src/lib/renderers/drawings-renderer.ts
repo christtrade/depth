@@ -2563,7 +2563,7 @@ export function drawDrawingsLayer(
     const mainOffsetY = mainRect ? mainRect.y : 0;
 
     const draftMousePrice = crosshair?.y
-        ? transformer.yToPrice(crosshair.y, mainH) + mainOffsetY
+        ? transformer.yToPrice(crosshair.y - mainOffsetY, mainH)
         : undefined;
     const draftMouseTs = crosshair?.x ? transformer.xToTs(crosshair.x, chartW) : undefined;
 

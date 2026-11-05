@@ -375,6 +375,43 @@ test('log: heatmap rows sit on their prices, the book around the bid and ask lin
     expect(errors).toEqual([]);
 });
 
+test('a drawing being placed follows the cursor with a pane above the main one', async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 600 });
+    await page.goto('/');
+    await settled(page);
+    await addCloseLine(page, 'sub', '#00ffff', 'layout: Layout.pane,');
+    await page.waitForTimeout(800);
+    const before = await geometry(page);
+    // its controls show while the pointer's on that pane
+    await page.mouse.move(before.x + 400, before.y + before.sub!.y + before.sub!.h / 2);
+    await page.locator('button:has(svg.lucide-arrow-up)').first().click({ timeout: 5000 });
+    await expect.poll(() => geometry(page).then((g) => g.main.y)).toBeGreaterThan(50);
+    const g = await geometry(page);
+
+    await page.evaluate(() => {
+        const w = window as any;
+        w.__chart.setActiveTool({ name: 'line', id: '', state: {} });
+        const proto = CanvasRenderingContext2D.prototype as any;
+        const lineTo = proto.lineTo;
+        w.__ends = [];
+        proto.lineTo = function (x: number, y: number) {
+            const t = this.getTransform();
+            w.__ends.push([(t.a * x + t.e) / t.a, (t.d * y + t.f) / t.d]);
+            return lineTo.call(this, x, y);
+        };
+    });
+    const at = (x: number, y: number) => [g.x + g.main.x + x, g.y + g.main.y + y] as const;
+    await page.mouse.click(...at(200, 100));
+    await page.mouse.move(...at(500, 300));
+    await page.waitForTimeout(300);
+    const ends = await page.evaluate(() => (window as any).__ends as number[][]);
+    const canvasX = g.main.x + 500;
+    const canvasY = g.main.y + 300;
+    const hit = ends.filter((e) => Math.abs(e[0] - canvasX) < 2).map((e) => Math.abs(e[1] - canvasY));
+    expect(hit.length, 'a line to the cursor').toBeGreaterThan(0);
+    expect(Math.min(...hit), 'on the cursor').toBeLessThan(3);
+});
+
 const scaleMode = (page: Page) =>
     page.evaluate(() => (window as any).__chart.renderEngine.drawParams.chartSettings.priceScaleMode as string);
 const scaleButton = (page: Page, name: 'N' | 'L' | '%') => page.getByRole('button', { name, exact: true });
