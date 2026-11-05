@@ -179,7 +179,7 @@ export interface ChartEvents {
         midPrints: SerialTrade[];
         /** What footprintBars were built with. */
         fpOptions: FootprintOptions;
-        /** Every loaded bar. Derived from footprintBars at l3/tick, empty at l2. */
+        /** Every loaded bar. From footprintBars at l3, tick and l2 with trades, off the mid at l2 without. */
         bars: BarStore;
         barNs: bigint;
         dataStart: number;
