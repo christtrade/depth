@@ -53,6 +53,7 @@ function levelEngine(
         failBackward?: () => boolean;
         previews?: { count: number };
         scrollWindowNs?: bigint;
+        fpOptions?: { tickSize?: number };
     } = {},
 ) {
     let edge = opts.liveEdge ?? T0;
@@ -108,6 +109,7 @@ function levelEngine(
         dataBudget: { maxBytes: opts.maxBytes ?? Infinity },
         loadAhead: opts.loadAhead,
         scrollWindowNs: opts.scrollWindowNs,
+        fpOptions: opts.fpOptions,
     });
     de.setAdapter(adapter);
 
@@ -249,10 +251,10 @@ for (const level of ['tick', 'l3', 'l2'] as const) {
             const reloaded = next('data:load');
             de.rebuildFootprint(fp);
             const p = await reloaded;
-            assert.deepEqual(p.fpOptions, fp);
+            assert.deepEqual(p.fpOptions, { tickSize: 0.01, ...fp });
             assert.equal(
                 JSON.stringify(p.footprintBars, (_, v) => (typeof v === 'bigint' ? String(v) : v)),
-                JSON.stringify(footprintFromTrades(before.trades, MIN, fp), (_, v) =>
+                JSON.stringify(footprintFromTrades(before.trades, MIN, p.fpOptions), (_, v) =>
                     typeof v === 'bigint' ? String(v) : v,
                 ),
             );
@@ -565,7 +567,7 @@ for (const level of ['tick', 'l3', 'l2'] as const) {
             assertTradesAre(p, 'NQ', T0 - 30 * MIN_MS, T0 + 20_500);
             assertFootprintsClean(p, SEC);
             const json = (v: unknown) => JSON.stringify(v, (_, x) => (typeof x === 'bigint' ? String(x) : x));
-            const fresh = (q: any) => json(footprintFromTrades(q.trades, SEC));
+            const fresh = (q: any) => json(footprintFromTrades(q.trades, SEC, q.fpOptions));
             assert.equal(json(p.footprintBars), fresh(p));
 
             // the forming second carries on
@@ -649,6 +651,66 @@ describe('l3 level, a pane holding its own copy for the heatmap', () => {
         bus.emit('data:pane-held', { id: 0, symbol: 'NQ', bytes: 0 });
         await settle();
         assert.equal(loads.length, 1, 'nothing more dropped');
+    });
+});
+
+describe('footprint rows', () => {
+    const offQuarter = (p: any) =>
+        p.footprintBars.flatMap((b: any) => b.levels).filter((l: any) => Math.abs(l.price / 0.25 - Math.round(l.price / 0.25)) > 1e-6).length;
+
+    for (const level of ['tick', 'l3'] as const)
+        it(`${level} takes the symbol's tick, 0.25 for everything left a 0.01 symbol a few rows with zeros between`, async () => {
+            const { de, next } = levelEngine(level);
+            const loaded = next('data:load');
+            await de.load('NQ');
+            const p = await loaded;
+            assert.equal(p.fpOptions.tickSize, 0.01);
+            assert.ok(offQuarter(p) > 0, 'prices between the quarters');
+        });
+
+    it('the candles built from them keep the real price, 103.35 came out 103.25', async () => {
+        const { de, next } = levelEngine('tick');
+        const loaded = next('data:load');
+        await de.load('NQ');
+        const p = await loaded;
+        const trades = p.trades.filter((t: any) => t.ts >= p.footprintBars[0].ts && t.ts < p.footprintBars[0].ts + MIN);
+        assert.ok(trades.length > 0);
+        assert.ok(Math.abs(p.footprintBars[0].open - trades[0].price) < 1e-6, `${p.footprintBars[0].open} against ${trades[0].price}`);
+        assert.ok(Math.abs(p.bars.open[0] - trades[0].price) < 1e-6);
+    });
+
+    it('the same on a rebuild', async () => {
+        const { de, next } = levelEngine('tick');
+        const loaded = next('data:load');
+        await de.load('NQ');
+        await loaded;
+        const again = next('data:load');
+        de.rebuildFootprint({ imbalanceRatio: 5 });
+        const p = await again;
+        assert.equal(p.fpOptions.tickSize, 0.01);
+        assert.equal(p.fpOptions.imbalanceRatio, 5);
+        assert.ok(offQuarter(p) > 0);
+    });
+
+    it('the same on a page back', async () => {
+        const { bus, de, next } = levelEngine('tick');
+        const loaded = next('data:load');
+        await de.load('NQ');
+        await loaded;
+        const page = next('data:prepend');
+        bus.emit('data:request-backward', { viewMin: nsOf(T0 - 90 * MIN_MS), symbol: 'NQ' });
+        const p = await page;
+        assert.equal(p.fpOptions.tickSize, 0.01);
+        assert.ok(offQuarter(p) > 0);
+    });
+
+    it('a tick size the host set wins', async () => {
+        const { de, next } = levelEngine('tick', { fpOptions: { tickSize: 0.5 } });
+        const loaded = next('data:load');
+        await de.load('NQ');
+        const p = await loaded;
+        assert.equal(p.fpOptions.tickSize, 0.5);
+        for (const b of p.footprintBars) for (const l of b.levels) assert.equal(l.price % 0.5, 0);
     });
 });
 

@@ -394,8 +394,11 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         return all.slice(0, idx + 1);
     }, []);
 
+    // tick size and the rest come from the engine, the same bars as its own or a rebuild moves the rows
+    const engineFpRef = useRef<FootprintOptions>({});
     const fpSettingsFromRef = useCallback(
         () => ({
+            ...engineFpRef.current,
             imbalanceRatio: p.chartSettingsRef.current.footprintImbalanceRatio,
             stackMinCount: p.chartSettingsRef.current.footprintStackMinCount,
             diagRatio: p.chartSettingsRef.current.footprintDiagRatio,
@@ -524,6 +527,7 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
     // the engines bars run to the data end, a replay needs them to stop at the playhead.
     // the engine has one set of options for every pane, the panes own settings win
     const takeFootprints = useCallback((bars: FootprintBar[], barNs: bigint, builtWith: FootprintOptions) => {
+        engineFpRef.current = builtWith;
         if (
             barNs === p.activeTimeframeRef.current.barNs &&
             p.horizonRef.current >= datasetEndRef.current &&
@@ -1725,6 +1729,10 @@ export function useChartData(p: UseChartDataParams): ChartDataResult {
         if (p.isDragging.current && (mode === 'pan' || mode === 'scaleX')) return false;
         if (mode === 'pinch' || mode === 'glide') return false;
 
+        // the view's ahead of live, moving it on only runs further off
+        const bar = ohlcvBucketRange(h, p.activeTimeframeRef.current.barNs, p.sessionMapperRef.current).start;
+        if (bar <= view.tMin) return false;
+        if (bar < view.tMax) followingRef.current = true;
         return followingRef.current;
     };
 

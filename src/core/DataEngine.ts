@@ -55,6 +55,7 @@ import { clipToSession, isMarketOpen, walkBackMarketNs } from './SessionUtils';
 import type { SessionWindow } from './SessionUtils';
 import { nextOpenNs } from './SessionUtils';
 import { BYTES_PER_EVENT } from '../lib/compact-buffer';
+import { resolveTickSize } from '../lib/priceFormat';
 
 // pages of server-side search results kept around for backspacing
 const SYMBOL_SEARCH_CACHE_MAX = 32;
@@ -969,6 +970,11 @@ export class DataEngine {
         }
     }
 
+    // the symbol's own tick unless the host set one. 0.25 for everything put a 0.01 symbol in a few rows with zeros between
+    private _fpFor(held: { symbolInfo: SymbolInfo | null }): FootprintOptions {
+        return { tickSize: resolveTickSize(held.symbolInfo), ...this.fpOptions };
+    }
+
     // rebuild every held footprint with `fpOptions` and send it to the panes as a rehydrate load
     rebuildFootprint(fpOptions: FootprintOptions): void {
         if (this.destroyed) return;
@@ -976,7 +982,7 @@ export class DataEngine {
         for (const st of this._states.values()) {
             const m = st.master;
             if (!m || (!evented(m.dataLevel) && m.dataLevel !== 'tick')) continue;
-            m.footprintBars = footprintFromTrades(m.trades, m.barNs, fpOptions);
+            m.footprintBars = footprintFromTrades(m.trades, m.barNs, this._fpFor(st));
             if (!this._midBars(st)) m.ohlcvBars = _deriveOhlcvFromFootprint(m.footprintBars);
             this._emitLoad(st, /* rehydrate */ true).catch((err) =>
                 console.error('[DataEngine] rebuildFootprint _emitLoad failed', err),
@@ -1695,14 +1701,14 @@ export class DataEngine {
                 }
                 return processOhlcvChunk(response.bars ?? [], barNs);
             case 'tick':
-                return processTickChunk(response.ticks ?? [], barNs, this.fpOptions);
+                return processTickChunk(response.ticks ?? [], barNs, this._fpFor(st));
             case 'l2': {
-                const c = l2Chunk(response.mbo ?? [], barNs, this.fpOptions, carry);
+                const c = l2Chunk(response.mbo ?? [], barNs, this._fpFor(st), carry);
                 if (c.trades.length) st.hasTrades = true;
                 return c;
             }
             default:
-                return processL3Chunk(response.mbo ?? [], barNs, this.fpOptions, carry);
+                return processL3Chunk(response.mbo ?? [], barNs, this._fpFor(st), carry);
         }
     }
 
@@ -1904,7 +1910,7 @@ export class DataEngine {
                     master.footprintBars,
                     master.trades,
                     this._masterBarNs(st),
-                    this.fpOptions,
+                    this._fpFor(st),
                 );
                 this._rebar(st, this._masterBarNs(st));
                 master.dataStart = c.dataStart > 0 ? c.dataStart : master.dataStart;
@@ -1919,7 +1925,7 @@ export class DataEngine {
                     master.footprintBars,
                     master.trades,
                     this._masterBarNs(st),
-                    this.fpOptions,
+                    this._fpFor(st),
                 );
                 master.ohlcvBars = _deriveOhlcvFromFootprint(master.footprintBars);
                 master.dataStart = c.dataStart > 0 ? c.dataStart : master.dataStart;
@@ -2069,7 +2075,7 @@ export class DataEngine {
             priceHistory: master.priceHistory,
             footprintBars: master.footprintBars,
             midPrints: master.midPrints,
-            fpOptions: this.fpOptions,
+            fpOptions: this._fpFor(master),
             bars: master.ohlcvBars,
             barNs: master.barNs,
             dataStart: master.dataStart,
@@ -2123,7 +2129,7 @@ export class DataEngine {
             priceHistory: master.priceHistory,
             footprintBars: master.footprintBars,
             midPrints: master.midPrints,
-            fpOptions: this.fpOptions,
+            fpOptions: this._fpFor(st),
             ohlcvBars: 'ohlcvBars' in chunk ? chunk.ohlcvBars : [],
             bars: master.ohlcvBars,
             barNs: master.barNs,
@@ -2478,7 +2484,7 @@ export class DataEngine {
         st.fetchBarNs = barNs;
         st.forming = narrowed.forming;
         st.formingBook = book;
-        master.footprintBars = footprintFromTrades(master.trades, barNs, this.fpOptions);
+        master.footprintBars = footprintFromTrades(master.trades, barNs, this._fpFor(st));
         this._rebar(st, barNs);
         master.barNs = barNs;
         this._syncShared();

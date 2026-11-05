@@ -54,6 +54,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reads the bubbles the last draw made
 
 ### Fixed
+- Footprints bucketed every symbol at 0.25 unless `fpOptions.tickSize` was set, a 0.01 symbol got a few real rows with
+  zeros between, and tick/l3 candles come off them so their prices were off too (103.35 drew at 103.25). they take the
+  symbol's tick now, a pane's own rebuild too
 - The bubble card was black on light themes and always showed UTC, it takes the theme and the chart's timezone and clock now
 - A page back that landed after a timeframe switch got mixed in with the new bars, forward already dropped those.
   loading ahead would've made it common

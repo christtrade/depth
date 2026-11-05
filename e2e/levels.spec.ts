@@ -481,6 +481,22 @@ test('tick live: the step chart draws at None and 1s', async ({ page }) => {
     expect(errors).toEqual([]);
 });
 
+test('tick: footprint rows are the symbol ticks, on the pane rebuild too', async ({ page }) => {
+    await open(page, '/?level=tick');
+    await pickTimeframe(page, '1m');
+    const prices = () =>
+        page.evaluate(() => {
+            const bars: any[] = (window as any).__chart.renderEngine.drawParams.footprintBars;
+            const all = bars.flatMap((b) => b.levels.map((l: any) => l.price as number));
+            return { n: all.length, offQuarter: all.filter((p) => Math.abs(p / 0.25 - Math.round(p / 0.25)) > 1e-6).length };
+        });
+    await expect.poll(async () => (await prices()).offQuarter).toBeGreaterThan(0);
+    // goes through the pane's own build, with its own settings
+    await page.evaluate(() => (window as any).__chart.setChartSettings({ footprintImbalanceRatio: 7 }));
+    await page.waitForTimeout(300);
+    expect((await prices()).offQuarter).toBeGreaterThan(0);
+});
+
 test('tick: footprint can be picked and draws', async ({ page }) => {
     const errors = watchErrors(page);
     await open(page, '/?level=tick');
