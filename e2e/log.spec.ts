@@ -488,6 +488,48 @@ test('a session gap inside a heatmap tile: the heat jumps right where the break 
     expect(errors).toEqual([]);
 });
 
+for (const [level, url] of [
+    ['bars', '/?wide=1'],
+    ['l3 lines', '/?wide=1&level=l3'],
+] as const)
+    test(`autoscale takes in the bar the left edge cuts through, ${level}`, async ({ page }) => {
+        await page.setViewportSize({ width: 1000, height: 600 });
+        await page.goto(url);
+        await settled(page);
+        // no margin to hide it in
+        await page.evaluate(
+            (line) => (window as any).__chart.setChartSettings({ chartType: line ? 'line' : 'candles', scaleMarginTop: 0, scaleMarginBottom: 0 }),
+            level !== 'bars',
+        );
+        await page.mouse.move(500, 300);
+        // short enough to be all one way, so the bar at the edge is the extreme
+        const spanMin = () =>
+            page.evaluate(() => {
+                const v = (window as any).__chart.renderEngine.view;
+                return Number(v.tMax - v.tMin) / 6e10;
+            });
+        for (let i = 0; i < 40 && (await spanMin()) > 30; i++) {
+            await page.mouse.wheel(0, -300);
+            await page.waitForTimeout(60);
+        }
+        await page.mouse.wheel(0, 120);
+        await page.waitForTimeout(500);
+        const out = await page.evaluate((line) => {
+            const c = (window as any).__chart;
+            const v = c.renderEngine.view;
+            const p = c.renderEngine.drawParams;
+            if (line) {
+                const before = p.priceHistory.filter((h: any) => h.ts < v.tMin).at(-1);
+                return { edge: before.bestAsk as number, low: before.bestBid as number, pMin: v.pMin as number, pMax: v.pMax as number };
+            }
+            const bars = c.getData().bars;
+            const i = bars.lowerBound(Number(v.tMin / 1_000_000n)) - 1;
+            return { edge: bars.high[i] as number, low: bars.low[i] as number, pMin: v.pMin as number, pMax: v.pMax as number };
+        }, level !== 'bars');
+        expect(out.edge, JSON.stringify(out)).toBeLessThanOrEqual(out.pMax);
+        expect(out.low, JSON.stringify(out)).toBeGreaterThanOrEqual(out.pMin);
+    });
+
 const scaleMode = (page: Page) =>
     page.evaluate(() => (window as any).__chart.renderEngine.drawParams.chartSettings.priceScaleMode as string);
 const scaleButton = (page: Page, name: 'N' | 'L' | '%') => page.getByRole('button', { name, exact: true });

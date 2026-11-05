@@ -88,7 +88,8 @@ export function autoFitPriceAxis(
         }
     };
 
-    const barsStartIdx = bars.lowerBound(tMinMs);
+    // from the bar the left edge cuts through, it's on screen and a line comes in from it
+    const barsStartIdx = Math.max(0, bars.lowerBound(tMinMs) - 1);
     const { time: bTime, high: bHigh, low: bLow } = bars;
     const scanBars = () => {
         for (let i = barsStartIdx; i < bTime.length; i++) {
@@ -124,8 +125,18 @@ export function autoFitPriceAxis(
         // tick bid/ask start at 0 until each side has traded, so its trades
         if (dataLevel === 'tick') scanTrades();
         else if (hasBook(dataLevel)) {
+            let cameFrom: PriceHistory | null = null;
             for (const h of priceHistory) {
-                if (h.ts > horizon || h.ts < view.tMin || h.ts >= view.tMax) continue;
+                if (h.ts > horizon || h.ts >= view.tMax) continue;
+                if (h.ts < view.tMin) {
+                    cameFrom = h;
+                    continue;
+                }
+                if (cameFrom) {
+                    if (cameFrom.bestAsk > hi) hi = cameFrom.bestAsk;
+                    if (cameFrom.bestBid < lo) lo = cameFrom.bestBid;
+                    cameFrom = null;
+                }
                 if (h.bestAsk > hi) hi = h.bestAsk;
                 if (h.bestBid < lo) lo = h.bestBid;
                 if (!found) {

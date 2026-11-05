@@ -54,6 +54,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reads the bubbles the last draw made
 
 ### Fixed
+- Autoscale skipped the bar the left edge cuts through, on a fast move its price and the line in from it ran off the axis
 - A heatmap tile with a session gap in it stretched straight across the gap, so the heat sat off its time on either side
 - `dataBudget` sized a switch or a pan at l3, l2 and tick as 48 bytes a bar, so a capped switch never capped there. it goes
   by what the data held weighs now
